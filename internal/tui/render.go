@@ -163,14 +163,24 @@ func pad(s string, w int) string {
 // Раскладка: "╭─ " + левое + " " + заполнитель + " " + правое + " ─╮",
 // то есть на неизменяемые края уходит ровно 8 ячеек (3 + 1 + 1 + 3).
 func frameLine(left, right string, width int, lc, rc string, reverse bool) string {
+	// Пустую подпись пропускаем вместе с её пробелом-отбивкой, иначе в углу
+	// повисает разрыв, читающийся как дефект рамки.
+	lead, tail := lc+"─ ", " ─"+rc
 	lw, rw := lipgloss.Width(left), lipgloss.Width(right)
-	fill := width - 8 - lw - rw
+	gapL, gapR := " ", " "
+	if lw == 0 {
+		lead, gapL = lc+"─", ""
+	}
+	if rw == 0 {
+		tail, gapR = "─"+rc, ""
+	}
+	fill := width - lipgloss.Width(lead) - lipgloss.Width(tail) - lw - rw - len(gapL) - len(gapR)
 	if fill < 1 {
 		fill = 1
 	}
-	return theme.Rule.Render(lc+"─ ") + left + " " +
+	return theme.Rule.Render(lead) + left + gapL +
 		theme.Gradient("─", fill, reverse) +
-		" " + right + theme.Rule.Render(" ─"+rc)
+		gapR + right + theme.Rule.Render(tail)
 }
 
 func (v *Viewer) renderHeader() string {
@@ -207,11 +217,12 @@ func (v *Viewer) renderFooter() string {
 	}
 
 	// Подсказки укорачиваются от самой необязательной к самой нужной, пока
-	// не поместятся: на узком окне лучше показать "q — выход", чем поломать
-	// рамку переносом.
+	// не поместятся: на узком окне лучше показать "q выход", чем поломать
+	// рамку переносом. Полный список живёт за "?", поэтому здесь достаточно
+	// напомнить о нём и о самом частом.
 	hints := []string{
-		"/ поиск · d debug: " + debugState(v.showDebug) + " · q выход",
-		"d debug: " + debugState(v.showDebug) + " · q выход",
+		"debug: " + debugState(v.showDebug) + " · ? справка · q выход",
+		"? справка · q выход",
 		"q выход",
 		"",
 	}
@@ -223,6 +234,45 @@ func (v *Viewer) renderFooter() string {
 		}
 	}
 	return frameLine(left, right, v.width, "╰", "╯", true)
+}
+
+// renderHelp — список клавиш поверх лога. Держать его на экране постоянно
+// незачем: подсказки нужны первые пару раз, а место в подвале дорогое.
+func (v *Viewer) renderHelp() string {
+	rows := [][2]string{
+		{"d", "показать или скрыть DEBUG"},
+		{"/", "поиск по подстроке, пустой ввод снимает"},
+		{"n  N", "к следующей / предыдущей проблеме (warning и выше)"},
+		{"↑ ↓  j k", "прокрутка на строку"},
+		{"PgUp PgDn", "прокрутка на полэкрана"},
+		{"g  G", "в начало / в конец"},
+		{"колесо", "прокрутка мышью"},
+		{"q", "выход (бот продолжит работать)"},
+	}
+
+	keyW := 0
+	for _, r := range rows {
+		if w := lipgloss.Width(r[0]); w > keyW {
+			keyW = w
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("  Клавиши") + "\n\n")
+	for _, r := range rows {
+		b.WriteString("  " +
+			lipgloss.NewStyle().Foreground(theme.Mauve).Bold(true).Render(pad(r[0], keyW)) +
+			"   " + theme.Meta.Render(r[1]) + "\n")
+	}
+	b.WriteString("\n" + theme.Faint.Render("  любая клавиша — закрыть"))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Mauve).
+		Padding(1, 2).
+		Render(b.String())
+
+	return lipgloss.Place(v.width, v.vp.Height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func debugState(on bool) string {

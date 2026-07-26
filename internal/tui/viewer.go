@@ -65,6 +65,15 @@ type Viewer struct {
 	// может занять несколько строк, и полоса должна накрывать её целиком.
 	rowIndex int
 
+	// problemLines — номера строк содержимого, с которых начинаются записи
+	// уровня WARNING и выше. По ним прыгают n/N: в длинном логе искать
+	// глазами единственную ошибку среди сотен строк — worst case, ради
+	// которого лог и открывают.
+	problemLines []int
+	contentLines int // сколько строк уже в содержимом — позиция следующей записи
+
+	showHelp bool
+
 	botPID    int
 	uptime    string
 	version   string
@@ -205,6 +214,13 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return v, nil
 	}
 
+	// Справка перекрывает экран — любая клавиша её закрывает, иначе
+	// пришлось бы помнить ещё и как из неё выйти.
+	if v.showHelp {
+		v.showHelp = false
+		return v, nil
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		v.quitting = true
@@ -212,6 +228,12 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.follower.Stop()
 		}
 		return v, tea.Quit
+	case "?":
+		v.showHelp = true
+	case "n":
+		v.jumpProblem(1)
+	case "N":
+		v.jumpProblem(-1)
 	case "d":
 		v.showDebug = !v.showDebug
 		v.rebuildFromRing()
@@ -266,9 +288,47 @@ func (v *Viewer) feedLine(raw string) {
 	v.warn, v.err = w, e
 
 	if logfeed.Visible(rec, v.showDebug, v.filter) {
-		v.appendRendered(renderRecord(rec, v.width, v.rowIndex%2 == 1))
+		block := renderRecord(rec, v.width, v.rowIndex%2 == 1)
+		if rec.Level >= logfeed.LevelWarning {
+			v.problemLines = append(v.problemLines, v.contentLines)
+		}
+		v.contentLines += strings.Count(block, "\n") + 1
+		v.appendRendered(block)
 		v.rowIndex++
 	}
+}
+
+// jumpProblem перематывает к следующей (dir=+1) или предыдущей (dir=-1)
+// записи уровня WARNING и выше относительно текущей позиции.
+func (v *Viewer) jumpProblem(dir int) {
+	if len(v.problemLines) == 0 {
+		return
+	}
+	// Содержимое отдаётся во viewport с отступом сверху (applyContent
+	// прижимает лог к низу), поэтому позиции записей надо сдвинуть на тот же
+	// отступ — иначе прыжок промахивается ровно на высоту пустоты.
+	offset := 0
+	if gap := v.vp.Height - v.contentLines; gap > 0 {
+		offset = gap
+	}
+	cur := v.vp.YOffset
+	if dir > 0 {
+		for _, ln := range v.problemLines {
+			if ln+offset > cur {
+				v.vp.SetYOffset(ln + offset)
+				return
+			}
+		}
+		v.vp.GotoBottom()
+		return
+	}
+	for i := len(v.problemLines) - 1; i >= 0; i-- {
+		if v.problemLines[i]+offset < cur {
+			v.vp.SetYOffset(v.problemLines[i] + offset)
+			return
+		}
+	}
+	v.vp.GotoTop()
 }
 
 func (v *Viewer) appendRestartBanner() {
@@ -323,6 +383,8 @@ func (v *Viewer) rebuildFromRing() {
 	v.parser = logfeed.NewParser()
 	var b strings.Builder
 	v.rowIndex = 0
+	v.problemLines = v.problemLines[:0]
+	v.contentLines = 0
 	for _, rl := range v.ring {
 		rec, complete := v.parser.Feed(rl.raw)
 		if !complete {
@@ -332,7 +394,12 @@ func (v *Viewer) rebuildFromRing() {
 			if b.Len() > 0 {
 				b.WriteByte('\n')
 			}
-			b.WriteString(renderRecord(rec, v.width, v.rowIndex%2 == 1))
+			block := renderRecord(rec, v.width, v.rowIndex%2 == 1)
+			if rec.Level >= logfeed.LevelWarning {
+				v.problemLines = append(v.problemLines, v.contentLines)
+			}
+			v.contentLines += strings.Count(block, "\n") + 1
+			b.WriteString(block)
 			v.rowIndex++
 		}
 	}
@@ -360,19 +427,42 @@ func (v *Viewer) loadHistory() {
 		v.ring = append(v.ring, ringLine{l})
 	}
 	hp := logfeed.NewParser()
-	var visible []string
+	type block struct {
+		text    string
+		problem bool
+	}
+	var visible []block
 	for _, l := range lines {
 		rec, complete := hp.Feed(l)
 		if !complete {
 			continue
 		}
 		if logfeed.Visible(rec, v.showDebug, "") {
-			visible = append(visible, renderRecord(rec, v.width, len(visible)%2 == 1))
+			visible = append(visible, block{
+				text:    renderRecord(rec, v.width, len(visible)%2 == 1),
+				problem: rec.Level >= logfeed.LevelWarning,
+			})
 		}
 	}
 	if len(visible) > v.opts.History {
 		visible = visible[len(visible)-v.opts.History:]
 	}
+
+	// Позиции проблемных записей считаем уже после обрезки истории: до неё
+	// номера строк относятся к тексту, которого на экране не будет, и
+	// прыжок по n улетал бы мимо.
+	texts := make([]string, 0, len(visible))
+	v.problemLines = v.problemLines[:0]
+	v.contentLines = 0
+	for _, bl := range visible {
+		if bl.problem {
+			v.problemLines = append(v.problemLines, v.contentLines)
+		}
+		v.contentLines += strings.Count(bl.text, "\n") + 1
+		texts = append(texts, bl.text)
+	}
+	// Зебра продолжится с той же чётности, на которой закончилась история.
+	v.rowIndex = len(visible)
 	w, e := hp.Counts()
 	v.warn, v.err = w, e
 	// prevWarn/prevErr стартуют от той же базы: иначе первый же тик увидит
@@ -383,7 +473,7 @@ func (v *Viewer) loadHistory() {
 	// иначе первая же новая строка перезапишет v.warn/v.err своими
 	// собственными (нулевыми) счётчиками и история потеряется из подвала.
 	v.parser.SetCounts(w, e)
-	v.rawContentBuf = strings.Join(visible, "\n")
+	v.rawContentBuf = strings.Join(texts, "\n")
 	v.applyContent()
 	v.vp.GotoBottom()
 }
@@ -416,5 +506,9 @@ func (v *Viewer) View() string {
 	if v.quitting {
 		return ""
 	}
-	return v.renderHeader() + "\n" + v.vp.View() + "\n" + v.renderFooter()
+	body := v.vp.View()
+	if v.showHelp {
+		body = v.renderHelp()
+	}
+	return v.renderHeader() + "\n" + body + "\n" + v.renderFooter()
 }
