@@ -139,7 +139,20 @@ fit_geometry() {
 }
 
 on_resize() {
+    # Сначала стереть подвал там, где он был: после смены размера он окажется
+    # на другой высоте, а прежние две строки останутся висеть посреди лога
+    # копией, которую уже никто не обновляет. Снимаем область прокрутки, иначе
+    # до нижних строк не дотянуться.
+    if (( STICKY )); then
+        tput csr 0 $(( TERM_ROWS - 1 ))
+        tput sc
+        tput cup $(( TERM_ROWS - 2 )) 0; tput el
+        tput cup $(( TERM_ROWS - 1 )) 0; tput el
+        tput rc
+    fi
+
     fit_geometry
+
     if (( STICKY )); then
         tput csr 0 $(( TERM_ROWS - 3 ))
         draw_footer
@@ -173,7 +186,10 @@ fi
 
 if (( INTERACTIVE )); then
     STTY_SAVE=$(stty -g 2>/dev/null)
-    stty -echo -icanon min 0 time 0 2>/dev/null
+    # -icanon: клавиша приходит сразу, без Enter. min 1 time 0 (а не min 0)
+    # важно: при min 0 чтение возвращалось бы мгновенно и вхолостую, и цикл
+    # ниже, который пережидает тишину на клавиатуре, сжёг бы ядро впустую.
+    stty -echo -icanon min 1 time 0 2>/dev/null
 fi
 trap on_resize WINCH
 
@@ -211,26 +227,48 @@ handle_line() {
     render_line "$l"
 }
 
+handle_key() {   # 1 — пора выходить
+    case "$1" in
+        d|D|в|В) toggle_debug ;;
+        q|Q|й|Й) return 1 ;;
+    esac
+    return 0
+}
+
 tick
 last_tick=$SECONDS
 
-while true; do
-    if IFS= read -r -t 0.2 -u 3 line; then
-        handle_line "$line"
-    else
-        # больше 128 — таймаут чтения; иначе поток кончился и ждать нечего
-        (( $? <= 128 )) && break
-    fi
+if (( INTERACTIVE )); then
+    while true; do
+        # "read -t 0" только спрашивает, есть ли что читать, и ничего не
+        # забирает. Читать саму строку с таймаутом нельзя: если он сработает
+        # на её середине, bash отдаст огрызок и вернёт ошибку, а хвост придёт
+        # следующим чтением — строка молча ломается пополам.
+        if read -t 0 -u 3 2>/dev/null; then
+            if ! IFS= read -r -u 3 line; then
+                # Больше 128 — чтение прервал сигнал (тот же SIGWINCH при
+                # растягивании окна), поток при этом жив. Без этой проверки
+                # любой ресайз выглядел бы как конец лога и закрывал вьюер.
+                (( $? > 128 )) && continue
+                break
+            fi
+            handle_line "$line"
+            key_wait=0.001                    # поток идёт — клавиатуру лишь опрашиваем
+        else
+            key_wait=0.1                      # тишина — на клавиатуре и ждём
+        fi
 
-    if (( INTERACTIVE )) && IFS= read -rsn1 -t 0.001 key 2>/dev/null; then
-        case "$key" in
-            d|D|в|В) toggle_debug ;;
-            q|Q|й|Й) break ;;
-        esac
-    fi
+        if IFS= read -rsn1 -t "$key_wait" key 2>/dev/null; then
+            handle_key "$key" || break
+        fi
 
-    if (( SECONDS != last_tick )); then
-        tick
-        last_tick=$SECONDS
-    fi
-done
+        if (( SECONDS != last_tick )); then
+            tick
+            last_tick=$SECONDS
+        fi
+    done
+else
+    # Вывод не в терминал: ни клавиатуры, ни подвала — остаётся простое
+    # блокирующее чтение до конца потока.
+    while IFS= read -r -u 3 line; do handle_line "$line"; done
+fi
