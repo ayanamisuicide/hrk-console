@@ -19,6 +19,25 @@ import (
 	"heroku-console/internal/tui"
 )
 
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func dropFlag(args []string, flag string) []string {
+	out := args[:0:0]
+	for _, a := range args {
+		if a != flag {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func herokuDir() string {
 	if d := os.Getenv("HEROKU_DIR"); d != "" {
 		return d
@@ -34,6 +53,20 @@ func main() {
 	if len(args) == 1 && args[0] == "console" {
 		os.Exit(bot.RunForeground())
 	}
+
+	// Проверки идут до всего остального: они отвечают на "почему не
+	// работает" раньше, чем пользователь упрётся в пустой экран лога.
+	// Пропускаются флагом --no-check, чтобы не мешать, когда консоль
+	// дёргают из скрипта.
+	if !hasFlag(args, "--no-check") {
+		pf := tui.NewPreflight(bot.HerokuDir, bot.LogFile)
+		p := tea.NewProgram(pf, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "ошибка проверок:", err)
+			os.Exit(1)
+		}
+	}
+	args = dropFlag(args, "--no-check")
 
 	choice := 0
 	if len(args) == 1 {

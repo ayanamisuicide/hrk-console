@@ -53,6 +53,18 @@ type Viewer struct {
 	warn, err int
 	prevWarn, prevErr int
 
+	// activity — сколько записей пришло в каждую из последних секунд;
+	// рисуется sparkline'ом в шапке. Хвост фиксированной длины: сдвигается
+	// на каждом тике, так что график всегда показывает одно и то же окно
+	// времени независимо от того, идёт лог или молчит.
+	activity    []int
+	activityNow int
+
+	// rowIndex — сквозной номер показанной записи, по его чётности красится
+	// зебра. Считается по видимым записям, а не по строкам экрана: запись
+	// может занять несколько строк, и полоса должна накрывать её целиком.
+	rowIndex int
+
 	botPID    int
 	uptime    string
 	version   string
@@ -76,8 +88,12 @@ func NewViewer(opts ViewerOpts) *Viewer {
 		parser:    logfeed.NewParser(),
 		showDebug: opts.ShowDebug,
 		version:   opts.Bot.Version(),
+		activity:  make([]int, activityWindow),
 	}
 }
+
+// activityWindow — сколько секунд истории показывает sparkline.
+const activityWindow = 24
 
 type tickMsg time.Time
 type followerReadyMsg struct{ f *logfeed.Follower }
@@ -139,6 +155,9 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return v, nil
 
 	case tickMsg:
+		// сдвигаем окно активности: текущая секунда закрывается и уезжает влево
+		v.activity = append(v.activity[1:], v.activityNow)
+		v.activityNow = 0
 		v.refreshBotState()
 		return v, tickCmd()
 
@@ -242,11 +261,13 @@ func (v *Viewer) feedLine(raw string) {
 	if !complete {
 		return
 	}
+	v.activityNow++
 	w, e := v.parser.Counts()
 	v.warn, v.err = w, e
 
 	if logfeed.Visible(rec, v.showDebug, v.filter) {
-		v.appendRendered(renderRecord(rec, v.width))
+		v.appendRendered(renderRecord(rec, v.width, v.rowIndex%2 == 1))
+		v.rowIndex++
 	}
 }
 
@@ -301,6 +322,7 @@ func (v *Viewer) applyContent() {
 func (v *Viewer) rebuildFromRing() {
 	v.parser = logfeed.NewParser()
 	var b strings.Builder
+	v.rowIndex = 0
 	for _, rl := range v.ring {
 		rec, complete := v.parser.Feed(rl.raw)
 		if !complete {
@@ -310,7 +332,8 @@ func (v *Viewer) rebuildFromRing() {
 			if b.Len() > 0 {
 				b.WriteByte('\n')
 			}
-			b.WriteString(renderRecord(rec, v.width))
+			b.WriteString(renderRecord(rec, v.width, v.rowIndex%2 == 1))
+			v.rowIndex++
 		}
 	}
 	w, e := v.parser.Counts()
@@ -344,7 +367,7 @@ func (v *Viewer) loadHistory() {
 			continue
 		}
 		if logfeed.Visible(rec, v.showDebug, "") {
-			visible = append(visible, renderRecord(rec, v.width))
+			visible = append(visible, renderRecord(rec, v.width, len(visible)%2 == 1))
 		}
 	}
 	if len(visible) > v.opts.History {

@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	timeW = 8
-	modW  = 14
+	timeW  = 8
+	badgeW = 5 // " DBG " — три буквы плюс padding с двух сторон
+	modW   = 14
 	// Отступ, с которого начинается колонка сообщения. Под него же
 	// выравниваются перенесённые хвосты длинных строк.
-	gutter = timeW + 2 + 1 + 2 + modW + 2
+	gutter = 1 + timeW + 1 + badgeW + 2 + modW + 2
 )
 
 // wrapText переносит текст по словам под заданную ширину. Ширина считается
@@ -80,28 +81,41 @@ func moduleColor(name string) lipgloss.Color {
 //
 // Правило темы: насыщенный цвет несёт маркер уровня. Модуль подкрашен
 // приглушённо и стабильно, время всегда самое тихое.
-func renderRecord(rec *logfeed.Record, width int) string {
+// zebra — индекс записи: чётные подкрашиваются фоном. Передаётся снаружи,
+// потому что запись может занять несколько строк экрана, и полоса должна
+// накрывать её целиком, а не чередоваться построчно.
+func renderRecord(rec *logfeed.Record, width int, zebra bool) string {
 	style := theme.ForLevel(int(rec.Level))
-	msgWidth := width - gutter
+	msgWidth := width - gutter - 1
 	if msgWidth < 20 {
 		msgWidth = 20
 	}
 
-	var b strings.Builder
+	// Фон должен тянуться во всю ширину окна, иначе полоса обрывается по
+	// концу текста и выглядит грязью, а не полосой.
+	row := func(s string) string {
+		if gap := width - lipgloss.Width(s); gap > 0 {
+			s += strings.Repeat(" ", gap)
+		}
+		if zebra {
+			return theme.Zebra.Render(s)
+		}
+		return s
+	}
+
+	var out []string
 	first := true
 	for i, line := range rec.Lines {
 		hard := i < len(rec.Hard) && rec.Hard[i]
 
 		for j, wrapped := range wrapText(line, msgWidth) {
-			if !first {
-				b.WriteByte('\n')
-			}
+			var b strings.Builder
 			switch {
 			case first && rec.Time != "":
-				// заголовок записи: время, маркер, модуль, текст
+				b.WriteString(" ")
 				b.WriteString(theme.Meta.Render(pad(rec.Time, timeW)))
-				b.WriteString("  ")
-				b.WriteString(style.Marker.Render(style.Glyph))
+				b.WriteString(" ")
+				b.WriteString(style.Badge.Render(style.Label))
 				b.WriteString("  ")
 				b.WriteString(lipgloss.NewStyle().Foreground(moduleColor(rec.Module)).Render(pad(rec.Module, modW)))
 				b.WriteString("  ")
@@ -116,10 +130,11 @@ func renderRecord(rec *logfeed.Record, width int) string {
 				b.WriteString(strings.Repeat(" ", gutter))
 				b.WriteString(style.Text.Render(wrapped))
 			}
+			out = append(out, row(b.String()))
 			first = false
 		}
 	}
-	return b.String()
+	return strings.Join(out, "\n")
 }
 
 // pad дополняет строку пробелами до ширины в видимых ячейках.
@@ -147,18 +162,22 @@ func pad(s string, w int) string {
 //
 // Раскладка: "╭─ " + левое + " " + заполнитель + " " + правое + " ─╮",
 // то есть на неизменяемые края уходит ровно 8 ячеек (3 + 1 + 1 + 3).
-func frameLine(left, right string, width int, lc, rc string) string {
+func frameLine(left, right string, width int, lc, rc string, reverse bool) string {
 	lw, rw := lipgloss.Width(left), lipgloss.Width(right)
 	fill := width - 8 - lw - rw
 	if fill < 1 {
 		fill = 1
 	}
-	rule := theme.Rule.Render(strings.Repeat("─", fill))
-	return theme.Rule.Render(lc+"─ ") + left + " " + rule + " " + right + theme.Rule.Render(" ─"+rc)
+	return theme.Rule.Render(lc+"─ ") + left + " " +
+		theme.Gradient("─", fill, reverse) +
+		" " + right + theme.Rule.Render(" ─"+rc)
 }
 
 func (v *Viewer) renderHeader() string {
 	left := theme.Title.Render("HEROKU")
+	if spark := theme.Sparkline(v.activity); spark != "" {
+		left += "  " + spark
+	}
 	var right string
 	if v.botAlive {
 		right = theme.StatusLive.Render("● live") +
@@ -166,7 +185,7 @@ func (v *Viewer) renderHeader() string {
 	} else {
 		right = theme.StatusDown.Render("○ не запущен")
 	}
-	return frameLine(left, right, v.width, "╭", "╮")
+	return frameLine(left, right, v.width, "╭", "╮", false)
 }
 
 func (v *Viewer) renderFooter() string {
@@ -198,12 +217,12 @@ func (v *Viewer) renderFooter() string {
 	}
 	right := ""
 	for _, h := range hints {
-		if v.width-6-lipgloss.Width(left)-lipgloss.Width(h) >= 1 {
+		if v.width-8-lipgloss.Width(left)-lipgloss.Width(h) >= 1 {
 			right = theme.Meta.Render(h)
 			break
 		}
 	}
-	return frameLine(left, right, v.width, "╰", "╯")
+	return frameLine(left, right, v.width, "╰", "╯", true)
 }
 
 func debugState(on bool) string {

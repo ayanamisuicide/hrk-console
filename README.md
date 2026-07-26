@@ -3,15 +3,17 @@
 Консоль для Telegram-юзербота [Heroku](https://github.com/coddrago/Heroku): запуск, остановка и живой просмотр логов из терминала.
 
 ```
-  HEROKU  ──────────────────────────────────  ● live  ·  2.2.2  ·  1ч 12м
+╭─ HEROKU  ▁▂▃▅▂▁▃▇▅▂▁▁ ──────────────────  ● live  2.2.2  ·  1ч 12м ─╮
 
-00:13:01  ●  terminal        Command .sh executed by 8278874432
-00:13:04  ▲  spotify         Token refresh took 4.2s, retrying once
-00:13:07  ✗  tl_cache        Failed to resolve @unknown_channel
-                           ↳ PeerIdInvalidError: could not find the input entity
-
-  ● pid 4821  ·  ⚠ 3  ✗ 1  ────────  / — поиск · d — debug: скрыт · q — выход
+ 00:13:01  INF   terminal        Command .sh executed by 8278874432
+ 00:13:04  WRN   spotify         Token refresh took 4.2s, retrying once
+ 00:13:07  ERR   tl_cache        Failed to resolve @unknown_channel
+                               ↳ PeerIdInvalidError: could not find the entity
+ 00:13:20  INF   spotify         now playing: Radiohead - Creep
+╰─ ● pid 4821  ·  ⚠ 3  ✗ 1 ────── / поиск · d debug: скрыт · q выход ─╯
 ```
+
+Уровень показывается бейджем с заливкой — `WRN` и `ERR` видно периферийным зрением, не вчитываясь. `DBG` намеренно тихий. Sparkline в шапке показывает активность лога за последние 24 секунды.
 
 ## Зачем
 
@@ -39,9 +41,12 @@ make install        # положит бинарник в ~/.local/bin/hkc
 ## Использование
 
 ```sh
-hkc          # меню выбора режима
-hkc 2        # сразу нужный режим, без меню
+hkc              # проверки, затем меню выбора режима
+hkc 2            # сразу нужный режим, без меню
+hkc --no-check   # пропустить проверки (для вызова из скриптов)
 ```
+
+Перед запуском прогоняются проверки окружения — каталог бота, файл лога, venv, `python3`, `tail`, права на запись — и модульные тесты, если рядом лежат исходники. Так причина «почему не работает» видна сразу, а не после пустого экрана.
 
 `launch.sh` открывает консоль в новом окне терминала (ghostty, kitty или alacritty — что найдётся) — удобно повесить на ярлык рабочего стола.
 
