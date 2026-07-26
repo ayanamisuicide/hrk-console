@@ -98,29 +98,29 @@ screen_header() {
     echo
 }
 
-# rule_label "слева" "справа" [символ-угла] — линейка во всю ширину окна с
-# подписью слева и статусом справа:
+# hline N -> HLINE — строка из N символов ─, без единого подпроцесса.
+# Рамка окна лога перерисовывается по два раза в секунду, и привычный
+# $(printf '─%.0s' $(seq 1 N)) стоил бы тут двух форков на каждый вызов.
+hline() {
+    printf -v HLINE '%*s' "${1:-0}" ''
+    HLINE=${HLINE// /─}
+}
+
+# rule_label "слева" "справа" — линейка во всю ширину с подписью слева и
+# статусом справа:
 #   ╭─ HEROKU ───────────────────────── ● live · 2.2.2 · 1ч 12м ─╮
 # Обе подписи принимаются без ANSI-кодов: цвет накладывается здесь, иначе
 # ${#s} считал бы escape-последовательности и линейка разъезжалась бы.
 rule_label() {
-    local left="$1" right="$2" w fill dash
-    w=$(cols)
+    local left="$1" right="$2" w fill
+    w=${TERM_COLS:-$(cols)}
     [ -n "$left" ]  && left=" $left "
     [ -n "$right" ] && right=" $right "
     fill=$(( w - 4 - ${#left} - ${#right} ))
     (( fill < 1 )) && fill=1
-    dash=$(printf '─%.0s' $(seq 1 $fill))
+    hline "$fill"
     printf "${C_RULE}╭─${R}${B}${MAG}%s${R}${C_RULE}%s${R}${C_META}%s${R}${C_RULE}─╮${R}\n" \
-           "$left" "$dash" "$right"
-}
-
-# Ровная линейка во всю ширину — низ шапки, верх подвала.
-rule_full() {
-    local w dash
-    w=$(cols)
-    dash=$(printf '─%.0s' $(seq 1 $(( w > 2 ? w - 2 : 1 ))))
-    printf "${C_RULE}%s${R}\n" "$dash"
+           "$left" "$HLINE" "$right"
 }
 
 # ─── подсветка строк лога по уровню ───────────────────────────────────────

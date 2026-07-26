@@ -53,6 +53,73 @@ trap cleanup EXIT INT TERM
 # ─── шапка и подвал ───────────────────────────────────────────────────────
 VERSION="$(bot_version)"
 
+# Лог живёт в окне между двумя закреплёнными строками: сверху рамка с
+# названием и состоянием бота, снизу — со счётчиками и подсказками. Обе
+# рисуются вне области прокрутки и перерисовываются раз в секунду, поэтому
+# аптайм в шапке тикает, а сама шапка никуда не уезжает.
+#
+# Ширину считаем по тексту без ANSI-кодов (${#s} считал бы escape-по-
+# следовательности), а саму строку собираем в переменную и печатаем через
+# '%s': в сообщениях и подписях встречается '%', и формат printf на них
+# споткнулся бы.
+HEADER_H=1
+(( BARE )) && HEADER_H=0
+
+# Раскладка обеих рамок: "УГОЛ─ левое  ────  правое ─УГОЛ"
+#   3 + левое + 1 + заполнитель + 1 + правое + 3 = ширина окна
+frame_fill() {   # $1 длина левого, $2 длина правого -> HLINE
+    local fill=$(( TERM_COLS - 8 - $1 - $2 ))
+    (( fill < 1 )) && fill=1
+    hline "$fill"
+}
+
+draw_header() {
+    (( STICKY )) && (( HEADER_H )) || return
+    local plain col up
+    if [ -n "$TICK_PID" ]; then
+        up=$(bot_uptime "$TICK_PID")
+        plain="● live · ${VERSION:-?} · $up"
+        col="${GRN}●${R} ${C_META}live${R} ${D}·${R} ${C_META}${VERSION:-?}${R} ${D}·${R} ${C_META}$up${R}"
+    else
+        plain="○ не запущен"
+        col="${RED}○${R} ${C_META}не запущен${R}"
+    fi
+    frame_fill 14 ${#plain}      # 14 — длина "HEROKU USERBOT"
+    tput sc
+    tput cup 0 0; tput el
+    printf '%s' "${C_RULE}╭─ ${B}${MAG}HEROKU USERBOT${R} ${C_RULE}${HLINE}${R} ${col} ${C_RULE}─╮${R}"
+    tput rc
+}
+
+draw_footer() {
+    (( STICKY )) || return
+    local pid="$TICK_PID" plain col right up
+    if [ -n "$pid" ]; then
+        up=$(bot_uptime "$pid")
+        plain="● pid $pid · ⏱ $up"
+        col="${GRN}●${R} ${C_META}pid $pid${R} ${D}·${R} ${C_META}⏱ $up${R}"
+    else
+        plain="○ не запущен"
+        col="${RED}○${R} ${C_META}не запущен${R}"
+    fi
+    plain+=" · ⚠ $RL_WARN ✗ $RL_ERR"
+    col+=" ${D}·${R} ${YEL}⚠ $RL_WARN${R} ${RED}✗ $RL_ERR${R}"
+
+    if (( SHOW_DEBUG )); then
+        right="d — debug: виден · q — выход"
+    else
+        right="d — debug: скрыт · q — выход"
+    fi
+
+    frame_fill ${#plain} ${#right}
+    tput sc
+    tput cup $(( TERM_ROWS - 1 )) 0; tput el
+    printf '%s' "${C_RULE}╰─ ${col} ${C_RULE}${HLINE}${R} ${D}${GRY}${right}${R} ${C_RULE}─╯${R}"
+    tput rc
+}
+
+# Запасной вариант, когда закрепить строки нечем (не терминал или он не
+# умеет csr): шапка просто печатается один раз в поток.
 header() {
     local right="○ не запущен"
     bot_alive && right="● live · ${VERSION:-?} · $(bot_uptime)"
@@ -61,43 +128,10 @@ header() {
     echo
 }
 
-# Подвал перерисовывается раз в секунду поверх двух нижних строк. Курсор
-# сохраняем и возвращаем, иначе он бы уехал из области прокрутки и следующая
-# строка лога легла бы в подвал.
-draw_footer() {
-    (( STICKY )) || return
-    local pid="$TICK_PID" state left right pad up
-    if [ -n "$pid" ]; then
-        up=$(bot_uptime "$pid")
-        state="${GRN}●${R} ${C_META}pid $pid${R}  ${D}·${R}  ${C_META}⏱ $up${R}"
-        left="● pid $pid  ·  ⏱ $up"
-    else
-        state="${RED}○${R} ${C_META}не запущен${R}"
-        left="○ не запущен"
-    fi
-    state+="  ${D}·${R}  ${YEL}⚠ $RL_WARN${R}  ${RED}✗ $RL_ERR${R}"
-    left+="  ·  ⚠ $RL_WARN  ✗ $RL_ERR"
-
-    if (( SHOW_DEBUG )); then
-        right="d — debug: виден  ·  q — выход"
-    else
-        right="d — debug: скрыт  ·  q — выход"
-    fi
-    pad=$(( TERM_COLS - ${#left} - ${#right} - 2 ))
-    (( pad < 1 )) && pad=1
-
-    tput sc
-    tput cup $(( TERM_ROWS - 2 )) 0; tput el
-    printf '%s%s%s' "$C_RULE" "$FOOTER_RULE" "$R"
-    tput cup $(( TERM_ROWS - 1 )) 0; tput el
-    printf ' %b%*s%s%s%s' "$state" "$pad" "" "$D$GRY" "$right" "$R"
-    tput rc
-}
-
 # Отбивка перезапуска: бот перезапустили из Telegram, началась новая сессия.
 restart_header() {
     local s
-    s=$(printf '━%.0s' $(seq 1 $(( TERM_COLS > 1 ? TERM_COLS - 1 : 1 ))))
+    hline $(( TERM_COLS > 1 ? TERM_COLS - 1 : 1 )); s="${HLINE//─/━}"
     printf '\n%s%s%s\n' "$C_RULE" "$s" "$R"
     printf '%s%s  ⟳  ПЕРЕЗАПУСК%s%s  ·  %s  ·  pid %s%s\n' \
            "$B" "$MAG" "$R" "$D$GRY" "$(date '+%H:%M:%S')" "$(bot_pid)" "$R"
@@ -127,26 +161,24 @@ tick() {
         [ "$BOT_WAS" = ok ] && notify critical "Heroku bot" "Процесс упал"
         BOT_WAS=dead
     fi
+    draw_header
     draw_footer
 }
 
-# Ширина линейки подвала меняется только при ресайзе — считаем её там, а не
-# на каждой перерисовке раз в секунду.
-FOOTER_RULE=""
-fit_geometry() {
-    TERM_COLS=$(cols); TERM_ROWS=$(rows)
-    FOOTER_RULE=$(printf '─%.0s' $(seq 1 $(( TERM_COLS > 1 ? TERM_COLS - 1 : 1 ))))
-}
+fit_geometry() { TERM_COLS=$(cols); TERM_ROWS=$(rows); }
+
+# Область прокрутки: строки между рамками. Всё, что печатает лог, крутится
+# только здесь, а нулевая строка и последняя остаются за рамками нетронутыми.
+set_scroll_region() { tput csr "$HEADER_H" $(( TERM_ROWS - 2 )); }
 
 on_resize() {
     # Сначала стереть подвал там, где он был: после смены размера он окажется
-    # на другой высоте, а прежние две строки останутся висеть посреди лога
-    # копией, которую уже никто не обновляет. Снимаем область прокрутки, иначе
-    # до нижних строк не дотянуться.
+    # на другой высоте, а прежняя строка останется висеть посреди лога копией,
+    # которую уже никто не обновляет. Снимаем область прокрутки, иначе до
+    # нижней строки не дотянуться.
     if (( STICKY )); then
         tput csr 0 $(( TERM_ROWS - 1 ))
         tput sc
-        tput cup $(( TERM_ROWS - 2 )) 0; tput el
         tput cup $(( TERM_ROWS - 1 )) 0; tput el
         tput rc
     fi
@@ -154,7 +186,8 @@ on_resize() {
     fit_geometry
 
     if (( STICKY )); then
-        tput csr 0 $(( TERM_ROWS - 3 ))
+        set_scroll_region
+        draw_header
         draw_footer
     fi
 }
@@ -166,23 +199,23 @@ section() {
     local label="$1" fill
     fill=$(( TERM_COLS - ${#label} - 5 ))
     (( fill < 1 )) && fill=1
-    printf '%s── %s %s%s\n' "$D$GRY" "$label" "$(printf '─%.0s' $(seq 1 $fill))" "$R"
+    hline "$fill"
+    printf '%s── %s %s%s\n' "$D$GRY" "$label" "$HLINE" "$R"
 }
 
 # ─── стартовый экран ──────────────────────────────────────────────────────
 fit_geometry
 
-# Область прокрутки задаётся до первой печати, иначе шапка окажется выше неё
-# и уедет за верхний край первым же экраном лога. Экран чистим осознанно:
-# шаги запуска из меню своё уже отработали, а лог должен начинаться с чистого
-# листа под своей шапкой.
+# Экран чистим осознанно: шаги запуска из меню своё уже отработали, а лог
+# должен начинаться с чистого листа внутри своей рамки. Курсор ставим на
+# первую строку области прокрутки, чтобы поток пошёл под шапкой, а не поверх.
 if (( STICKY )); then
     clear
-    tput csr 0 $(( TERM_ROWS - 3 ))
-    tput cup 0 0
+    set_scroll_region
+    tput cup "$HEADER_H" 0
+else
+    (( BARE )) || header    # закрепить нечем — печатаем шапку разово в поток
 fi
-
-(( BARE )) || header
 
 if (( INTERACTIVE )); then
     STTY_SAVE=$(stty -g 2>/dev/null)
