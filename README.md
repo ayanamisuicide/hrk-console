@@ -7,13 +7,15 @@
 
  00:13:01  INF   terminal        Command .sh executed by 8278874432
  00:13:04  WRN   spotify         Token refresh took 4.2s, retrying once
- 00:13:07  ERR   tl_cache        Failed to resolve @unknown_channel
+ 00:13:07  ERR   tl_cache        Failed to resolve @unknown_channel          ×12
                                ↳ PeerIdInvalidError: could not find the entity
  00:13:20  INF   spotify         now playing: Radiohead - Creep
 ╰─ ● pid 4821  ·  ⚠ 3  ✗ 1 ────── / поиск · d debug: скрыт · q выход ─╯
 ```
 
 Уровень показывается бейджем с заливкой — `WRN` и `ERR` видно периферийным зрением, не вчитываясь. `DBG` намеренно тихий. Sparkline в шапке показывает активность лога за последние 24 секунды.
+
+Подряд идущие одинаковые записи схлопываются в одну со счётчиком `×N` у правого края: одна отвалившаяся сеть больше не выдавливает с экрана всё остальное. Время показывается от последнего повтора, счётчики `⚠`/`✗` в подвале продолжают считать каждое событие.
 
 ## Зачем
 

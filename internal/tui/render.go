@@ -92,15 +92,32 @@ func renderRecord(rec *logfeed.Record, width int, zebra bool) string {
 	}
 
 	// Фон должен тянуться во всю ширину окна, иначе полоса обрывается по
-	// концу текста и выглядит грязью, а не полосой.
-	row := func(s string) string {
-		if gap := width - lipgloss.Width(s); gap > 0 {
+	// концу текста и выглядит грязью, а не полосой. tail прижимается к
+	// правому краю той же пустотой, что тянет фон.
+	row := func(s, tail string) string {
+		if gap := width - lipgloss.Width(s) - lipgloss.Width(tail); gap > 0 {
 			s += strings.Repeat(" ", gap)
 		}
+		s += tail
 		if zebra {
 			return theme.Zebra.Render(s)
 		}
 		return s
+	}
+
+	// Счётчик повторов у правого края, а не после текста: сообщения разной
+	// длины, и по краю счётчики выстраиваются колонкой, которую видно, не
+	// читая строк. Цвет — по уровню записи: десять ошибок подряд должны
+	// выглядеть тревожнее десяти info.
+	countTail := ""
+	if rec.Count > 1 {
+		countTail = style.Badge.Render(fmt.Sprintf(" ×%d ", rec.Count))
+		// Место под счётчик отнимается у переноса: иначе сообщение ровно во
+		// всю ширину плюс счётчик не влезли бы в строку, и viewport перенёс
+		// бы хвост сам — уже без наших отступов под колонку.
+		if w := msgWidth - lipgloss.Width(countTail); w >= 20 {
+			msgWidth = w
+		}
 	}
 
 	var out []string
@@ -130,7 +147,11 @@ func renderRecord(rec *logfeed.Record, width int, zebra bool) string {
 				b.WriteString(strings.Repeat(" ", gutter))
 				b.WriteString(style.Text.Render(wrapped))
 			}
-			out = append(out, row(b.String()))
+			tail := ""
+			if len(out) == 0 {
+				tail = countTail
+			}
+			out = append(out, row(b.String(), tail))
 			first = false
 		}
 	}

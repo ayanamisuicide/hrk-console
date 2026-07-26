@@ -132,3 +132,45 @@ func TestCounts(t *testing.T) {
 		t.Errorf("err = %d, want 2 (ERROR + CRITICAL)", e)
 	}
 }
+
+func TestSameEntryIgnoresTime(t *testing.T) {
+	p := NewParser()
+	a, _ := p.Feed("2026-07-27 00:12:03 [ERROR] urllib3: Connection refused")
+	b, _ := p.Feed("2026-07-27 00:12:31 [ERROR] urllib3: Connection refused")
+	if !SameEntry(a, b) {
+		t.Error("одинаковые записи с разным временем должны считаться повтором")
+	}
+}
+
+func TestSameEntryDistinguishes(t *testing.T) {
+	p := NewParser()
+	base, _ := p.Feed("2026-07-27 00:12:03 [ERROR] urllib3: Connection refused")
+
+	cases := map[string]string{
+		"другой текст":   "2026-07-27 00:12:04 [ERROR] urllib3: Connection reset",
+		"другой уровень": "2026-07-27 00:12:04 [WARNING] urllib3: Connection refused",
+		"другой модуль":  "2026-07-27 00:12:04 [ERROR] telethon: Connection refused",
+	}
+	for name, line := range cases {
+		q := NewParser()
+		other, _ := q.Feed(line)
+		if SameEntry(base, other) {
+			t.Errorf("%s: записи не должны схлопываться", name)
+		}
+	}
+}
+
+// Кадры трейсбека приходят без времени и в рекурсии совпадают дословно.
+// Схлопнуть их значило бы соврать про глубину стека.
+func TestSameEntryNeverMergesContinuations(t *testing.T) {
+	p := NewParser()
+	p.Feed("2026-07-27 00:12:03 [ERROR] heroku: Traceback (most recent call last):")
+	a, _ := p.Feed(`  File "main.py", line 42, in tick`)
+	b, _ := p.Feed(`  File "main.py", line 42, in tick`)
+	if a.Time != "" || b.Time != "" {
+		t.Fatal("продолжения должны быть без времени")
+	}
+	if SameEntry(a, b) {
+		t.Error("продолжения не должны схлопываться")
+	}
+}
