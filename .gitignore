@@ -3,5 +3,8 @@ node_modules/
 *.log
 .DS_Store
 
+# собранный бинарник — пересобирается из исходников через make build
+bin/
+
 # локальные настройки Claude Code, машинозависимые
 .claude/settings.local.json
