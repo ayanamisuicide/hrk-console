@@ -115,6 +115,7 @@ func (v *Viewer) Init() tea.Cmd {
 func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		widthChanged := msg.Width != v.width
 		v.width, v.height = msg.Width, msg.Height
 		headerH, footerH := 1, 1
 		vpH := msg.Height - headerH - footerH
@@ -127,6 +128,12 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.loadHistory()
 		} else {
 			v.vp.Width, v.vp.Height = msg.Width, vpH
+			if widthChanged {
+				// Перенос длинных строк считался под прежнюю ширину —
+				// пересобираем, иначе после ресайза текст останется
+				// разложенным по старому краю окна.
+				v.rebuildFromRing()
+			}
 		}
 		v.search.Width = msg.Width - 4
 		return v, nil
@@ -239,7 +246,7 @@ func (v *Viewer) feedLine(raw string) {
 	v.warn, v.err = w, e
 
 	if logfeed.Visible(rec, v.showDebug, v.filter) {
-		v.appendRendered(renderRecord(rec))
+		v.appendRendered(renderRecord(rec, v.width))
 	}
 }
 
@@ -264,10 +271,28 @@ func (v *Viewer) appendRendered(s string) {
 		v.rawContentBuf += "\n"
 	}
 	v.rawContentBuf += s
-	v.vp.SetContent(v.rawContentBuf)
+	v.applyContent()
 	if stuck {
 		v.vp.GotoBottom()
 	}
+}
+
+// applyContent отдаёт накопленный текст во viewport, прижимая его к низу:
+// пока строк меньше, чем высота окна, сверху добавляются пустые. Иначе
+// свежий лог висел бы у верхнего края с пустотой под ним, а привычно —
+// когда новые строки приходят снизу, у самой статус-строки, как в терминале.
+// Отступ добавляется только на отдаче: rawContentBuf остаётся чистым, иначе
+// пустые строки копились бы при каждом дописывании.
+func (v *Viewer) applyContent() {
+	content := v.rawContentBuf
+	lines := 0
+	if content != "" {
+		lines = strings.Count(content, "\n") + 1
+	}
+	if gap := v.vp.Height - lines; gap > 0 {
+		content = strings.Repeat("\n", gap) + content
+	}
+	v.vp.SetContent(content)
 }
 
 // rebuildFromRing пересобирает весь видимый контент заново из буфера сырых
@@ -285,14 +310,14 @@ func (v *Viewer) rebuildFromRing() {
 			if b.Len() > 0 {
 				b.WriteByte('\n')
 			}
-			b.WriteString(renderRecord(rec))
+			b.WriteString(renderRecord(rec, v.width))
 		}
 	}
 	w, e := v.parser.Counts()
 	v.warn, v.err = w, e
 	if v.ready {
 		v.rawContentBuf = b.String()
-		v.vp.SetContent(v.rawContentBuf)
+		v.applyContent()
 		v.vp.GotoBottom()
 	}
 }
@@ -319,7 +344,7 @@ func (v *Viewer) loadHistory() {
 			continue
 		}
 		if logfeed.Visible(rec, v.showDebug, "") {
-			visible = append(visible, renderRecord(rec))
+			visible = append(visible, renderRecord(rec, v.width))
 		}
 	}
 	if len(visible) > v.opts.History {
@@ -336,7 +361,7 @@ func (v *Viewer) loadHistory() {
 	// собственными (нулевыми) счётчиками и история потеряется из подвала.
 	v.parser.SetCounts(w, e)
 	v.rawContentBuf = strings.Join(visible, "\n")
-	v.vp.SetContent(v.rawContentBuf)
+	v.applyContent()
 	v.vp.GotoBottom()
 }
 
