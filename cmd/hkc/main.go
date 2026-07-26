@@ -19,6 +19,22 @@ import (
 	"heroku-console/internal/tui"
 )
 
+// version подставляется линкером из Makefile (`-X main.version=...`),
+// значение по умолчанию остаётся у сборок через голый `go build`.
+var version = "dev"
+
+const usage = `hkc — консоль Heroku-юзербота.
+
+  hkc              проверки, затем меню выбора режима
+  hkc 1|2|3|4      сразу нужный режим, без меню
+  hkc console      родная консоль бота в текущем терминале
+
+  --no-check       пропустить проверки окружения
+  --version        показать версию
+  --help           эта справка
+
+Переменные окружения: HEROKU_DIR — каталог бота, LOG_FILE — файл лога.`
+
 func hasFlag(args []string, flag string) bool {
 	for _, a := range args {
 		if a == flag {
@@ -47,9 +63,23 @@ func herokuDir() string {
 }
 
 func main() {
+	args := os.Args[1:]
+
+	// Раньше всего прочего: и версия, и справка должны отвечать даже
+	// там, где нет терминала — из скрипта, по ssh, в пакетном сборщике.
+	// До этой проверки любой аргумент проваливался в TUI и упирался в
+	// «could not open a new TTY».
+	if hasFlag(args, "--version") || hasFlag(args, "-v") {
+		fmt.Println("hkc", version)
+		return
+	}
+	if hasFlag(args, "--help") || hasFlag(args, "-h") {
+		fmt.Println(usage)
+		return
+	}
+
 	bot := botproc.New(herokuDir())
 
-	args := os.Args[1:]
 	if len(args) == 1 && args[0] == "console" {
 		os.Exit(bot.RunForeground())
 	}
