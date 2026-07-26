@@ -44,6 +44,11 @@ LOUD_MODULES='^(root|heroku\.main|heroku\.__main__)$'
 # ещё один heartbeat, а не событие.
 LOUD_MESSAGES='^(Heroku |🪐)'
 
+# Живой поиск по клавише "/": подстрока (без регэкспов, без учёта регистра)
+# ищется по всей сырой строке записи, а не только по сообщению — так
+# находится и по имени модуля. Пусто — фильтр выключен, видно всё как обычно.
+FILTERTEXT=""
+
 # ─── состояние построчного разбора ────────────────────────────────────────
 RL_LEVEL="INFO"     # уровень последней разобранной записи
 RL_VISIBLE=1        # была ли она показана (продолжения идут за ней)
@@ -130,9 +135,17 @@ render_line() {
             ERROR|CRITICAL) RL_ERR=$(( RL_ERR + 1 )) ;;
         esac
 
+        local hide_debug=0 hide_filter=0
         if [ "$lvl" = DEBUG ] && [ "${SHOW_DEBUG:-0}" != 1 ] \
            && ! [[ "$mod" =~ $LOUD_MODULES ]] \
            && ! [[ "$msg" =~ $LOUD_MESSAGES ]]; then
+            hide_debug=1
+        fi
+        if [ -n "$FILTERTEXT" ]; then
+            local low="${raw,,}" lowf="${FILTERTEXT,,}"
+            [[ "$low" == *"$lowf"* ]] || hide_filter=1
+        fi
+        if (( hide_debug || hide_filter )); then
             RL_VISIBLE=0
             RL_PEND_TIME=""
             return

@@ -73,6 +73,19 @@ frame_fill() {   # $1 длина левого, $2 длина правого -> H
     hline "$fill"
 }
 
+# Взять самый длинный из вариантов текста, который ещё помещается в рамку
+# при данной длине левой части. Раньше frame_fill просто зажимал отступ до 1
+# и печатал текст как есть — на узком терминале правая часть не влезала,
+# терминал переносил её на следующую строку, и вся рамка расползалась.
+# Кандидаты передаются от самого подробного к самому короткому.
+fit_right() {   # $1 длина левого -> FIT_RIGHT
+    local leftlen="$1" c; shift
+    for c in "$@"; do
+        (( TERM_COLS - 8 - leftlen - ${#c} >= 1 )) && { FIT_RIGHT="$c"; return; }
+    done
+    FIT_RIGHT=""
+}
+
 draw_header() {
     (( STICKY )) && (( HEADER_H )) || return
     local plain col up
@@ -105,11 +118,17 @@ draw_footer() {
     plain+=" · ⚠ $RL_WARN ✗ $RL_ERR"
     col+=" ${D}·${R} ${YEL}⚠ $RL_WARN${R} ${RED}✗ $RL_ERR${R}"
 
-    if (( SHOW_DEBUG )); then
-        right="d — debug: виден · q — выход"
-    else
-        right="d — debug: скрыт · q — выход"
+    if [ -n "$FILTERTEXT" ]; then
+        plain+=" · /$FILTERTEXT"
+        col+=" ${D}·${R} ${MAG}/${FILTERTEXT}${R}"
     fi
+
+    local dbgstate="скрыт"; (( SHOW_DEBUG )) && dbgstate="виден"
+    fit_right "${#plain}" \
+        "/ — поиск · d — debug: $dbgstate · q — выход" \
+        "d — debug: $dbgstate · q — выход" \
+        "q — выход"
+    right="$FIT_RIGHT"
 
     frame_fill ${#plain} ${#right}
     tput sc
@@ -152,6 +171,7 @@ toggle_debug() {
 # нашей команде, об этом надо сказать вслух.
 TICK_PID=""
 BOT_WAS=""
+PREV_WARN=0; PREV_ERR=0
 tick() {
     TICK_PID=$(bot_pid)
     if [ -n "$TICK_PID" ]; then
@@ -161,6 +181,22 @@ tick() {
         [ "$BOT_WAS" = ok ] && notify critical "Heroku bot" "Процесс упал"
         BOT_WAS=dead
     fi
+
+    # Заголовок окна и звонок терминала — видно даже без фокуса на вьюере:
+    # большинство эмуляторов подсвечивают вкладку или иконку в доке по BEL.
+    # Звоним не на каждую строку, а только когда счётчик вырос с прошлого
+    # тика — иначе очередь из десятка warning за одну секунду устроила бы
+    # трель.
+    if (( INTERACTIVE )); then
+        if [ -n "$TICK_PID" ]; then
+            printf '\033]0;Heroku · ⚠ %s ✗ %s\007' "$RL_WARN" "$RL_ERR"
+        else
+            printf '\033]0;Heroku · не запущен\007'
+        fi
+        (( RL_WARN > PREV_WARN || RL_ERR > PREV_ERR )) && printf '\a'
+        PREV_WARN=$RL_WARN; PREV_ERR=$RL_ERR
+    fi
+
     draw_header
     draw_footer
 }
@@ -184,10 +220,13 @@ ring_push() {
     return 0
 }
 
-# Заполнить область лога заново из буфера. Через filter_visible, чтобы взять
-# ровно экран **видимых** строк: при скрытом DEBUG сырой хвост — почти сплошной
-# urllib3, и экран остался бы полупустым. Счётчики warning/error сохраняем:
-# строки проигрываются повторно, и без этого каждый ресайз их удваивал бы.
+# Заполнить область лога заново из буфера. Через filter_visible и, если
+# включён поиск, через grep — чтобы взять ровно экран **видимых** строк: при
+# скрытом DEBUG или активном фильтре сырой хвост может почти не содержать
+# подходящих строк, и без предварительного отбора "последние N" срезались бы
+# ещё до применения правил видимости, а экран оставался бы полупустым.
+# Счётчики warning/error сохраняем: строки проигрываются повторно, и без
+# этого каждая перерисовка удваивала бы их.
 repaint_log() {
     # На строку меньше, чем рядов в области: перевод строки после последней
     # записи прокрутил бы её на единицу и первая строка зря уехала бы вверх.
@@ -195,10 +234,30 @@ repaint_log() {
     (( avail < 1 )) && return
     (( ${#RING[@]} == 0 )) && return
     local w="$RL_WARN" e="$RL_ERR" l
-    while IFS= read -r l; do render_line "$l"; done < <(
-        printf '%s\n' "${RING[@]}" | filter_visible | tail -n "$avail"
-    )
+    if [ -n "$FILTERTEXT" ]; then
+        while IFS= read -r l; do render_line "$l"; done < <(
+            printf '%s\n' "${RING[@]}" | filter_visible | grep -iF -- "$FILTERTEXT" | tail -n "$avail"
+        )
+    else
+        while IFS= read -r l; do render_line "$l"; done < <(
+            printf '%s\n' "${RING[@]}" | filter_visible | tail -n "$avail"
+        )
+    fi
     RL_WARN="$w"; RL_ERR="$e"
+}
+
+# Полная пересборка экрана: используется и при ресайзе, и при смене фильтра —
+# оба случая меняют, что вообще должно быть видно на уже нарисованном экране,
+# и латать частями бессмысленнее, чем перерисовать заново из буфера.
+full_repaint() {
+    (( STICKY )) || return
+    tput csr 0 $(( TERM_ROWS - 1 ))   # снять прежнюю область до очистки
+    clear
+    set_scroll_region
+    tput cup "$HEADER_H" 0
+    repaint_log
+    draw_header
+    draw_footer
 }
 
 # Ресайз обрабатываем не в самом обработчике сигнала, а флагом. Обработчик
@@ -214,14 +273,24 @@ on_winch() { RESIZE_PENDING=1; }
 do_resize() {
     RESIZE_PENDING=0
     fit_geometry
+    full_repaint
+}
+
+# Клавиша "/": спросить подстроку и переключить живой поиск. Пустой ввод
+# снимает фильтр. Точка (.) добавлена как основной ключ вторым вариантом:
+# физически та же клавиша на "/", ЙЦУКЕН-раскладке печатает ".".
+enter_filter() {
     (( STICKY )) || return
-    tput csr 0 $(( TERM_ROWS - 1 ))   # снять прежнюю область до очистки
-    clear
-    set_scroll_region
-    tput cup "$HEADER_H" 0
-    repaint_log
-    draw_header
-    draw_footer
+    stty "$STTY_SAVE" 2>/dev/null   # временно вернуть обычный ввод с эхом
+    tput sc
+    tput cup $(( TERM_ROWS - 1 )) 0; tput el
+    printf '%s/ фильтр (Enter — применить, пусто — снять): %s' "$C_RULE" "$R"
+    local input
+    IFS= read -r input
+    stty -echo -icanon min 1 time 0 2>/dev/null
+    tput rc
+    FILTERTEXT="$input"
+    full_repaint
 }
 
 # Разделитель внутри потока ("последние записи", "живой поток"): подпись у
@@ -296,6 +365,7 @@ handle_line() {
 handle_key() {   # 1 — пора выходить
     case "$1" in
         d|D|в|В) toggle_debug ;;
+        /|.)     enter_filter ;;
         q|Q|й|Й) return 1 ;;
     esac
     return 0
