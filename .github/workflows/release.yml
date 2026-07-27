@@ -1,0 +1,57 @@
+name: Release
+
+# Релиз создаётся по тегу вида v1.2.3. Раньше объект релиза приходилось
+# делать руками через gh, которого может не быть под рукой, — и тег уезжал
+# на GitHub без описания и без собранного бинарника.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # версия берётся из git describe
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Проверки
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Сборка
+        run: |
+          make build
+          tar -czf hkc-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C bin hkc
+        env:
+          CGO_ENABLED: '0'
+
+      # Описание релиза — раздел CHANGELOG для этой версии. Один источник
+      # правды: то, что видит человек на странице релиза, и то, что лежит
+      # в репозитории, не могут разойтись.
+      - name: Выжимка из CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Раздел [$version] в CHANGELOG.md не найден." > release-notes.md
+          fi
+          cat release-notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: hkc-*-linux-amd64.tar.gz

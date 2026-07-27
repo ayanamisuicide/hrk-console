@@ -90,6 +90,12 @@ func (v *Viewer) renderSidebar(height int) string {
 		sectionTitle("ПРОБЛЕМЫ"),
 		theme.WarnBadge.Render(fmt.Sprintf("⚠ %-4d", v.warn)) + theme.ErrBadge.Render(fmt.Sprintf("✗ %d", v.err)),
 	}
+	// Включённые фильтры показываются рядом со счётчиками: иначе пустой
+	// экран при жёстком пороге читается как «лог замер», а не как «вы сами
+	// всё скрыли».
+	if lvl := levelLabel(v.minLevel); lvl != "" {
+		fixed = append(fixed, theme.WarnBadge.Render(pad("порог: "+lvl, inner)))
+	}
 	if v.filter != "" {
 		fixed = append(fixed, "", sectionTitle("ФИЛЬТР"), theme.SearchBar.Render(pad("/"+v.filter, inner)))
 	}

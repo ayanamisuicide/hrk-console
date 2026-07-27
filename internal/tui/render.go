@@ -257,8 +257,15 @@ func (v *Viewer) renderFooter() string {
 	// не поместятся: на узком окне лучше показать "q выход", чем поломать
 	// рамку переносом. Полный список живёт за "?", поэтому здесь достаточно
 	// напомнить о нём и о самом частом.
+	// Порог показа попадает в подсказки только когда включён: постоянная
+	// надпись "порог: всё" занимала бы место, не сообщая ничего.
+	lvl := ""
+	if l := levelLabel(v.minLevel); l != "" {
+		lvl = "порог: " + l + " · "
+	}
 	hints := []string{
-		"debug: " + debugState(v.showDebug) + " · ? справка · q выход",
+		lvl + "debug: " + debugState(v.showDebug) + " · ? справка · q выход",
+		lvl + "? справка · q выход",
 		"? справка · q выход",
 		"q выход",
 		"",
@@ -283,6 +290,9 @@ func (v *Viewer) renderHelp() string {
 	rows := [][2]string{
 		{"d", "показать или скрыть DEBUG"},
 		{"s", "показать или скрыть панель статистики"},
+		{"w", "порог показа: всё → warning → error"},
+		{"m", "выбрать модуль из панели и отфильтровать"},
+		{"r  R", "к следующему / предыдущему перезапуску"},
 		{"/", "поиск по подстроке, пустой ввод снимает"},
 		{"n  N", "к следующей / предыдущей проблеме (warning и выше)"},
 		{"↑ ↓  j k", "прокрутка на строку"},
@@ -329,4 +339,59 @@ func orDash(s string) string {
 		return "?"
 	}
 	return s
+}
+
+// renderModPick — список модулей поверх лога. Порядок и цифры те же, что в
+// панели: выбирают глазами там, а нажимают здесь, и расхождение между двумя
+// списками читалось бы как ошибка.
+func (v *Viewer) renderModPick() string {
+	mods := v.scr.moduleStats()
+	if len(mods) > sidebarMaxModules {
+		mods = mods[:sidebarMaxModules]
+	}
+
+	nameW := 0
+	for _, m := range mods {
+		if w := lipgloss.Width(m.name); w > nameW {
+			nameW = w
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("  Модуль") + "\n\n")
+	for i, m := range mods {
+		marker := "  "
+		nameStyle := lipgloss.NewStyle().Foreground(moduleColor(m.name))
+		if i == v.modCursor {
+			marker = theme.Title.Render("▸ ")
+			nameStyle = nameStyle.Bold(true)
+		}
+		counts := theme.Meta.Render(fmt.Sprintf("%4d", m.count))
+		if m.err > 0 {
+			counts += theme.ErrBadge.Render(fmt.Sprintf("  ✗ %d", m.err))
+		} else if m.warn > 0 {
+			counts += theme.WarnBadge.Render(fmt.Sprintf("  ⚠ %d", m.warn))
+		}
+		b.WriteString("  " + marker + nameStyle.Render(pad(m.name, nameW)) + counts + "\n")
+	}
+	b.WriteString("\n" + theme.Faint.Render("  Enter — отфильтровать · Esc — отмена"))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Mauve).
+		Padding(1, 2).
+		Render(b.String())
+	return lipgloss.Place(v.width, v.vp.Height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// levelLabel — как подписан текущий порог показа.
+func levelLabel(l logfeed.Level) string {
+	switch l {
+	case logfeed.LevelWarning:
+		return "warning+"
+	case logfeed.LevelError:
+		return "error+"
+	default:
+		return ""
+	}
 }

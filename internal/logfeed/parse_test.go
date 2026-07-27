@@ -71,15 +71,15 @@ func TestVisibleDebugRules(t *testing.T) {
 	}
 
 	noise := feed("2026-07-27 00:12:03 [DEBUG] urllib3.connectionpool: GET /v1/me/player 204")
-	if Visible(noise, false, "") {
+	if Visible(noise, false, "", LevelDebug) {
 		t.Error("шум urllib3 не должен быть виден при скрытом DEBUG")
 	}
-	if !Visible(noise, true, "") {
+	if !Visible(noise, true, "", LevelDebug) {
 		t.Error("при показанном DEBUG шум должен быть виден")
 	}
 
 	root := feed("2026-07-27 00:12:10 [DEBUG] root: Got DB")
-	if !Visible(root, false, "") {
+	if !Visible(root, false, "", LevelDebug) {
 		t.Error("голос бота (root) должен быть виден даже при скрытом DEBUG")
 	}
 
@@ -87,12 +87,12 @@ func TestVisibleDebugRules(t *testing.T) {
 	// печатает по две строки на каждый из полусотни модулей — это ровно тот
 	// шум, ради скрытия которого прячут DEBUG.
 	loader := feed("2026-07-27 00:12:11 [DEBUG] heroku.loader: Loading heroku.modules.eval from filesystem")
-	if Visible(loader, false, "") {
+	if Visible(loader, false, "", LevelDebug) {
 		t.Error("heroku.loader на уровне DEBUG не должен быть виден при скрытом DEBUG")
 	}
 
 	warn := feed("2026-07-27 00:13:04 [WARNING] heroku.modules.spotify: retry")
-	if !Visible(warn, false, "") {
+	if !Visible(warn, false, "", LevelDebug) {
 		t.Error("WARNING виден всегда")
 	}
 }
@@ -101,19 +101,19 @@ func TestVisibleFilter(t *testing.T) {
 	p := NewParser()
 	rec, _ := p.Feed("2026-07-27 00:13:04 [WARNING] heroku.modules.spotify: Token refresh")
 
-	if !Visible(rec, false, "spotify") {
+	if !Visible(rec, false, "spotify", LevelDebug) {
 		t.Error("фильтр должен находить по имени модуля")
 	}
-	if !Visible(rec, false, "TOKEN") {
+	if !Visible(rec, false, "TOKEN", LevelDebug) {
 		t.Error("фильтр должен быть нечувствителен к регистру")
 	}
-	if !Visible(rec, false, "refresh") {
+	if !Visible(rec, false, "refresh", LevelDebug) {
 		t.Error("фильтр должен находить по тексту сообщения")
 	}
-	if Visible(rec, false, "urllib3") {
+	if Visible(rec, false, "urllib3", LevelDebug) {
 		t.Error("несовпадающий фильтр должен скрывать запись")
 	}
-	if !Visible(rec, false, "") {
+	if !Visible(rec, false, "", LevelDebug) {
 		t.Error("пустой фильтр показывает всё")
 	}
 }
@@ -172,5 +172,42 @@ func TestSameEntryNeverMergesContinuations(t *testing.T) {
 	}
 	if SameEntry(a, b) {
 		t.Error("продолжения не должны схлопываться")
+	}
+}
+
+// minLevel — отдельная от DEBUG ручка: "оставить только проблемы". Нулевое
+// значение (LevelDebug) не должно отсекать ничего, иначе фильтр включался
+// бы сам собой у любого, кто не задал его явно.
+func TestVisibleMinLevel(t *testing.T) {
+	p := NewParser()
+	info, _ := p.Feed("2026-07-27 00:12:01 [INFO] root: обычная жизнь")
+	warn, _ := p.Feed("2026-07-27 00:12:02 [WARNING] spotify: медленно")
+	errRec, _ := p.Feed("2026-07-27 00:12:03 [ERROR] tl_cache: не нашёл")
+
+	for _, rec := range []*Record{info, warn, errRec} {
+		if !Visible(rec, true, "", LevelDebug) {
+			t.Errorf("нулевая граница не должна ничего отсекать, скрылась %v", rec.Level)
+		}
+	}
+	if Visible(info, true, "", LevelWarning) {
+		t.Error("на границе WARNING запись INFO должна скрываться")
+	}
+	if !Visible(warn, true, "", LevelWarning) {
+		t.Error("на границе WARNING сам warning должен остаться")
+	}
+	if Visible(warn, true, "", LevelError) {
+		t.Error("на границе ERROR warning должен скрываться")
+	}
+	if !Visible(errRec, true, "", LevelError) {
+		t.Error("на границе ERROR ошибка должна остаться")
+	}
+}
+
+// Уровни идут по возрастанию важности — на этом стоит и фильтр по уровню,
+// и признак «проблемная запись» (>= LevelWarning) во вьюере.
+func TestLevelOrder(t *testing.T) {
+	if !(LevelDebug < LevelInfo && LevelInfo < LevelWarning &&
+		LevelWarning < LevelError && LevelError < LevelCritical) {
+		t.Error("порядок уровней нарушен")
 	}
 }

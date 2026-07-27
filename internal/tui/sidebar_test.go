@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+
+	"heroku-console/internal/logfeed"
 )
 
 func testViewer(w, h int) *Viewer {
@@ -135,5 +137,21 @@ func TestBarProportions(t *testing.T) {
 	// Значение больше пика не должно вылезать за отведённые ячейки.
 	if got := bar(99, 10, 5); lipgloss.Width(got) > 5 {
 		t.Errorf("переполнение: got %q (%d ячеек)", got, lipgloss.Width(got))
+	}
+}
+
+// Включённый порог показа должен быть виден: пустой экран иначе читается
+// как «лог замер», хотя записи скрыл сам пользователь.
+func TestSidebarShowsLevelThreshold(t *testing.T) {
+	v := testViewer(104, 24)
+	if strings.Contains(v.renderSidebar(v.vp.Height), "порог") {
+		t.Error("без порога подписи быть не должно")
+	}
+	v.minLevel = logfeed.LevelWarning
+	if !strings.Contains(v.renderSidebar(v.vp.Height), "порог: warning+") {
+		t.Error("включённый порог не показан в панели")
+	}
+	if !strings.Contains(v.renderFooter(), "порог: warning+") {
+		t.Error("включённый порог не показан в подвале")
 	}
 }

@@ -11,9 +11,13 @@ import (
 // Level — уровень записи лога.
 type Level int
 
+// Порядок значим: уровни идут по возрастанию важности, и сравнение
+// уровней — это сравнение важности. Отсюда же берётся "нижняя граница
+// показа" в Visible, у которой нулевое значение (LevelDebug) означает
+// "показывать всё".
 const (
-	LevelInfo Level = iota
-	LevelDebug
+	LevelDebug Level = iota
+	LevelInfo
 	LevelWarning
 	LevelError
 	LevelCritical
@@ -183,7 +187,14 @@ func (p *Parser) Feed(raw string) (rec *Record, complete bool) {
 }
 
 // Visible решает, должна ли запись показываться при текущих правилах.
-func Visible(rec *Record, showDebug bool, filter string) bool {
+//
+// minLevel отсекает всё тише заданного уровня — это отдельная от showDebug
+// ручка: showDebug отвечает на "показывать ли шум", minLevel — на "оставить
+// только проблемы". LevelDebug (нулевое значение) не отсекает ничего.
+func Visible(rec *Record, showDebug bool, filter string, minLevel Level) bool {
+	if rec.Level < minLevel {
+		return false
+	}
 	if rec.Level == LevelDebug && !showDebug {
 		if !loudModules.MatchString(rec.fullModule) && !(len(rec.Lines) > 0 && loudMessages.MatchString(rec.Lines[0])) {
 			return false

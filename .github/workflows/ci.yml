@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      # Форматирование проверяется отдельным шагом, а не глазами в ревью:
+      # дрейф уже случался — семь файлов копились неотформатированными.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "не отформатировано:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # -count=1 отключает кэш: прогон в CI должен быть настоящим, иначе
+      # зелёная галочка не означает ничего.
+      - name: go test
+        run: go test -count=1 -race ./...
+
+      - name: build
+        run: make build

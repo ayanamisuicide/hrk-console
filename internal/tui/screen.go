@@ -30,6 +30,7 @@ type screenBlock struct {
 	text    string
 	lines   int
 	problem bool
+	banner  bool
 	zebra   bool
 	// rec — запись, из которой блок отрисован. nil у служебных вставок:
 	// с баннером ничего не схлопывается, и он же разрывает серию повторов.
@@ -73,7 +74,22 @@ func (s *screen) add(rec *logfeed.Record) (merged bool) {
 
 // addRaw вставляет готовый текст (баннер перезапуска) отдельным блоком.
 func (s *screen) addRaw(text string) {
-	s.blocks = append(s.blocks, screenBlock{text: text, lines: countLines(text)})
+	s.blocks = append(s.blocks, screenBlock{text: text, lines: countLines(text), banner: true})
+}
+
+// bannerLines — строки, с которых начинаются баннеры перезапуска. По ним
+// прыгают r/R: «что было сразу после последнего рестарта» — второй по
+// частоте вопрос к логу после «где ошибка».
+func (s *screen) bannerLines() []int {
+	var out []int
+	line := 0
+	for _, b := range s.blocks {
+		if b.banner {
+			out = append(out, line)
+		}
+		line += b.lines
+	}
+	return out
 }
 
 // trimTo оставляет последние n записей. Применяется к загруженной истории:

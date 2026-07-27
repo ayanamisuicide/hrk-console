@@ -49,6 +49,9 @@ type Viewer struct {
 	ring      []ringLine
 	showDebug bool
 	filter    string
+	// minLevel — нижняя граница показываемых уровней. Отдельная ручка от
+	// showDebug: одна отвечает за шум, другая — за "оставь только проблемы".
+	minLevel logfeed.Level
 
 	warn, err         int
 	prevWarn, prevErr int
@@ -66,6 +69,11 @@ type Viewer struct {
 
 	showHelp    bool
 	showSidebar bool
+
+	// modPick — открыт список модулей для фильтрации. Модальный, как и
+	// справка: пока он на экране, клавиши принадлежат ему.
+	modPick   bool
+	modCursor int
 
 	botPID   int
 	uptime   string
@@ -218,6 +226,10 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return v, nil
 	}
 
+	if v.modPick {
+		return v.handleModPick(msg)
+	}
+
 	// Справка перекрывает экран — любая клавиша её закрывает, иначе
 	// пришлось бы помнить ещё и как из неё выйти.
 	if v.showHelp {
@@ -238,6 +250,30 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		v.jumpProblem(1)
 	case "N":
 		v.jumpProblem(-1)
+	case "r":
+		v.jumpRestart(1)
+	case "R":
+		v.jumpRestart(-1)
+	case "w":
+		// Порог показа по кругу: всё → warning и выше → error и выше.
+		// Одна клавиша вместо ввода фильтра: "покажи только плохое" —
+		// самый частый запрос к логу, и он не должен требовать печати.
+		switch v.minLevel {
+		case logfeed.LevelWarning:
+			v.minLevel = logfeed.LevelError
+		case logfeed.LevelError:
+			v.minLevel = logfeed.LevelDebug
+		default:
+			v.minLevel = logfeed.LevelWarning
+		}
+		v.rebuildFromRing()
+	case "m":
+		// Выбор модуля: список берётся из панели, то есть из того, что
+		// реально есть на экране, а не из захардкоженного перечня.
+		if mods := v.scr.moduleStats(); len(mods) > 0 {
+			v.modPick = true
+			v.modCursor = 0
+		}
 	case "d":
 		v.showDebug = !v.showDebug
 		v.rebuildFromRing()
@@ -296,7 +332,7 @@ func (v *Viewer) feedLine(raw string) {
 	w, e := v.parser.Counts()
 	v.warn, v.err = w, e
 
-	if logfeed.Visible(rec, v.showDebug, v.filter) {
+	if logfeed.Visible(rec, v.showDebug, v.filter, v.minLevel) {
 		v.scr.add(rec)
 		v.pushContent()
 	}
@@ -304,8 +340,13 @@ func (v *Viewer) feedLine(raw string) {
 
 // jumpProblem перематывает к следующей (dir=+1) или предыдущей (dir=-1)
 // записи уровня WARNING и выше относительно текущей позиции.
-func (v *Viewer) jumpProblem(dir int) {
-	problems := v.scr.problemLines()
+func (v *Viewer) jumpProblem(dir int) { v.jumpTo(v.scr.problemLines(), dir) }
+
+// jumpRestart прыгает по баннерам перезапуска.
+func (v *Viewer) jumpRestart(dir int) { v.jumpTo(v.scr.bannerLines(), dir) }
+
+// jumpTo перематывает к ближайшей позиции из lines в направлении dir.
+func (v *Viewer) jumpTo(problems []int, dir int) {
 	if len(problems) == 0 {
 		return
 	}
@@ -385,7 +426,7 @@ func (v *Viewer) rebuildFromRing() {
 		if !complete {
 			continue
 		}
-		if logfeed.Visible(rec, v.showDebug, v.filter) {
+		if logfeed.Visible(rec, v.showDebug, v.filter, v.minLevel) {
 			v.scr.add(rec)
 		}
 	}
@@ -418,7 +459,7 @@ func (v *Viewer) loadHistory() {
 		if !complete {
 			continue
 		}
-		if logfeed.Visible(rec, v.showDebug, "") {
+		if logfeed.Visible(rec, v.showDebug, "", v.minLevel) {
 			v.scr.add(rec)
 		}
 	}
@@ -489,6 +530,9 @@ func (v *Viewer) View() string {
 	if v.showHelp {
 		body = v.renderHelp()
 	}
+	if v.modPick {
+		body = v.renderModPick()
+	}
 	return v.renderHeader() + "\n" + body + "\n" + v.renderFooter()
 }
 
@@ -503,4 +547,30 @@ func humanSince(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%d ч %d м", int(d.Hours()), int(d.Minutes())%60)
 	}
+}
+
+// handleModPick — клавиши списка модулей. Выбор ставит имя модуля обычным
+// фильтром: отдельного «режима модуля» нет, поэтому снимается он тем же
+// пустым Enter в поиске, что и любой другой фильтр, и объяснять две разные
+// механики не нужно.
+func (v *Viewer) handleModPick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	mods := v.scr.moduleStats()
+	if len(mods) > sidebarMaxModules {
+		mods = mods[:sidebarMaxModules]
+	}
+	switch msg.String() {
+	case "esc", "q", "m":
+		v.modPick = false
+	case "up", "k":
+		v.modCursor = (v.modCursor - 1 + len(mods)) % len(mods)
+	case "down", "j":
+		v.modCursor = (v.modCursor + 1) % len(mods)
+	case "enter":
+		if v.modCursor < len(mods) {
+			v.filter = mods[v.modCursor].name
+			v.rebuildFromRing()
+		}
+		v.modPick = false
+	}
+	return v, nil
 }

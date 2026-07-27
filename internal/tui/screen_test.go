@@ -148,3 +148,27 @@ func TestScreenZebraAlternatesAcrossTrim(t *testing.T) {
 		t.Error("после обрезки зебра должна продолжить чередование")
 	}
 }
+
+// Баннеры перезапуска должны быть находимы отдельно от проблем: r/R прыгают
+// по ним, и позиции считаются по тем же блокам, что и всё остальное.
+func TestScreenBannerLines(t *testing.T) {
+	var s screen
+	s.reset(100)
+	feed(&s, "2026-07-27 00:12:01 [INFO] root: до")
+	s.addRaw("⟳ ПЕРЕЗАПУСК")
+	feed(&s, "2026-07-27 00:12:02 [INFO] root: после")
+
+	lines := s.bannerLines()
+	if len(lines) != 1 {
+		t.Fatalf("баннеров: got %d, want 1", len(lines))
+	}
+	if lines[0] != 1 {
+		t.Errorf("позиция баннера: got %d, want 1", lines[0])
+	}
+	// Баннер не запись — в статистику модулей он попадать не должен.
+	for _, m := range s.moduleStats() {
+		if m.name == "" {
+			t.Error("баннер просочился в статистику модулей")
+		}
+	}
+}

@@ -167,7 +167,7 @@ func maxInt(a, b int) int {
 // ForLevel возвращает стиль для уровня 0..4 (logfeed.Level).
 func ForLevel(level int) LevelStyle {
 	switch level {
-	case 1:
+	case 0:
 		return styleDebug
 	case 2:
 		return styleWarn
