@@ -106,7 +106,10 @@ func startTime(pid int) (time.Time, error) {
 	// Имя процесса в скобках может содержать пробелы и закрывающие скобки —
 	// поля начинаются после последней ")".
 	i := bytes.LastIndexByte(statData, ')')
-	if i < 0 {
+	// i+2 — пропуск ")" и пробела за ним. Процесс мог умереть между чтениями,
+	// и файл прочитается обрезанным: без проверки срез уходит за границу и
+	// роняет весь интерфейс паникой раз в секунду.
+	if i < 0 || i+2 > len(statData) {
 		return time.Time{}, fmt.Errorf("некорректный /proc/%d/stat", pid)
 	}
 	fields := strings.Fields(string(statData[i+2:]))
@@ -124,6 +127,9 @@ func startTime(pid int) (time.Time, error) {
 		return time.Time{}, err
 	}
 	uptimeFields := strings.Fields(string(uptimeData))
+	if len(uptimeFields) == 0 {
+		return time.Time{}, fmt.Errorf("пустой /proc/uptime")
+	}
 	sysUptime, err := strconv.ParseFloat(uptimeFields[0], 64)
 	if err != nil {
 		return time.Time{}, err
@@ -208,6 +214,13 @@ func (m *Manager) Start() StartResult {
 		return StartResult{AlreadyStarting: true}
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	// Проверка живости именно здесь, под локом: вызывающий проверял её до
+	// захвата, и два окна, стартовавшие одновременно, успевали поднять двух
+	// ботов — лок лишь выстраивал их в очередь, а не отменял второй запуск.
+	if pid := PID(); pid != 0 {
+		return StartResult{PID: pid}
+	}
 
 	if _, err := os.Stat(filepath.Join(m.HerokuDir, "venv", "bin", "activate")); err != nil {
 		return StartResult{Err: fmt.Errorf("venv не найден: %w", err)}

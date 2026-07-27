@@ -6,6 +6,17 @@ import (
 	"os/exec"
 )
 
+// start запускает окно и снимает с себя обязанность его хоронить: консоль
+// живёт часами, а незавершённый Wait оставлял бы процесс эмулятора зомби на
+// всё это время.
+func start(cmd *exec.Cmd) bool {
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	go func() { _ = cmd.Wait() }()
+	return true
+}
+
 // Open запускает cmd (уже полная команда с аргументами) в новом окне
 // терминала — что найдётся первым из ghostty/kitty/alacritty. Возвращает
 // false, если ни один эмулятор не найден.
@@ -18,7 +29,7 @@ func Open(title, bg string, cmd []string) bool {
 			"--window-width=104", "--window-height=34",
 			"-e",
 		}, cmd...)
-		return exec.Command("ghostty", args...).Start() == nil
+		return start(exec.Command("ghostty", args...))
 	}
 	if _, err := exec.LookPath("kitty"); err == nil {
 		args := append([]string{
@@ -28,11 +39,11 @@ func Open(title, bg string, cmd []string) bool {
 			"-o", "remember_window_size=no",
 			"-o", "initial_window_width=104c", "-o", "initial_window_height=34c",
 		}, cmd...)
-		return exec.Command("kitty", args...).Start() == nil
+		return start(exec.Command("kitty", args...))
 	}
 	if _, err := exec.LookPath("alacritty"); err == nil {
 		args := append([]string{"--title", title, "-e"}, cmd...)
-		return exec.Command("alacritty", args...).Start() == nil
+		return start(exec.Command("alacritty", args...))
 	}
 	return false
 }

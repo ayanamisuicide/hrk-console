@@ -22,6 +22,7 @@ type Preflight struct {
 	frame   int // кадр анимации спиннера
 	done    bool
 	Failed  bool // хоть одна проверка не прошла — вызывающий решает, что делать
+	Aborted bool // прервано пользователем: выходим, а не идём дальше в меню
 	// hold удерживает экран после завершения: при успехе коротко, чтобы
 	// глаз успел увидеть результат, при провале — до нажатия клавиши.
 	holdUntil time.Time
@@ -131,7 +132,7 @@ func (p *Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, tea.Quit
 		}
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
-			p.Failed = true
+			p.Aborted = true
 			return p, tea.Quit
 		}
 	}

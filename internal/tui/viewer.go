@@ -72,8 +72,13 @@ type Viewer struct {
 
 	// modPick — открыт список модулей для фильтрации. Модальный, как и
 	// справка: пока он на экране, клавиши принадлежат ему.
+	//
+	// modList — снимок списка на момент открытия, а не живая статистика:
+	// лог продолжает идти, и пересчёт на каждое нажатие переставлял бы
+	// строки под курсором — Enter выбирал бы не то, что видно на экране.
 	modPick   bool
 	modCursor int
+	modList   []modStat
 
 	botPID   int
 	uptime   string
@@ -271,6 +276,10 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Выбор модуля: список берётся из панели, то есть из того, что
 		// реально есть на экране, а не из захардкоженного перечня.
 		if mods := v.scr.moduleStats(); len(mods) > 0 {
+			if len(mods) > sidebarMaxModules {
+				mods = mods[:sidebarMaxModules]
+			}
+			v.modList = mods
 			v.modPick = true
 			v.modCursor = 0
 		}
@@ -554,9 +563,10 @@ func humanSince(d time.Duration) string {
 // пустым Enter в поиске, что и любой другой фильтр, и объяснять две разные
 // механики не нужно.
 func (v *Viewer) handleModPick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	mods := v.scr.moduleStats()
-	if len(mods) > sidebarMaxModules {
-		mods = mods[:sidebarMaxModules]
+	mods := v.modList
+	if len(mods) == 0 {
+		v.modPick = false
+		return v, nil
 	}
 	switch msg.String() {
 	case "esc", "q", "m":
