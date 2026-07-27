@@ -76,27 +76,36 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// cardWidth — внутренняя ширина карточки. Фиксированная, а не по окну:
+// меню из четырёх строк, растянутое на 200 колонок, читается хуже — глаз
+// проходит всю ширину экрана ради одного слова.
+const cardWidth = 46
+
 func (m *Menu) View() string {
 	if m.done {
 		return ""
 	}
-	width := m.width
+	width, height := m.width, m.height
 	if width < 40 {
 		width = 72
 	}
-
-	var status string
-	if m.botPID != 0 {
-		status = theme.StatusLive.Render("● запущен") +
-			theme.Meta.Render(fmt.Sprintf("  pid %d  ·  %s", m.botPID, m.uptime))
-	} else {
-		status = theme.StatusDown.Render("○ не запущен")
+	if height < 10 {
+		height = 24
 	}
 
 	var b strings.Builder
-	b.WriteString(frameLine(theme.Title.Render("HEROKU"), status, width, "╭", "╮", false))
+
+	// ─── шапка над карточкой ───
+	b.WriteString(theme.Title.Render("HEROKU") + "\n")
+	if m.botPID != 0 {
+		b.WriteString(theme.StatusLive.Render("● запущен") +
+			theme.Meta.Render(fmt.Sprintf("   pid %d   ·   %s", m.botPID, m.uptime)))
+	} else {
+		b.WriteString(theme.StatusDown.Render("○ не запущен"))
+	}
 	b.WriteString("\n\n")
 
+	// ─── карточка с действиями ───
 	// Ширина колонки заголовка считается по самому длинному пункту, а не
 	// задаётся числом: иначе при правке текста колонка описаний разъезжается.
 	titleW := 0
@@ -106,45 +115,47 @@ func (m *Menu) View() string {
 		}
 	}
 
+	var card strings.Builder
 	for i, it := range menuItems {
-		num := fmt.Sprintf("%d", i+1)
 		selected := i == m.cursor
 
-		marker := "  "
+		marker, numStyle, titleStyle := "  ", theme.Faint, lipgloss.NewStyle().Foreground(theme.Text)
+		descStyle := theme.ItemDesc
 		if selected {
 			marker = theme.Title.Render("▸ ")
-		}
-		numStyle := theme.Faint
-		titleStyle := lipgloss.NewStyle().Foreground(theme.Text)
-		if selected {
 			numStyle = lipgloss.NewStyle().Foreground(theme.Mauve).Bold(true)
 			titleStyle = lipgloss.NewStyle().Foreground(theme.Text).Bold(true)
 		}
 
-		row := "  " + marker + numStyle.Render(num) + "  " +
+		row := marker + numStyle.Render(fmt.Sprintf("%d", i+1)) + "  " +
 			titleStyle.Render(pad(it.title, titleW)) + "   " +
-			theme.ItemDesc.Render(it.desc)
+			descStyle.Render(it.desc)
 
+		if gap := cardWidth - lipgloss.Width(row); gap > 0 {
+			row += strings.Repeat(" ", gap)
+		}
 		if selected {
-			// заливка тянется во всю ширину, иначе полоса обрывается по концу
-			// текста и читается как случайный артефакт, а не как выделение
-			if gap := width - lipgloss.Width(row); gap > 0 {
-				row += strings.Repeat(" ", gap)
-			}
+			// Заливка тянется во всю ширину карточки: оборванная по концу
+			// текста полоса читается как артефакт, а не как выделение.
 			row = lipgloss.NewStyle().Background(lipgloss.Color("237")).Render(row)
 		}
-		b.WriteString(row + "\n")
+		card.WriteString(row)
+		if i < len(menuItems)-1 {
+			card.WriteString("\n")
+		}
 	}
 
-	// Подвал прижимаем к низу окна, чтобы меню не висело в воздухе посреди
-	// пустого экрана.
-	used := 1 + 1 + len(menuItems) + 1
-	if gap := m.height - used - 1; gap > 0 {
-		b.WriteString(strings.Repeat("\n", gap))
-	} else {
-		b.WriteString("\n")
-	}
-	hints := theme.Meta.Render("↑↓ выбор · Enter запуск · 1-4 сразу · q выход")
-	b.WriteString(frameLine("", hints, width, "╰", "╯", true))
-	return b.String()
+	b.WriteString(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Overlay).
+		Padding(1, 2).
+		Render(card.String()))
+	b.WriteString("\n\n")
+	b.WriteString(theme.Faint.Render("↑↓ выбор  ·  Enter запуск  ·  1–4 сразу  ·  q выход"))
+
+	// Карточка ставится по центру экрана целиком, вместе с шапкой и
+	// подсказками: центрируется композиция, а не каждый кусок по отдельности,
+	// иначе при изменении размера окна они разъезжаются друг относительно друга.
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
+		lipgloss.NewStyle().Align(lipgloss.Center).Render(b.String()))
 }

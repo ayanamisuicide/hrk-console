@@ -25,10 +25,22 @@ type Preflight struct {
 	// hold удерживает экран после завершения: при успехе коротко, чтобы
 	// глаз успел увидеть результат, при провале — до нажатия клавиши.
 	holdUntil time.Time
+	started   time.Time
+
+	// progress — заполнение прогресс-бара, догоняющее реальное число готовых
+	// проверок. Отдельное поле, потому что проверки завершаются рывками
+	// (шесть мгновенных и одна на секунду), а полоса, скачущая рывками,
+	// читается как подвисание интерфейса.
+	progress float64
 }
 
+// Сколько минимум держится каждая проверка на экране. Проверки окружения
+// отрабатывают за доли миллисекунды, и без выдержки весь список успевал
+// смениться внутри одного кадра — смотреть было не на что.
+const minCheckDwell = 260 * time.Millisecond
+
 func NewPreflight(herokuDir, logFile string) *Preflight {
-	return &Preflight{checks: preflight.All(herokuDir, logFile)}
+	return &Preflight{checks: preflight.All(herokuDir, logFile), started: time.Now()}
 }
 
 type checkDoneMsg struct {
@@ -40,7 +52,9 @@ type checkDoneMsg struct {
 type frameMsg time.Time
 type holdOverMsg struct{}
 
-const spinnerFPS = 12
+// Частота кадров: полоса догоняет цель по экспоненте, и на 12 кадрах
+// движение получалось ступенчатым — видно отдельные кадры, а не движение.
+const spinnerFPS = 24
 
 func frameCmd() tea.Cmd {
 	return tea.Tick(time.Second/spinnerFPS, func(t time.Time) tea.Msg { return frameMsg(t) })
@@ -48,11 +62,19 @@ func frameCmd() tea.Cmd {
 
 // runCheck выполняет проверку в фоне, чтобы анимация не замирала: go test
 // занимает секунды, и без этого спиннер стоял бы колом всё это время.
+//
+// Быстрая проверка додерживается до minCheckDwell — прогон должен читаться
+// как последовательность шагов, а не как список, моргнувший целиком. Время в
+// отчёте при этом настоящее, замеряется до выдержки.
 func (p *Preflight) runCheck(i int) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		detail, status := p.checks[i].Run()
-		return checkDoneMsg{i, detail, status, time.Since(start)}
+		took := time.Since(start)
+		if rest := minCheckDwell - took; rest > 0 {
+			time.Sleep(rest)
+		}
+		return checkDoneMsg{i, detail, status, took}
 	}
 }
 
@@ -72,6 +94,11 @@ func (p *Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case frameMsg:
 		p.frame++
+		// Полоса догоняет цель по экспоненте: быстро трогается с места и
+		// мягко останавливается. Линейное движение к цели, которая скачет
+		// рывками, выглядит дёрганым.
+		target := float64(p.doneCount()) / float64(len(p.checks))
+		p.progress += (target - p.progress) * 0.12
 		if p.done && time.Now().After(p.holdUntil) && !p.Failed {
 			return p, tea.Quit
 		}
@@ -91,7 +118,10 @@ func (p *Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, p.runCheck(next)
 		}
 		p.done = true
-		p.holdUntil = time.Now().Add(700 * time.Millisecond)
+		// Полосе нужно доехать до конца, и итог надо успеть прочитать —
+		// прежние 700 мс уходили целиком на анимацию полосы, а "всё готово"
+		// смахивалось раньше, чем взгляд до него доходил.
+		p.holdUntil = time.Now().Add(1600 * time.Millisecond)
 		return p, nil
 
 	case tea.KeyMsg:
@@ -163,20 +193,52 @@ func (p *Preflight) View() string {
 	}
 
 	b.WriteString("\n")
+	// Полоса на месте при любом состоянии: она же показывает, что прогон
+	// закончен целиком. Исчезающий в финале индикатор оставлял бы вопрос,
+	// доехал он или экран сменился раньше времени.
+	barW := minInt(maxInt(width-24, 16), 40)
+	b.WriteString("  " + progressBar(p.progress, barW) +
+		theme.Faint.Render(fmt.Sprintf("  %d/%d", p.doneCount(), len(p.checks))) +
+		theme.Faint.Render("  ·  "+fmtDuration(time.Since(p.started))) + "\n\n")
+
 	switch {
 	case !p.done:
-		total, done := len(p.checks), p.current
-		b.WriteString("  " + theme.Meta.Render(progressBar(done, total, 28)) +
-			theme.Faint.Render(fmt.Sprintf("  %d/%d", done, total)) + "\n")
+		name := ""
+		if p.current < len(p.checks) {
+			name = p.checks[p.current].Name
+		}
+		b.WriteString("  " + theme.Meta.Render(name+"…") + "\n")
 	case p.Failed:
 		b.WriteString("  " + lipgloss.NewStyle().Foreground(theme.Red).Bold(true).
 			Render("не всё в порядке") +
 			theme.Faint.Render("  ·  любая клавиша — продолжить всё равно") + "\n")
 	default:
 		b.WriteString("  " + lipgloss.NewStyle().Foreground(theme.Green).Bold(true).
-			Render("всё готово") + "\n")
+			Render("всё готово") +
+			theme.Faint.Render("  ·  любая клавиша — не ждать") + "\n")
 	}
 	return b.String()
+}
+
+// doneCount — сколько проверок уже отработало.
+func (p *Preflight) doneCount() int {
+	n := 0
+	for i := range p.checks {
+		switch p.checks[i].Status {
+		case preflight.Passed, preflight.Failed, preflight.Skipped:
+			n++
+		}
+	}
+	return n
+}
+
+// fmtDuration — секунды с одним знаком: на глаз читается лучше, чем
+// "1.4372s" из стандартного форматирования.
+func fmtDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%d мс", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f с", d.Seconds())
 }
 
 // clipLeft укорачивает пояснение до limit ячеек, срезая начало и подставляя
@@ -196,15 +258,37 @@ func clipLeft(plain, styled string, limit int) string {
 	return theme.Faint.Render("…" + string(runes))
 }
 
-// progressBar — заполнение блочными символами; тот же визуальный язык, что
-// у sparkline в шапке вьюера.
-func progressBar(done, total, width int) string {
-	if total == 0 {
+// progressBar рисует полосу заполнения frac (0..1) шириной width ячеек.
+//
+// Дробная часть дорисовывается частичным блоком, поэтому полоса движется
+// плавно, а не прыжками по целой ячейке: на 28 ячейках и семи проверках
+// целочисленный шаг был бы в четыре ячейки — это уже не движение, а мигание.
+// Цвет заполненной части — тот же градиент, что у рамок вьюера, так что
+// экран проверок читается как часть того же приложения.
+func progressBar(frac float64, width int) string {
+	if width <= 0 {
 		return ""
 	}
-	filled := done * width / total
-	return lipgloss.NewStyle().Foreground(theme.Mauve).Render(strings.Repeat("━", filled)) +
-		theme.Faint.Render(strings.Repeat("━", maxInt(0, width-filled)))
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	eighths := int(frac * float64(width) * 8)
+	full := eighths / 8
+	rest := eighths % 8
+
+	var b strings.Builder
+	b.WriteString(theme.Gradient("█", full, false))
+	if full < width && rest > 0 {
+		b.WriteString(theme.Faint.Render(string([]rune("▏▎▍▌▋▊▉")[rest-1])))
+		full++
+	}
+	if gap := width - full; gap > 0 {
+		b.WriteString(theme.Faint.Render(strings.Repeat("─", gap)))
+	}
+	return b.String()
 }
 
 func maxInt(a, b int) int {

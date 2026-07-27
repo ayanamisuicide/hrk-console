@@ -5,7 +5,10 @@ BIN := bin/hkc
 # суффикс с числом коммитов и -dirty, поэтому «у меня другая версия»
 # видно сразу, без сверки хешей.
 VERSION := $(shell git describe --tags --dirty 2>/dev/null || echo dev)
-LDFLAGS := -X main.version=$(VERSION)
+# Путь к исходникам вшивается в бинарник: после `make install` он лежит в
+# ~/.local/bin и сам по себе репозиторий рядом не находит, а прогон тестов
+# при старте без исходников невозможен.
+LDFLAGS := -X main.version=$(VERSION) -X heroku-console/internal/preflight.repoRoot=$(CURDIR)
 
 .PHONY: build test vet clean install
 

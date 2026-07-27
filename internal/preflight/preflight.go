@@ -3,17 +3,20 @@
 // Две группы. Первая — окружение: есть ли каталог бота, читается ли лог,
 // на месте ли venv. Эти проверки идут всегда, они дешёвые и отвечают на
 // вопрос "почему ничего не работает" раньше, чем пользователь упрётся в
-// пустой экран. Вторая — модульные тесты (go test), они запускаются, только
-// если рядом есть исходники и Go; у пользователя с одним лишь бинарником
-// проверять нечего, и такой прогон честно помечается как пропущенный.
+// пустой экран. Вторая — модульные тесты (go test) по вшитому при сборке
+// пути к исходникам; если репозитория на месте уже нет или Go не установлен,
+// прогон честно помечается как пропущенный.
 package preflight
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -119,18 +122,44 @@ func All(herokuDir, logFile string) []Check {
 	}
 }
 
-// goTest прогоняет "go test ./..." — только если рядом лежат исходники и
-// установлен Go. Иначе честно сообщает, что проверять нечего: у бинарника,
-// скачанного отдельно от репозитория, тестов рядом нет.
-func goTest() (string, Status) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "не нашёл себя на диске", Skipped
+// repoRoot вшивается линкером при сборке (`-X ...preflight.repoRoot=`).
+// Без него корень искался относительно бинарника — для `<репозиторий>/bin/hkc`
+// это работало, а после `make install` бинарник живёт в ~/.local/bin, и
+// проверка молча превращалась в "исходники рядом не лежат". То есть у
+// установленной консоли тесты не запускались никогда.
+var repoRoot string
+
+// sourceRoot ищет каталог с go.mod: сначала вшитый при сборке путь, затем
+// каталог над бинарником. Вшитый проверяется на существование — репозиторий
+// могли перенести или удалить уже после сборки.
+func sourceRoot() string {
+	if repoRoot != "" && hasGoMod(repoRoot) {
+		return repoRoot
 	}
-	// bin/hkc -> корень репозитория на уровень выше
-	root := filepath.Dir(filepath.Dir(exe))
-	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
-		return "исходники рядом не лежат", Skipped
+	if exe, err := os.Executable(); err == nil {
+		if root := filepath.Dir(filepath.Dir(exe)); hasGoMod(root) {
+			return root
+		}
+	}
+	return ""
+}
+
+func hasGoMod(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "go.mod"))
+	return err == nil
+}
+
+// goTest прогоняет тесты — только если исходники и Go на месте. Иначе честно
+// сообщает, что проверять нечего.
+//
+// Запуск идёт с -count=1, то есть кэш результатов отключён: с кэшем go test
+// возвращает "(cached)" за миллисекунды, и проверка сообщала бы "пройдены",
+// ничего при этом не выполнив. Проверка, которая на самом деле ничего не
+// проверяет, хуже отсутствующей.
+func goTest() (string, Status) {
+	root := sourceRoot()
+	if root == "" {
+		return "исходники не найдены", Skipped
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
@@ -142,40 +171,85 @@ func goTest() (string, Status) {
 		goBin = alt
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, goBin, "test", "./...")
+	cmd := exec.CommandContext(ctx, goBin, "test", "-count=1", "-json", "./...")
 	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return firstFailure(string(out)), Failed
+	out, _ := cmd.CombinedOutput()
+
+	res := parseTestJSON(out)
+	if res.failed > 0 {
+		return fmt.Sprintf("упало %d из %d: %s", res.failed, res.passed+res.failed, res.firstFail), Failed
 	}
-	return countOK(string(out)), Passed
+	if ctx.Err() != nil {
+		return "не уложились в 2 минуты", Failed
+	}
+	if res.passed == 0 {
+		return "тесты не найдены", Skipped
+	}
+	return fmt.Sprintf("%s, пакетов: %d", plural(res.passed, "тест", "теста", "тестов"), res.packages), Passed
 }
 
-// firstFailure вытаскивает из вывода go test первую значимую строку —
-// показывать весь простыню в интерфейсе некуда.
-func firstFailure(out string) string {
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "--- FAIL") || strings.HasPrefix(line, "FAIL") {
-			return line
-		}
-	}
-	return "тесты не прошли"
+// testResult — итог разбора потока событий `go test -json`.
+type testResult struct {
+	passed    int
+	failed    int
+	packages  int
+	firstFail string
 }
 
-func countOK(out string) string {
-	n := 0
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "ok ") {
-			n++
+// parseTestJSON считает результаты по событиям go test. Формат — одно
+// событие на строку, поэтому разбираем построчно, а не потоковым Decoder'ом:
+// на битой строке (паника рантайма или ошибка сборки печатаются мимо
+// протокола) Decoder не сдвигает чтение за плохой токен, и пропуск ошибки
+// превращался в вечный цикл на одном и том же месте.
+func parseTestJSON(out []byte) testResult {
+	var r testResult
+	pkgs := make(map[string]bool)
+
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	// Событие с Output может быть длинным — стандартных 64 КБ на строку
+	// хватает не всегда, а обрыв разбора посреди прогона хуже лишней памяти.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 || line[0] != '{' {
+			continue // строка мимо протокола
+		}
+		var ev struct {
+			Action  string
+			Package string
+			Test    string
+		}
+		if err := json.Unmarshal(line, &ev); err != nil {
+			continue
+		}
+		switch {
+		case ev.Test == "" && ev.Action == "pass":
+			pkgs[ev.Package] = true
+		case ev.Test != "" && ev.Action == "pass":
+			r.passed++
+		case ev.Test != "" && ev.Action == "fail":
+			r.failed++
+			if r.firstFail == "" {
+				r.firstFail = ev.Test
+			}
 		}
 	}
-	if n == 0 {
-		return "пройдены"
+	r.packages = len(pkgs)
+	return r
+}
+
+// plural склоняет числительное: "1 тест", "2 теста", "5 тестов".
+func plural(n int, one, few, many string) string {
+	word := many
+	switch {
+	case n%10 == 1 && n%100 != 11:
+		word = one
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		word = few
 	}
-	return "пройдены, пакетов: " + itoa(n)
+	return fmt.Sprintf("%d %s", n, word)
 }
 
 func itoa(n int) string {
