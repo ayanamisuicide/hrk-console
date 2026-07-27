@@ -91,19 +91,6 @@ func All(herokuDir, logFile string) []Check {
 			},
 		},
 		{
-			Name: "tail",
-			Run: func() (string, Status) {
-				// tail -F держит слежение за файлом при ротации; своей
-				// реализации слежения у нас нет, так что это жёсткая
-				// зависимость, а не удобство.
-				p, err := exec.LookPath("tail")
-				if err != nil {
-					return "не найден в PATH — живой просмотр не заработает", Failed
-				}
-				return p, Passed
-			},
-		},
-		{
 			Name: "права на запись",
 			Run: func() (string, Status) {
 				p := filepath.Join(herokuDir, ".launch.lock")

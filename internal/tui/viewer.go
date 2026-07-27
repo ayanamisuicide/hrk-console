@@ -74,6 +74,11 @@ type Viewer struct {
 
 	follower *logfeed.Follower
 	quitting bool
+
+	// streamIssue — почему лог не читается, если не читается. Пустая строка
+	// значит "всё в порядке". Замерший лог обязан объяснять себя сам: без
+	// этого экран выглядел исправным, а строки просто переставали идти.
+	streamIssue string
 }
 
 func NewViewer(opts ViewerOpts) *Viewer {
@@ -95,6 +100,13 @@ func NewViewer(opts ViewerOpts) *Viewer {
 
 // activityWindow — сколько секунд истории показывает sparkline.
 const activityWindow = 24
+
+// ringCapacity — сколько сырых строк держится для пересборки экрана. Тем же
+// числом читается стартовая история: раньше история бралась на 5000 строк,
+// а буфер подрезался до 2000, и после первой же новой строки три тысячи
+// строк истории исчезали из поиска — на экране они ещё были, а найти их
+// через "/" уже было нельзя.
+const ringCapacity = 5000
 
 type tickMsg time.Time
 type followerReadyMsg struct{ f *logfeed.Follower }
@@ -272,9 +284,8 @@ func (v *Viewer) feedLine(raw string) {
 	}
 
 	v.ring = append(v.ring, ringLine{raw})
-	const ringMax = 2000
-	if len(v.ring) > ringMax+500 {
-		v.ring = v.ring[len(v.ring)-ringMax:]
+	if len(v.ring) > ringCapacity+500 {
+		v.ring = v.ring[len(v.ring)-ringCapacity:]
 	}
 
 	rec, complete := v.parser.Feed(raw)
@@ -392,7 +403,7 @@ func (v *Viewer) loadHistory() {
 	}
 	// история читается напрямую из файла отдельным разбором, чтобы не
 	// путать счётчики "живого" парсера с уже показанным прошлым
-	lines := logfeed.TailLines(v.opts.Bot.LogFile, 5000)
+	lines := logfeed.TailLines(v.opts.Bot.LogFile, ringCapacity)
 	// Прочитанные строки идут и в кольцевой буфер: иначе переключение
 	// DEBUG/фильтра (rebuildFromRing читает только v.ring) не сможет
 	// вернуть историю обратно — она просто исчезнет из вида безвозвратно,
@@ -439,6 +450,14 @@ func (v *Viewer) refreshBotState() {
 	} else {
 		v.uptime = "—"
 	}
+	if v.follower != nil {
+		if ok, reason, since := v.follower.Alive(); !ok {
+			v.streamIssue = fmt.Sprintf("%s  ·  %s", reason, humanSince(time.Since(since)))
+		} else {
+			v.streamIssue = ""
+		}
+	}
+
 	if v.warn > v.prevWarn || v.err > v.prevErr {
 		fmt.Print("\a")
 	}
@@ -471,4 +490,17 @@ func (v *Viewer) View() string {
 		body = v.renderHelp()
 	}
 	return v.renderHeader() + "\n" + body + "\n" + v.renderFooter()
+}
+
+// humanSince — сколько времени длится состояние. Короткие подписи в шапке
+// важнее точности: "3м" читается на лету, "3m17.4s" — нет.
+func humanSince(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d с", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%d м", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d ч %d м", int(d.Hours()), int(d.Minutes())%60)
+	}
 }

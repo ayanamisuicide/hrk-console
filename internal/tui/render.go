@@ -207,10 +207,17 @@ func frameLine(left, right string, width int, lc, rc string, reverse bool) strin
 func (v *Viewer) renderHeader() string {
 	title := theme.Title.Render("HEROKU")
 	var right string
-	if v.botAlive {
+	switch {
+	case v.streamIssue != "":
+		// Обрыв слежения важнее состояния процесса: бот может быть жив, а
+		// лог при этом не читаться, и молчащий экран должен объяснить, что
+		// он молчит не потому, что всё хорошо.
+		right = lipgloss.NewStyle().Foreground(theme.Red).Bold(true).Render("⚠ лог не читается") +
+			theme.Meta.Render("  "+v.streamIssue)
+	case v.botAlive:
 		right = theme.StatusLive.Render("● live") +
 			theme.Meta.Render(fmt.Sprintf("  %s  ·  %s", orDash(v.version), v.uptime))
-	} else {
+	default:
 		right = theme.StatusDown.Render("○ не запущен")
 	}
 	if !v.sidebarVisible() {
