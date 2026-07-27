@@ -64,7 +64,8 @@ type Viewer struct {
 	// проблемных записей (по ним прыгают n/N) и схлопывание повторов.
 	scr screen
 
-	showHelp bool
+	showHelp    bool
+	showSidebar bool
 
 	botPID    int
 	uptime    string
@@ -82,12 +83,13 @@ func NewViewer(opts ViewerOpts) *Viewer {
 	ti.CharLimit = 200
 
 	return &Viewer{
-		opts:      opts,
-		search:    ti,
-		parser:    logfeed.NewParser(),
-		showDebug: opts.ShowDebug,
-		version:   opts.Bot.Version(),
-		activity:  make([]int, activityWindow),
+		opts:        opts,
+		search:      ti,
+		parser:      logfeed.NewParser(),
+		showDebug:   opts.ShowDebug,
+		showSidebar: true,
+		version:     opts.Bot.Version(),
+		activity:    make([]int, activityWindow),
 	}
 }
 
@@ -138,11 +140,11 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			vpH = 1
 		}
 		if !v.ready {
-			v.vp = viewport.New(msg.Width, vpH)
+			v.vp = viewport.New(v.logWidth(), vpH)
 			v.ready = true
 			v.loadHistory()
 		} else {
-			v.vp.Width, v.vp.Height = msg.Width, vpH
+			v.vp.Width, v.vp.Height = v.logWidth(), vpH
 			if widthChanged {
 				// Перенос длинных строк считался под прежнюю ширину —
 				// пересобираем, иначе после ресайза текст останется
@@ -226,6 +228,12 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		v.jumpProblem(-1)
 	case "d":
 		v.showDebug = !v.showDebug
+		v.rebuildFromRing()
+	case "s":
+		// Панель отдаёт логу 21 колонку — на длинных сообщениях и трейсбеках
+		// иногда нужнее место, чем статистика.
+		v.showSidebar = !v.showSidebar
+		v.vp.Width = v.logWidth()
 		v.rebuildFromRing()
 	case "/", ".":
 		// Поле всегда открывается пустым, а не с текущим фильтром: так
@@ -360,7 +368,7 @@ func (v *Viewer) applyContent() {
 // оба меняют, что вообще должно быть видно на уже нарисованном экране.
 func (v *Viewer) rebuildFromRing() {
 	v.parser = logfeed.NewParser()
-	v.scr.reset(v.width)
+	v.scr.reset(v.logWidth())
 	for _, rl := range v.ring {
 		rec, complete := v.parser.Feed(rl.raw)
 		if !complete {
@@ -393,7 +401,7 @@ func (v *Viewer) loadHistory() {
 		v.ring = append(v.ring, ringLine{l})
 	}
 	hp := logfeed.NewParser()
-	v.scr.reset(v.width)
+	v.scr.reset(v.logWidth())
 	for _, l := range lines {
 		rec, complete := hp.Feed(l)
 		if !complete {
@@ -451,6 +459,14 @@ func (v *Viewer) View() string {
 		return ""
 	}
 	body := v.vp.View()
+	if v.sidebarVisible() {
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			v.renderSidebar(v.vp.Height),
+			sidebarDivider(v.vp.Height),
+			body)
+	}
+	// Справка перекрывает всё тело целиком, вместе с панелью: это модальное
+	// окно, а не ещё одна колонка.
 	if v.showHelp {
 		body = v.renderHelp()
 	}

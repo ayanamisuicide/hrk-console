@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	"heroku-console/internal/logfeed"
@@ -121,6 +122,55 @@ func (s *screen) problemLines() []int {
 		}
 		line += b.lines
 	}
+	return out
+}
+
+// modStat — сколько записей дал модуль и было ли среди них плохое.
+type modStat struct {
+	name  string
+	count int
+	warn  int
+	err   int
+}
+
+// moduleStats собирает статистику по показанным записям. Считается по тем же
+// блокам, из которых сложен экран, а не отдельным счётчиком: панель и лог
+// физически не могут разойтись — если запись скрыта фильтром или DEBUG, её
+// нет ни там, ни там. Схлопнутая серия считается своим Count, иначе панель
+// показывала бы одну ошибку там, где их полсотни.
+func (s *screen) moduleStats() []modStat {
+	byName := make(map[string]*modStat)
+	for _, b := range s.blocks {
+		if b.rec == nil || b.rec.Module == "" {
+			continue
+		}
+		m := byName[b.rec.Module]
+		if m == nil {
+			m = &modStat{name: b.rec.Module}
+			byName[b.rec.Module] = m
+		}
+		n := maxInt(b.rec.Count, 1)
+		m.count += n
+		if b.rec.Warn {
+			m.warn += n
+		}
+		if b.rec.Err {
+			m.err += n
+		}
+	}
+
+	out := make([]modStat, 0, len(byName))
+	for _, m := range byName {
+		out = append(out, *m)
+	}
+	// Сначала по числу записей, при равенстве по имени — иначе одинаково
+	// шумные модули перепрыгивали бы друг друга при каждой перерисовке.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].count != out[j].count {
+			return out[i].count > out[j].count
+		}
+		return out[i].name < out[j].name
+	})
 	return out
 }
 

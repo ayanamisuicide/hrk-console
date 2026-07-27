@@ -205,10 +205,7 @@ func frameLine(left, right string, width int, lc, rc string, reverse bool) strin
 }
 
 func (v *Viewer) renderHeader() string {
-	left := theme.Title.Render("HEROKU")
-	if spark := theme.Sparkline(v.activity); spark != "" {
-		left += "  " + spark
-	}
+	title := theme.Title.Render("HEROKU")
 	var right string
 	if v.botAlive {
 		right = theme.StatusLive.Render("● live") +
@@ -216,7 +213,14 @@ func (v *Viewer) renderHeader() string {
 	} else {
 		right = theme.StatusDown.Render("○ не запущен")
 	}
-	return frameLine(left, right, v.width, "╭", "╮", false)
+	if !v.sidebarVisible() {
+		return frameLine(title, right, v.width, "╭", "╮", false)
+	}
+	// Рамка разветвляется там же, где стоит разделитель колонок: иначе
+	// вертикальная линия панели упирается в сплошной верх и читается как
+	// случайная черта поверх окна, а не как граница колонки.
+	return frameLine(title, "", sidebarWidth+1, "╭", "┬", false) +
+		frameLine("", right, v.logWidth(), "", "╮", false)
 }
 
 func (v *Viewer) renderFooter() string {
@@ -225,16 +229,21 @@ func (v *Viewer) renderFooter() string {
 		return theme.Rule.Render("╰─ ") + v.search.View()
 	}
 
+	// Состояние процесса, счётчики и фильтр переехали в панель — в подвале
+	// они дублировались бы слово в слово. Остаётся то, чего в панели нет:
+	// напоминание о клавишах.
 	var left string
-	if v.botAlive {
-		left = theme.StatusLive.Render("●") + theme.Meta.Render(fmt.Sprintf(" pid %d", v.botPID))
-	} else {
-		left = theme.StatusDown.Render("○") + theme.Meta.Render(" не запущен")
-	}
-	left += theme.Meta.Render("  ·  ") + theme.WarnBadge.Render(fmt.Sprintf("⚠ %d", v.warn)) +
-		"  " + theme.ErrBadge.Render(fmt.Sprintf("✗ %d", v.err))
-	if v.filter != "" {
-		left += theme.Meta.Render("  ·  ") + theme.SearchBar.Render("/"+v.filter)
+	if !v.sidebarVisible() {
+		if v.botAlive {
+			left = theme.StatusLive.Render("●") + theme.Meta.Render(fmt.Sprintf(" pid %d", v.botPID))
+		} else {
+			left = theme.StatusDown.Render("○") + theme.Meta.Render(" не запущен")
+		}
+		left += theme.Meta.Render("  ·  ") + theme.WarnBadge.Render(fmt.Sprintf("⚠ %d", v.warn)) +
+			"  " + theme.ErrBadge.Render(fmt.Sprintf("✗ %d", v.err))
+		if v.filter != "" {
+			left += theme.Meta.Render("  ·  ") + theme.SearchBar.Render("/"+v.filter)
+		}
 	}
 
 	// Подсказки укорачиваются от самой необязательной к самой нужной, пока
@@ -254,7 +263,11 @@ func (v *Viewer) renderFooter() string {
 			break
 		}
 	}
-	return frameLine(left, right, v.width, "╰", "╯", true)
+	if !v.sidebarVisible() {
+		return frameLine(left, right, v.width, "╰", "╯", true)
+	}
+	return frameLine("", "", sidebarWidth+1, "╰", "┴", true) +
+		frameLine("", right, v.logWidth(), "", "╯", true)
 }
 
 // renderHelp — список клавиш поверх лога. Держать его на экране постоянно
@@ -262,6 +275,7 @@ func (v *Viewer) renderFooter() string {
 func (v *Viewer) renderHelp() string {
 	rows := [][2]string{
 		{"d", "показать или скрыть DEBUG"},
+		{"s", "показать или скрыть панель статистики"},
 		{"/", "поиск по подстроке, пустой ввод снимает"},
 		{"n  N", "к следующей / предыдущей проблеме (warning и выше)"},
 		{"↑ ↓  j k", "прокрутка на строку"},
