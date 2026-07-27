@@ -47,10 +47,10 @@ func TestParseMultilineBanner(t *testing.T) {
 
 func TestShortModule(t *testing.T) {
 	cases := map[string]string{
-		"urllib3.connectionpool":        "urllib3",
-		"heroku.modules.api_protection": "api_protection",
-		"heroku.tl_cache":               "tl_cache",
-		"git.cmd":                       "git.cmd",
+		"urllib3.connectionpool":         "urllib3",
+		"heroku.modules.api_protection":  "api_protection",
+		"heroku.tl_cache":                "tl_cache",
+		"git.cmd":                        "git.cmd",
 		"telethon.network.mtprotosender": "telethon",
 	}
 	for in, want := range cases {

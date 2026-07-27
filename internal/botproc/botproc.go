@@ -189,9 +189,9 @@ func (m *Manager) Stop() int {
 
 // StartResult — итог попытки запуска.
 type StartResult struct {
-	PID      int
+	PID             int
 	AlreadyStarting bool // лок занят — кто-то уже стартует прямо сейчас
-	Err      error
+	Err             error
 }
 
 // Start поднимает бота в своей сессии (аналог setsid), отвязанным от

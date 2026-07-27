@@ -19,7 +19,7 @@ type Preflight struct {
 	checks  []preflight.Check
 	current int
 	width   int
-	frame   int  // кадр анимации спиннера
+	frame   int // кадр анимации спиннера
 	done    bool
 	Failed  bool // хоть одна проверка не прошла — вызывающий решает, что делать
 	// hold удерживает экран после завершения: при успехе коротко, чтобы

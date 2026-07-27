@@ -63,9 +63,9 @@ func LineCount(path string) int {
 // файловому дескриптору). Разумно опереться на давно отлаженную реализацию
 // в coreutils, а не переизобретать слежение за инодом самим.
 type Follower struct {
-	Lines chan string
-	Err   chan error
-	cmd   *exec.Cmd
+	Lines  chan string
+	Err    chan error
+	cmd    *exec.Cmd
 	cancel context.CancelFunc
 }
 

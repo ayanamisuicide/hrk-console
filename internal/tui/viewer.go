@@ -21,11 +21,11 @@ const bootMarker = "root: Got DB"
 // ViewerOpts настраивают запуск вьюера — соответствуют ключам старого
 // logs.sh (--from, --skip-boot, --history, --debug).
 type ViewerOpts struct {
-	Bot        *botproc.Manager
-	From       int // 0 — только новые строки
-	SkipBoot   bool
-	History    int
-	ShowDebug  bool
+	Bot       *botproc.Manager
+	From      int // 0 — только новые строки
+	SkipBoot  bool
+	History   int
+	ShowDebug bool
 }
 
 type ringLine struct{ raw string }
@@ -41,8 +41,8 @@ type Viewer struct {
 	width, height int
 	ready         bool
 
-	vp       viewport.Model
-	search   textinput.Model
+	vp        viewport.Model
+	search    textinput.Model
 	searching bool
 
 	parser    *logfeed.Parser
@@ -50,7 +50,7 @@ type Viewer struct {
 	showDebug bool
 	filter    string
 
-	warn, err int
+	warn, err         int
 	prevWarn, prevErr int
 
 	// activity — сколько записей пришло в каждую из последних секунд;
@@ -67,10 +67,10 @@ type Viewer struct {
 	showHelp    bool
 	showSidebar bool
 
-	botPID    int
-	uptime    string
-	version   string
-	botAlive  bool
+	botPID   int
+	uptime   string
+	version  string
+	botAlive bool
 
 	follower *logfeed.Follower
 	quitting bool

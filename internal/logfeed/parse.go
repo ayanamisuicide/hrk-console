@@ -39,8 +39,8 @@ func parseLevel(s string) Level {
 type Record struct {
 	Time       string // "15:04:05", пусто у мягкого переноса без заголовка
 	Level      Level
-	Module     string // сокращённое имя, уже прошедшее shortModule — для показа
-	fullModule string // исходное имя из лога — для проверки loudModules
+	Module     string   // сокращённое имя, уже прошедшее shortModule — для показа
+	fullModule string   // исходное имя из лога — для проверки loudModules
 	Lines      []string // первая — само сообщение, остальные — трейсбек/дамп
 	Hard       []bool   // Hard[i] — перенос i-й строки физический (был в файле)
 	Warn       bool

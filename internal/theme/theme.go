@@ -57,10 +57,10 @@ var (
 // вчитываясь. Исключение — DEBUG: он остаётся тихим, без фона, иначе шум
 // начинает спорить за внимание с тем, ради чего лог открывают.
 type LevelStyle struct {
-	Label  string // ровно 3 буквы — колонка бейджа не должна прыгать по ширине
-	Glyph  string
-	Badge  lipgloss.Style
-	Text   lipgloss.Style
+	Label string // ровно 3 буквы — колонка бейджа не должна прыгать по ширине
+	Glyph string
+	Badge lipgloss.Style
+	Text  lipgloss.Style
 }
 
 // Тёмный текст на цветной заливке — контрастнее, чем цветной на тёмном.
