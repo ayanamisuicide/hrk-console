@@ -15,6 +15,7 @@ import (
 
 	"heroku-console/internal/botproc"
 	"heroku-console/internal/logfeed"
+	"heroku-console/internal/setup"
 	"heroku-console/internal/termwin"
 	"heroku-console/internal/tui"
 )
@@ -30,6 +31,7 @@ const usage = `hkc — консоль Heroku-юзербота.
   hkc console      родная консоль бота в текущем терминале
 
   --no-check       пропустить проверки окружения
+  --no-setup       не ставить автоматически то, чего не хватает
   --version        показать версию
   --help           эта справка
 
@@ -84,6 +86,15 @@ func main() {
 		os.Exit(bot.RunForeground())
 	}
 
+	// Автонастройка идёт до всего остального и обычным stdout, а не в
+	// Bubble Tea: git clone и sudo apt-get могут попросить пароль или
+	// показать прогресс, внутри alt-screen TUI это не показать. Пропускается
+	// вместе с --no-check — вызов из скрипта не должен внезапно словить
+	// apt-get.
+	if !hasFlag(args, "--no-check") && !hasFlag(args, "--no-setup") {
+		setup.EnsureAll(bot.HerokuDir)
+	}
+
 	// Проверки идут до всего остального: они отвечают на "почему не
 	// работает" раньше, чем пользователь упрётся в пустой экран лога.
 	// Пропускаются флагом --no-check, чтобы не мешать, когда консоль
@@ -103,6 +114,7 @@ func main() {
 		}
 	}
 	args = dropFlag(args, "--no-check")
+	args = dropFlag(args, "--no-setup")
 
 	choice := 0
 	if len(args) == 1 {
