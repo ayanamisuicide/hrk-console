@@ -18,8 +18,14 @@ func start(cmd *exec.Cmd) bool {
 }
 
 // Open запускает cmd (уже полная команда с аргументами) в новом окне
-// терминала — что найдётся первым из ghostty/kitty/alacritty. Возвращает
-// false, если ни один эмулятор не найден.
+// терминала — что найдётся первым. Сначала три эмулятора с гибкой раскраской
+// (ghostty/kitty/alacritty), затем штатные терминалы окружений Linux Mint —
+// gnome-terminal (Cinnamon), mate-terminal (MATE), xfce4-terminal (Xfce), —
+// у которых почти всегда есть готовый терминал без доустановки чего-либо, а
+// цвет фона умеет менять только xfce4-terminal из этой тройки. Последним —
+// x-terminal-emulator: alternatives-symlink на дефолтный терминал системы,
+// который есть почти на любом Debian/Ubuntu-производном дистрибутиве.
+// Возвращает false, если вообще ничего не нашлось.
 func Open(title, bg string, cmd []string) bool {
 	if _, err := exec.LookPath("ghostty"); err == nil {
 		args := append([]string{
@@ -44,6 +50,31 @@ func Open(title, bg string, cmd []string) bool {
 	if _, err := exec.LookPath("alacritty"); err == nil {
 		args := append([]string{"--title", title, "-e"}, cmd...)
 		return start(exec.Command("alacritty", args...))
+	}
+	if _, err := exec.LookPath("xfce4-terminal"); err == nil {
+		// -x, а не -e: принимает cmd отдельными argv-элементами, без
+		// разбора строки шеллом — так же, как ghostty/alacritty выше.
+		args := append([]string{
+			"--title=" + title,
+			"--color-bg=" + bg, "--color-text=#c9d1d9",
+			"--geometry=104x34",
+			"-x",
+		}, cmd...)
+		return start(exec.Command("xfce4-terminal", args...))
+	}
+	if _, err := exec.LookPath("mate-terminal"); err == nil {
+		args := append([]string{"--title", title, "-x"}, cmd...)
+		return start(exec.Command("mate-terminal", args...))
+	}
+	if _, err := exec.LookPath("gnome-terminal"); err == nil {
+		// "--" — рекомендованный современным gnome-terminal способ передать
+		// команду argv-элементами: то же самое, что "-x" у старых VTE-форков.
+		args := append([]string{"--title", title, "--"}, cmd...)
+		return start(exec.Command("gnome-terminal", args...))
+	}
+	if _, err := exec.LookPath("x-terminal-emulator"); err == nil {
+		args := append([]string{"-e"}, cmd...)
+		return start(exec.Command("x-terminal-emulator", args...))
 	}
 	return false
 }
