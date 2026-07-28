@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Heroku Logs
+Comment=Консоль Heroku-юзербота: запуск, остановка, живой просмотр логов
+Exec=/absolute/path/to/heroku-console/launch.sh
+Icon=utilities-terminal
+Terminal=false
+Categories=Utility;System;

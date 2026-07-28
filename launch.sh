@@ -36,6 +36,19 @@ open_window() {
     elif command -v alacritty > /dev/null 2>&1; then
         alacritty --title "$title" -e bash -c "$cmd" > /dev/null 2>&1 &
         disown
+    elif command -v xfce4-terminal > /dev/null 2>&1; then
+        xfce4-terminal --title="$title" --color-bg="$bg" --color-text=#c9d1d9 \
+                        --geometry=104x34 -x bash -c "$cmd" > /dev/null 2>&1 &
+        disown
+    elif command -v mate-terminal > /dev/null 2>&1; then
+        mate-terminal --title "$title" -x bash -c "$cmd" > /dev/null 2>&1 &
+        disown
+    elif command -v gnome-terminal > /dev/null 2>&1; then
+        gnome-terminal --title "$title" -- bash -c "$cmd" > /dev/null 2>&1 &
+        disown
+    elif command -v x-terminal-emulator > /dev/null 2>&1; then
+        x-terminal-emulator -e bash -c "$cmd" > /dev/null 2>&1 &
+        disown
     else
         return 1
     fi
