@@ -46,13 +46,14 @@ var knownTerminals = []string{
 // Заставка появляется, только если реально есть что делать: молчаливый
 // повторный запуск не должен ничем моргать на экране.
 func EnsureAll(herokuDir string) {
-	pending := needHerokuDir(herokuDir) || needPython3() || needVenv(herokuDir) || needTerminal()
+	pending := needHerokuDir(herokuDir) || needPython3() || needVenvModule() || needVenv(herokuDir) || needTerminal()
 	if !pending {
 		return
 	}
 	banner()
 	ensureHerokuDir(herokuDir)
 	ensurePython3()
+	ensureVenvModule()
 	ensureVenv(herokuDir)
 	ensureTerminalEmulator()
 	fmt.Println()
@@ -119,6 +120,27 @@ func ensurePython3() {
 	step("python3 не найден — устанавливаю")
 	ok := aptInstall("python3", "python3-venv", "python3-pip")
 	result(ok, "python3 установлен", "установка не удалась — см. вывод выше")
+}
+
+// needVenvModule отвечает, может ли python3 вообще создать venv. На
+// Debian/Ubuntu-семействе модуль venv (через ensurepip) ставится отдельным
+// пакетом python3-venv, который не тянется вместе с самим python3 —
+// системы часто приходят с python3, но без него. needPython3() эту нехватку
+// не ловит: бинарник на месте, а ensureVenv молча падает на пустом месте.
+func needVenvModule() bool {
+	if needPython3() {
+		return false // python3 не найден — про venv-модуль пока рано
+	}
+	return exec.Command("python3", "-c", "import ensurepip").Run() != nil
+}
+
+func ensureVenvModule() {
+	if !needVenvModule() {
+		return
+	}
+	step("модуль venv (ensurepip) не найден — устанавливаю python3-venv")
+	ok := aptInstall("python3-venv")
+	result(ok, "python3-venv установлен", "установка не удалась — см. вывод выше")
 }
 
 func needVenv(dir string) bool {
