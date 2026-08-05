@@ -13,11 +13,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"heroku-console/internal/botproc"
-	"heroku-console/internal/logfeed"
-	"heroku-console/internal/setup"
+	"heroku-console/botproc"
 	"heroku-console/internal/termwin"
 	"heroku-console/internal/tui"
+	"heroku-console/logfeed"
+	"heroku-console/setup"
 )
 
 // version подставляется линкером из Makefile (`-X main.version=...`),
@@ -79,6 +79,7 @@ func main() {
 		fmt.Println(usage)
 		return
 	}
+	tui.Version = version
 
 	bot := botproc.New(herokuDir())
 

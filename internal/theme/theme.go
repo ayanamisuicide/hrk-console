@@ -16,23 +16,25 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 )
 
-// Палитра в духе Catppuccin Mocha — тёмный, приглушённый, с одним ярким
-// акцентом на семейство. Подобрана так, чтобы читалось и на true-color,
-// и на 256-цветных терминалах (lipgloss сам подбирает ближайший цвет).
+// Палитра в духе btop/htop — насыщенная, контрастная, с градиентными
+// meter-барами вместо плоской заливки: цвет несёт информацию о величине, а
+// не только служит украшением. Подобрана так, чтобы читалось и на
+// true-color, и на 256-цветных терминалах (lipgloss сам подбирает ближайший
+// цвет).
 var (
-	Mauve    = lipgloss.Color("183") // акцент бренда — заголовок, рамка
-	Text     = lipgloss.Color("252") // основной текст сообщения
-	Subtext  = lipgloss.Color("245") // время, модуль — приглушены
+	Accent   = lipgloss.Color("51")  // акцент бренда — заголовок, рамка, поиск
+	Text     = lipgloss.Color("255") // основной текст сообщения
+	Subtext  = lipgloss.Color("250") // время, модуль — приглушены, но не тускло
 	Overlay  = lipgloss.Color("240") // самое тихое: линии, декор
-	Green    = lipgloss.Color("108") // info / live
-	Yellow   = lipgloss.Color("221") // warning
-	Red      = lipgloss.Color("203") // error
-	Crit     = lipgloss.Color("196") // critical
+	Green    = lipgloss.Color("82")  // info / live — сочный, не болотный
+	Yellow   = lipgloss.Color("220") // warning
+	Red      = lipgloss.Color("196") // error — чистый красный
+	Crit     = lipgloss.Color("201") // critical — маджента, чтобы не путался с error на глаз
 	DebugDim = lipgloss.Color("238") // debug — почти невидим
 )
 
 var (
-	Title = lipgloss.NewStyle().Bold(true).Foreground(Mauve)
+	Title = lipgloss.NewStyle().Bold(true).Foreground(Accent)
 	Rule  = lipgloss.NewStyle().Foreground(Overlay)
 	Meta  = lipgloss.NewStyle().Foreground(Subtext)
 	Faint = lipgloss.NewStyle().Foreground(Overlay)
@@ -43,11 +45,11 @@ var (
 	WarnBadge = lipgloss.NewStyle().Foreground(Yellow)
 	ErrBadge  = lipgloss.NewStyle().Foreground(Red).Bold(true)
 
-	SelectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(Mauve).Bold(true)
+	SelectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(Accent).Bold(true)
 	NormalItem   = lipgloss.NewStyle().Foreground(Text)
 	ItemDesc     = lipgloss.NewStyle().Foreground(Subtext)
 
-	SearchBar = lipgloss.NewStyle().Foreground(Mauve).Bold(true)
+	SearchBar = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 )
 
 // LevelStyle — бейдж уровня и цвет сообщения.
@@ -96,7 +98,7 @@ var Zebra = lipgloss.NewStyle().Background(lipgloss.Color("236"))
 // Перетекание от акцента к фону даёт рамке глубину, при этом остаётся
 // достаточно тихим, чтобы не спорить с содержимым.
 var (
-	gradFrom, _ = colorful.Hex("#8f7bc4") // приглушённый акцент — у названия
+	gradFrom, _ = colorful.Hex("#00d7ff") // акцент — у названия
 	gradTo, _   = colorful.Hex("#3b3f51") // почти фон — к дальнему краю
 )
 
@@ -115,6 +117,61 @@ func Gradient(ch string, n int, reverse bool) string {
 		}
 		c := gradFrom.BlendLab(gradTo, t).Clamped()
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex())).Render(ch))
+	}
+	return b.String()
+}
+
+// ─── meter-бар ─────────────────────────────────────────────────────────────
+// Фирменный элемент btop/htop: столбик закрашен не одним цветом, а
+// градиентом по своей заполненной части — от зелёного через жёлтый к
+// красному. Величина видна не только длиной столбика, но и его "температурой",
+// считываемой периферийным зрением ещё быстрее.
+var (
+	meterLow, _  = colorful.Hex("#3ee06b") // заполнение только началось
+	meterMid, _  = colorful.Hex("#f5d130") // уже заметно
+	meterHigh, _ = colorful.Hex("#ff3b3b") // почти до края
+)
+
+func meterColor(t float64) colorful.Color {
+	if t < 0.5 {
+		return meterLow.BlendLab(meterMid, t*2).Clamped()
+	}
+	return meterMid.BlendLab(meterHigh, (t-0.5)*2).Clamped()
+}
+
+// MeterBar рисует столбик шириной width ячеек, закрашенный на долю
+// value/peak. Незакрашенный остаток — тихая заливка, не пустота: так видно
+// границу столбика даже при нулевом значении.
+func MeterBar(value, peak, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if peak <= 0 {
+		return Faint.Render(strings.Repeat("░", width))
+	}
+	eighths := value * width * 8 / peak
+	full := eighths / 8
+	if full > width {
+		full = width
+	}
+	rest := eighths % 8
+
+	var b strings.Builder
+	cellColor := func(i int) string {
+		t := float64(i) / float64(maxInt(width-1, 1))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(meterColor(t).Hex())).Render("█")
+	}
+	for i := 0; i < full; i++ {
+		b.WriteString(cellColor(i))
+	}
+	if full < width && rest > 0 {
+		partial := string([]rune("▏▎▍▌▋▊▉")[rest-1])
+		t := float64(full) / float64(maxInt(width-1, 1))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(meterColor(t).Hex())).Render(partial))
+		full++
+	}
+	if full < width {
+		b.WriteString(Faint.Render(strings.Repeat("░", width-full)))
 	}
 	return b.String()
 }
@@ -150,7 +207,7 @@ func Sparkline(counts []int) string {
 		case idx >= len(sparkRunes)-2:
 			col = Yellow
 		case idx >= len(sparkRunes)/2:
-			col = Mauve
+			col = Accent
 		}
 		b.WriteString(lipgloss.NewStyle().Foreground(col).Render(string(sparkRunes[idx])))
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/logfeed"
+	"heroku-console/logfeed"
 )
 
 func testViewer(w, h int) *Viewer {
@@ -124,19 +124,6 @@ func TestSidebarModuleStats(t *testing.T) {
 	sb := v.renderSidebar(v.vp.Height)
 	if !strings.Contains(sb, "tl_cache") {
 		t.Error("модуль должен попасть в панель")
-	}
-}
-
-func TestBarProportions(t *testing.T) {
-	if got := bar(10, 10, 5); lipgloss.Width(got) != 5 {
-		t.Errorf("полный столбик: got %q (%d ячеек), want 5", got, lipgloss.Width(got))
-	}
-	if got := bar(0, 10, 5); got != "" {
-		t.Errorf("нулевой столбик: got %q, want пусто", got)
-	}
-	// Значение больше пика не должно вылезать за отведённые ячейки.
-	if got := bar(99, 10, 5); lipgloss.Width(got) > 5 {
-		t.Errorf("переполнение: got %q (%d ячеек)", got, lipgloss.Width(got))
 	}
 }
 

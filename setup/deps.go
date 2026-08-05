@@ -2,11 +2,13 @@ package setup
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"heroku-console/internal/theme"
 )
@@ -192,30 +194,94 @@ func parseDepOutput(out string) []string {
 	return missing
 }
 
+// failedDepsFile хранит пакеты, установка которых уже проваливалась, в
+// каталоге бота — рядом с venv, который они не смогли пополнить.
+const failedDepsFile = ".hkc-failed-deps.json"
+
+// failedDepRetry — как долго не трогать пакет, который уже не встал. Имя
+// пакета выведено из импорта и может не существовать на PyPI вовсе — без
+// паузы pip пытался бы поставить его заново на каждом запуске консоли,
+// замедляя старт одной и той же безнадёжной ошибкой. Сутки достаточно редко,
+// чтобы не мешать, и достаточно часто, чтобы подхватить пакет, который
+// просто ещё не был опубликован или временно не доехал по сети.
+const failedDepRetry = 24 * time.Hour
+
+type failedDep struct {
+	At time.Time `json:"at"`
+}
+
+func failedDepsPath(dir string) string { return filepath.Join(dir, failedDepsFile) }
+
+// loadFailedDeps читает список ранее неудавшихся пакетов. Отсутствие файла
+// или битый JSON — тот же случай, что и "ничего не пробовали": паузы ждать
+// не от чего, и ensureModuleDeps попробует поставить всё заново.
+func loadFailedDeps(dir string) map[string]failedDep {
+	data, err := os.ReadFile(failedDepsPath(dir))
+	if err != nil {
+		return nil
+	}
+	var m map[string]failedDep
+	if json.Unmarshal(data, &m) != nil {
+		return nil
+	}
+	return m
+}
+
+func saveFailedDeps(dir string, m map[string]failedDep) {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(failedDepsPath(dir), data, 0o644)
+}
+
 func ensureModuleDeps(dir string) {
 	missing := MissingModuleDeps(dir)
 	if len(missing) == 0 {
 		return
 	}
-	step("модулям не хватает библиотек: " + strings.Join(missing, " "))
+
+	failed := loadFailedDeps(dir)
+	var toInstall, skipped []string
+	for _, pkg := range missing {
+		if fd, ok := failed[pkg]; ok && time.Since(fd.At) < failedDepRetry {
+			skipped = append(skipped, pkg)
+			continue
+		}
+		toInstall = append(toInstall, pkg)
+	}
+	if len(skipped) > 0 {
+		fmt.Println(theme.Faint.Render("  раньше не встали, пропускаю до истечения паузы: " + strings.Join(skipped, " ")))
+	}
+	if len(toInstall) == 0 {
+		return
+	}
+	step("модулям не хватает библиотек: " + strings.Join(toInstall, " "))
 
 	// Ставим по одному, а не одним вызовом pip: имя пакета угадано по
 	// импорту и может не совпасть с тем, что есть на PyPI. Одна такая
 	// промашка не должна утащить за собой установку всех остальных.
 	pip := filepath.Join(dir, "venv", "bin", "pip")
-	var failed []string
-	for _, pkg := range missing {
-		if !run(pip, "install", pkg) {
-			failed = append(failed, pkg)
+	var stillFailed []string
+	for _, pkg := range toInstall {
+		if run(pip, "install", pkg) {
+			delete(failed, pkg)
+			continue
 		}
+		stillFailed = append(stillFailed, pkg)
+		if failed == nil {
+			failed = make(map[string]failedDep)
+		}
+		failed[pkg] = failedDep{At: time.Now()}
 	}
+	saveFailedDeps(dir, failed)
 
 	invalidateDepCache() // после установки список устарел
-	if len(failed) == 0 {
+	if len(stillFailed) == 0 {
 		result(true, "библиотеки установлены", "")
 		return
 	}
-	result(false, "", "не удалось поставить: "+strings.Join(failed, " "))
+	result(false, "", "не удалось поставить: "+strings.Join(stillFailed, " "))
 	fmt.Println(theme.Faint.Render("  имя пакета выведено из импорта и может отличаться на PyPI — поставьте руками"))
 }
 

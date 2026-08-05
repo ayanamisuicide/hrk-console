@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"heroku-console/internal/logfeed"
+	"heroku-console/logfeed"
 )
 
 // feed разбирает строки лога и складывает готовые записи на экран — ровно

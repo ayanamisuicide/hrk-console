@@ -201,10 +201,30 @@ func Visible(rec *Record, showDebug bool, filter string, minLevel Level) bool {
 		}
 	}
 	if filter != "" {
-		hay := strings.ToLower(rec.Module + " " + strings.Join(rec.Lines, " "))
-		if !strings.Contains(hay, strings.ToLower(filter)) {
+		hay := rec.Module + " " + strings.Join(rec.Lines, " ")
+		if !matchFilter(hay, filter) {
 			return false
 		}
 	}
 	return true
+}
+
+// matchFilter сверяет текст записи с фильтром. Обычно — подстрока без учёта
+// регистра, как и раньше. Префикс "re:" переключает в режим регулярного
+// выражения (тоже без учёта регистра) — нужен, когда подстроки не хватает:
+// например, чтобы отличить "Connection reset" от "Connection refused" одним
+// запросом или поймать сообщение по границе слова.
+//
+// Битый регэксп трактуется как "не совпало", а не паника: опечатка в
+// скобках не должна ронять вьюер или превращать его в пустой экран без
+// объяснения.
+func matchFilter(hay, filter string) bool {
+	if rest, ok := strings.CutPrefix(filter, "re:"); ok {
+		re, err := regexp.Compile("(?i)" + rest)
+		if err != nil {
+			return false
+		}
+		return re.MatchString(hay)
+	}
+	return strings.Contains(strings.ToLower(hay), strings.ToLower(filter))
 }

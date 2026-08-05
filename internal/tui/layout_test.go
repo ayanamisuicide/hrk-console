@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/logfeed"
+	"heroku-console/logfeed"
 )
 
 // Рамка не обрезает подписи сама: строка длиннее окна не влезает, а

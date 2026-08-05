@@ -7,9 +7,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/botproc"
+	"heroku-console/botproc"
 	"heroku-console/internal/theme"
 )
+
+// Version — номер сборки hkc, подставляется из cmd/hkc/main.go через
+// линкер. Пакетная переменная, а не параметр конструктора: экран версии не
+// стоит того, чтобы тащить строку через NewMenu/NewViewer и их вызовы.
+var Version = "dev"
 
 var menuItems = []struct{ title, desc string }{
 	{"Подключиться к боту", "не трогая процесс"},
@@ -96,7 +101,7 @@ func (m *Menu) View() string {
 	var b strings.Builder
 
 	// ─── шапка над карточкой ───
-	b.WriteString(theme.Title.Render("HEROKU") + "\n")
+	b.WriteString(theme.Title.Render("HEROKU") + theme.Faint.Render("  ·  hkc "+Version) + "\n")
 	if m.botPID != 0 {
 		b.WriteString(theme.StatusLive.Render("● запущен") +
 			theme.Meta.Render(fmt.Sprintf("   pid %d   ·   %s", m.botPID, m.uptime)))
@@ -123,7 +128,7 @@ func (m *Menu) View() string {
 		descStyle := theme.ItemDesc
 		if selected {
 			marker = theme.Title.Render("▸ ")
-			numStyle = lipgloss.NewStyle().Foreground(theme.Mauve).Bold(true)
+			numStyle = lipgloss.NewStyle().Foreground(theme.Accent).Bold(true)
 			titleStyle = lipgloss.NewStyle().Foreground(theme.Text).Bold(true)
 		}
 

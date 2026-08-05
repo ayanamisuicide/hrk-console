@@ -11,9 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/botproc"
-	"heroku-console/internal/logfeed"
+	"heroku-console/botproc"
 	"heroku-console/internal/theme"
+	"heroku-console/logfeed"
+	"heroku-console/state"
 )
 
 const bootMarker = "root: Got DB"
@@ -85,6 +86,14 @@ type Viewer struct {
 	version  string
 	botAlive bool
 
+	// watchdog — если бот падает сам по себе (не через "4 · Остановить"),
+	// перезапускает его без участия человека. Выключен по умолчанию: режим
+	// "1 · Подключиться" по контракту не должен трогать процесс без явного
+	// согласия, и молчаливый автозапуск нарушал бы его.
+	watchdog           bool
+	restarting         bool
+	lastRestartAttempt time.Time
+
 	follower *logfeed.Follower
 	quitting bool
 
@@ -96,19 +105,37 @@ type Viewer struct {
 
 func NewViewer(opts ViewerOpts) *Viewer {
 	ti := textinput.New()
-	ti.Placeholder = "подстрока для поиска…"
+	ti.Placeholder = "подстрока для поиска… (re:шаблон — регулярное выражение)"
 	ti.Prompt = "/ "
 	ti.CharLimit = 200
 
+	// Настройки показа переживают перезапуск консоли: opts.ShowDebug остаётся
+	// явным запросом вызывающего и побеждает, если он вообще что-то попросил
+	// (true) — сохранённое "выключено" не должно тише пожелания того, кто
+	// вызвал вьюер напрямую.
+	saved := state.Load()
 	return &Viewer{
 		opts:        opts,
 		search:      ti,
 		parser:      logfeed.NewParser(),
-		showDebug:   opts.ShowDebug,
-		showSidebar: true,
+		showDebug:   opts.ShowDebug || saved.ShowDebug,
+		showSidebar: saved.ShowSidebar,
+		minLevel:    logfeed.Level(saved.MinLevel),
+		watchdog:    saved.Watchdog,
 		version:     opts.Bot.Version(),
 		activity:    make([]int, activityWindow),
 	}
+}
+
+// saveState сохраняет текущие настройки показа — вызывается на выходе, а не
+// на каждом переключении: писать файл при каждом нажатии клавиши незачем.
+func (v *Viewer) saveState() {
+	state.Save(state.State{
+		ShowDebug:   v.showDebug,
+		ShowSidebar: v.showSidebar,
+		MinLevel:    int(v.minLevel),
+		Watchdog:    v.watchdog,
+	})
 }
 
 // activityWindow — сколько секунд истории показывает sparkline.
@@ -126,6 +153,17 @@ type followerReadyMsg struct{ f *logfeed.Follower }
 type lineMsg struct {
 	raw string
 	ok  bool
+}
+type watchdogRestartMsg struct{ res botproc.StartResult }
+
+// watchdogCooldown — не чаще какого интервала вотчдог пробует поднять бота
+// заново. Без паузы падение сразу после старта (сломанный venv, битый
+// модуль) превращалось бы в цикл рестартов по разу в секунду, на каждом
+// тике вьюера.
+const watchdogCooldown = 5 * time.Second
+
+func watchdogRestartCmd(bot *botproc.Manager) tea.Cmd {
+	return func() tea.Msg { return watchdogRestartMsg{bot.Start()} }
 }
 
 func tickCmd() tea.Cmd {
@@ -185,7 +223,11 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.activity = append(v.activity[1:], v.activityNow)
 		v.activityNow = 0
 		v.refreshBotState()
-		return v, tickCmd()
+		cmds := []tea.Cmd{tickCmd()}
+		if cmd := v.maybeWatchdogRestart(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return v, tea.Batch(cmds...)
 
 	case followerReadyMsg:
 		v.follower = msg.f
@@ -200,6 +242,13 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		v.feedLine(msg.raw)
 		return v, waitForLine(v.follower)
+
+	case watchdogRestartMsg:
+		// Провал не сообщается отдельно: следующий тик увидит бота всё ещё
+		// не живым и попробует снова после watchdogCooldown — баннер о самой
+		// попытке уже написан в лог, дублировать нечего.
+		v.restarting = false
+		return v, nil
 
 	case tea.MouseMsg:
 		var cmd tea.Cmd
@@ -245,6 +294,7 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		v.quitting = true
+		v.saveState()
 		if v.follower != nil {
 			v.follower.Stop()
 		}
@@ -286,6 +336,11 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		v.showDebug = !v.showDebug
 		v.rebuildFromRing()
+	case "a":
+		// Автоперезапуск — ручной переключатель, а не поведение по
+		// умолчанию: молчаливый рестарт процесса без спроса нарушал бы
+		// контракт "1 · Подключиться, не трогая процесс".
+		v.watchdog = !v.watchdog
 	case "s":
 		// Панель отдаёт логу 21 колонку — на длинных сообщениях и трейсбеках
 		// иногда нужнее место, чем статистика.
@@ -386,8 +441,36 @@ func (v *Viewer) jumpTo(problems []int, dir int) {
 	v.vp.GotoTop()
 }
 
+// maybeWatchdogRestart решает, пора ли поднимать бота заново, и если да —
+// сразу отмечает попытку в логе и возвращает команду запуска. Вызывается
+// каждый тик, поэтому сам решает про кулдаун — a не полагается на то, что
+// его позовут реже.
+func (v *Viewer) maybeWatchdogRestart() tea.Cmd {
+	if !v.watchdog || v.botAlive || v.restarting {
+		return nil
+	}
+	if time.Since(v.lastRestartAttempt) < watchdogCooldown {
+		return nil
+	}
+	v.restarting = true
+	v.lastRestartAttempt = time.Now()
+	v.appendWatchdogBanner()
+	return watchdogRestartCmd(v.opts.Bot)
+}
+
+// appendWatchdogBanner отмечает в логе сам факт автоматического
+// вмешательства — отдельно от обычного баннера перезапуска (он появится
+// следом сам, как только бот допишет "Got DB"): без этой строки падение и
+// самостоятельный подъём бота выглядели бы неотличимо от ручного рестарта.
+func (v *Viewer) appendWatchdogBanner() {
+	line := lipgloss.NewStyle().Foreground(theme.Red).Bold(true).
+		Render(fmt.Sprintf("  ⚠  WATCHDOG: бот не отвечает — перезапускаю  ·  %s", time.Now().Format("15:04:05")))
+	v.scr.addRaw("\n" + line + "\n")
+	v.pushContent()
+}
+
 func (v *Viewer) appendRestartBanner() {
-	line := lipgloss.NewStyle().Foreground(theme.Mauve).Bold(true).
+	line := lipgloss.NewStyle().Foreground(theme.Accent).Bold(true).
 		Render(fmt.Sprintf("  ⟳  ПЕРЕЗАПУСК  ·  %s  ·  pid %d", time.Now().Format("15:04:05"), v.botPID))
 	v.scr.addRaw("\n" + line + "\n")
 	v.pushContent()

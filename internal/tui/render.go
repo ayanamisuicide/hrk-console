@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/logfeed"
 	"heroku-console/internal/theme"
+	"heroku-console/logfeed"
 )
 
 const (
@@ -61,12 +61,12 @@ func wrapText(text string, width int) []string {
 
 // moduleColor даёт модулю стабильный цвет: один и тот же модуль всегда
 // одного оттенка, так что взгляд цепляется за "кто написал" быстрее, чем
-// читает имя. Палитра приглушённая — колонка модуля не должна спорить с
-// маркером уровня за внимание.
+// читает имя. Палитра насыщенная и разнородная — модули должны различаться
+// с одного взгляда, не вчитываясь в имя.
 var modulePalette = []lipgloss.Color{
-	lipgloss.Color("109"), lipgloss.Color("108"), lipgloss.Color("144"),
-	lipgloss.Color("139"), lipgloss.Color("110"), lipgloss.Color("143"),
-	lipgloss.Color("175"), lipgloss.Color("073"),
+	lipgloss.Color("51"), lipgloss.Color("213"), lipgloss.Color("214"),
+	lipgloss.Color("118"), lipgloss.Color("63"), lipgloss.Color("201"),
+	lipgloss.Color("220"), lipgloss.Color("87"),
 }
 
 func moduleColor(name string) lipgloss.Color {
@@ -79,8 +79,8 @@ func moduleColor(name string) lipgloss.Color {
 //
 //	00:12:10  ●  root            🪐 Heroku 2.2.2 started
 //
-// Правило темы: насыщенный цвет несёт маркер уровня. Модуль подкрашен
-// приглушённо и стабильно, время всегда самое тихое.
+// Правило темы: маркер уровня несёт самый насыщенный цвет. Модуль подкрашен
+// ярко, но стабильно (см. moduleColor), время всегда самое тихое.
 // zebra — индекс записи: чётные подкрашиваются фоном. Передаётся снаружи,
 // потому что запись может занять несколько строк экрана, и полоса должна
 // накрывать её целиком, а не чередоваться построчно.
@@ -140,7 +140,7 @@ func renderRecord(rec *logfeed.Record, width int, zebra bool) string {
 			case hard && j == 0:
 				// физически новая строка внутри записи (трейсбек, дамп)
 				b.WriteString(strings.Repeat(" ", gutter-2))
-				b.WriteString(lipgloss.NewStyle().Foreground(theme.Mauve).Render("↳ "))
+				b.WriteString(lipgloss.NewStyle().Foreground(theme.Accent).Render("↳ "))
 				b.WriteString(style.Text.Render(wrapped))
 			default:
 				// мягкий перенос — выравниваем под колонку сообщения
@@ -415,7 +415,7 @@ func (v *Viewer) overlayBox(title string, rows [][2]string, hint string) string 
 	var b strings.Builder
 	b.WriteString(theme.Title.Render("  "+title) + "\n\n")
 	for _, r := range rows {
-		line := "  " + lipgloss.NewStyle().Foreground(theme.Mauve).Bold(true).Render(pad(r[0], keyW))
+		line := "  " + lipgloss.NewStyle().Foreground(theme.Accent).Bold(true).Render(pad(r[0], keyW))
 		if showDesc {
 			line += "   " + theme.Meta.Render(pad(r[1], descW))
 		}
@@ -428,7 +428,7 @@ func (v *Viewer) overlayBox(title string, rows [][2]string, hint string) string 
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Mauve).
+		BorderForeground(theme.Accent).
 		Padding(1, 2).
 		Render(b.String())
 
@@ -446,7 +446,8 @@ func (v *Viewer) renderHelp() string {
 		{"s", "показать или скрыть панель статистики"},
 		{"w", "порог показа: всё → warning → error"},
 		{"m", "выбрать модуль из панели и отфильтровать"},
-		{"/", "поиск по подстроке, пустой ввод снимает"},
+		{"/", "поиск: подстрока или re:шаблон, пустой ввод снимает"},
+		{"a", "автоперезапуск бота при падении: вкл/выкл"},
 		{"n  N", "к следующей / предыдущей проблеме"},
 		{"r  R", "к следующему / предыдущему перезапуску"},
 		{"↑ ↓  j k", "прокрутка на строку"},

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"heroku-console/internal/setup"
+	"heroku-console/setup"
 )
 
 // Status — исход одной проверки.

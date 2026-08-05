@@ -162,7 +162,7 @@ func (p *Preflight) View() string {
 			mark = theme.Faint.Render("○")
 			name = theme.Faint.Render(c.Name)
 		case preflight.Running:
-			mark = lipgloss.NewStyle().Foreground(theme.Mauve).
+			mark = lipgloss.NewStyle().Foreground(theme.Accent).
 				Render(spinnerFrames[p.frame%len(spinnerFrames)])
 			name = lipgloss.NewStyle().Foreground(theme.Text).Bold(true).Render(c.Name)
 		case preflight.Passed:

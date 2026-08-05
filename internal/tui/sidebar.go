@@ -44,26 +44,6 @@ func sectionTitle(s string) string {
 	return theme.Faint.Render(strings.Join(strings.Split(s, ""), " "))
 }
 
-// bar рисует горизонтальный столбик длиной width ячеек. Дробная часть —
-// частичным блоком: на коротких столбиках разница между 1 и 2 записями иначе
-// теряется в округлении.
-func bar(value, peak, width int) string {
-	if peak <= 0 || width <= 0 {
-		return ""
-	}
-	eighths := value * width * 8 / peak
-	full := eighths / 8
-	if full > width {
-		full = width
-	}
-	rest := eighths % 8
-	s := strings.Repeat("█", full)
-	if full < width && rest > 0 {
-		s += string([]rune("▏▎▍▌▋▊▉")[rest-1])
-	}
-	return s
-}
-
 // renderSidebar собирает панель ровно на height строк: верх прижат к шапке,
 // блок процесса — к подвалу. Между ними воздух, который и держит панель
 // спокойной при любой высоте окна.
@@ -84,6 +64,18 @@ func (v *Viewer) renderSidebar(height int) string {
 	} else {
 		bottom = append(bottom, theme.StatusDown.Render("○ не запущен"))
 	}
+	// Автоперезапуск — редкий режим, и раз включён, должен быть виден
+	// постоянно: иначе о нём забывают и потом гадают, кто перезапустил бота.
+	// Пока идёт сама попытка — отдельная пометка, чтобы не выглядело подвисшим.
+	switch {
+	case v.restarting:
+		bottom = append(bottom, theme.WarnBadge.Render("⟳ перезапускаю…"))
+	case v.watchdog:
+		bottom = append(bottom, theme.Meta.Render("⟳ авто-перезапуск"))
+	}
+	// Версия консоли — наименее нужная строка блока: первой уходит на низком
+	// окне тем же циклом обрезки, что и всё остальное здесь.
+	bottom = append(bottom, theme.Faint.Render("hkc "+Version))
 
 	// ─── проблемы и фильтр: место под них резервируется первым ───
 	fixed := []string{
@@ -127,18 +119,21 @@ func (v *Viewer) renderSidebar(height int) string {
 		)
 		nameW := inner - barW - countW - 1
 		for _, m := range shown {
-			// Столбик красится по худшему, что было у модуля: так видно не
-			// только кто шумит, но и у кого из них плохо.
-			col := theme.Overlay
+			// Имя красится по худшему, что было у модуля: так видно не
+			// только кто шумит, но и у кого из них плохо. Сам столбик —
+			// градиент по заполнению (зелёный → жёлтый → красный, как в
+			// btop/htop): его цвет отвечает на "насколько громко", а не
+			// дублирует статус модуля.
+			nameCol := moduleColor(m.name)
+			bold := false
 			switch {
 			case m.err > 0:
-				col = theme.Red
+				nameCol, bold = theme.Red, true
 			case m.warn > 0:
-				col = theme.Yellow
+				nameCol, bold = theme.Yellow, true
 			}
-			b := bar(m.count, peak, barW)
-			line := lipgloss.NewStyle().Foreground(moduleColor(m.name)).Render(pad(m.name, nameW)) +
-				" " + lipgloss.NewStyle().Foreground(col).Render(pad(b, barW)) +
+			line := lipgloss.NewStyle().Foreground(nameCol).Bold(bold).Render(pad(m.name, nameW)) +
+				" " + theme.MeterBar(m.count, peak, barW) +
 				theme.Meta.Render(padLeft(fmt.Sprint(m.count), countW))
 			top = append(top, line)
 		}

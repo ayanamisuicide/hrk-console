@@ -3,6 +3,7 @@ package setup
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseDepOutput(t *testing.T) {
@@ -40,5 +41,23 @@ func TestParseDepOutputDeduplicates(t *testing.T) {
 func TestParseDepOutputEmpty(t *testing.T) {
 	if got := parseDepOutput("\n  \n"); len(got) != 0 {
 		t.Errorf("на пустом выводе ожидался пустой список, got %v", got)
+	}
+}
+
+func TestFailedDepsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if got := loadFailedDeps(dir); got != nil {
+		t.Fatalf("на пустом каталоге ожидался nil, got %v", got)
+	}
+
+	now := time.Now()
+	saveFailedDeps(dir, map[string]failedDep{"nope-pkg": {At: now}})
+	got := loadFailedDeps(dir)
+	fd, ok := got["nope-pkg"]
+	if !ok {
+		t.Fatal("сохранённая запись не нашлась после перечитывания")
+	}
+	if !fd.At.Equal(now) {
+		t.Errorf("время: got %v, want %v", fd.At, now)
 	}
 }

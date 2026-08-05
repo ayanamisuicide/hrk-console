@@ -118,6 +118,24 @@ func TestVisibleFilter(t *testing.T) {
 	}
 }
 
+func TestVisibleFilterRegex(t *testing.T) {
+	p := NewParser()
+	rec, _ := p.Feed("2026-07-27 00:13:04 [WARNING] heroku.modules.spotify: Connection reset by peer")
+
+	if !Visible(rec, false, "re:reset by peer$", LevelDebug) {
+		t.Error("regex-фильтр должен находить по концу строки")
+	}
+	if Visible(rec, false, "re:^refused", LevelDebug) {
+		t.Error("regex-фильтр не должен находить непойманное")
+	}
+	if !Visible(rec, false, "re:CONNECTION", LevelDebug) {
+		t.Error("regex-фильтр должен быть нечувствителен к регистру")
+	}
+	if Visible(rec, false, "re:(", LevelDebug) {
+		t.Error("битый regex должен трактоваться как не совпало, а не падать")
+	}
+}
+
 func TestCounts(t *testing.T) {
 	p := NewParser()
 	p.Feed("2026-07-27 00:13:04 [WARNING] a.b: w1")

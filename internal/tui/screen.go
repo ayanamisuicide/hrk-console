@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"heroku-console/internal/logfeed"
+	"heroku-console/logfeed"
 )
 
 // screen — накопитель отрисованных блоков экрана. Блок это одна показанная
