@@ -17,7 +17,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"heroku-console/internal/setup"
 )
 
 // Status — исход одной проверки.
@@ -88,6 +91,33 @@ func All(herokuDir, logFile string) []Check {
 					return "не найден в PATH", Failed
 				}
 				return p, Passed
+			},
+		},
+		{
+			// Загрузчик Heroku молча пропускает модули с аудио и видео, если
+			// ffmpeg нет: в чате модуль просто не появляется, причина видна
+			// только в логе.
+			Name: "ffmpeg",
+			Run: func() (string, Status) {
+				p, err := exec.LookPath("ffmpeg")
+				if err != nil {
+					return "не найден — модули с аудио и видео не поставятся", Failed
+				}
+				return p, Passed
+			},
+		},
+		{
+			// Зависимости загруженных модулей: requirements.txt бота про них
+			// не знает, а ModuleNotFoundError виден только трейсбеком в логе.
+			Name: "зависимости модулей",
+			Run: func() (string, Status) {
+				if _, err := os.Stat(filepath.Join(herokuDir, "venv", "bin", "python")); err != nil {
+					return "venv не найден — проверять нечем", Skipped
+				}
+				if missing := setup.MissingModuleDeps(herokuDir); len(missing) > 0 {
+					return "не хватает: " + strings.Join(missing, " "), Failed
+				}
+				return "импорты загруженных модулей резолвятся", Passed
 			},
 		},
 		{

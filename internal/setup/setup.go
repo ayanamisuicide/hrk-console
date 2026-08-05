@@ -46,7 +46,9 @@ var knownTerminals = []string{
 // Заставка появляется, только если реально есть что делать: молчаливый
 // повторный запуск не должен ничем моргать на экране.
 func EnsureAll(herokuDir string) {
-	pending := needHerokuDir(herokuDir) || needPython3() || needVenvModule() || needVenv(herokuDir) || needTerminal()
+	pending := needHerokuDir(herokuDir) || needPython3() || needVenvModule() ||
+		needVenv(herokuDir) || needTerminal() || needFFmpeg() ||
+		len(MissingModuleDeps(herokuDir)) > 0
 	if !pending {
 		return
 	}
@@ -56,6 +58,12 @@ func EnsureAll(herokuDir string) {
 	ensureVenvModule()
 	ensureVenv(herokuDir)
 	ensureTerminalEmulator()
+	ensureFFmpeg()
+	// Зависимости модулей идут последними: venv к этому моменту уже создан,
+	// а сам разбор импортов запускается его питоном. Кэш разбора сбрасываем —
+	// его могли посчитать до создания venv, когда проверять было нечем.
+	invalidateDepCache()
+	ensureModuleDeps(herokuDir)
 	fmt.Println()
 }
 
