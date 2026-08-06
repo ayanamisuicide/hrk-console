@@ -98,6 +98,12 @@ type App struct {
 	watchMu            sync.Mutex
 	restarting         bool
 	lastRestartAttempt time.Time
+	// everAlive — тик хоть раз застал бота живым. Вотчдог обязан лечить
+	// только падение уже бежавшего бота: без этого флага он на первом же
+	// тике после открытия окна видит "не жив" (бот просто ещё не запущен)
+	// и радостно рапортует "не отвечает — перезапускаю" тому, что никогда
+	// не запускалось.
+	everAlive bool
 }
 
 func NewApp() *App {
@@ -248,7 +254,16 @@ func (a *App) maybeWatchdogRestart() {
 	a.mu.Lock()
 	on := a.ui.Watchdog
 	a.mu.Unlock()
-	if !on || botproc.Alive() {
+
+	alive := botproc.Alive()
+	a.watchMu.Lock()
+	if alive {
+		a.everAlive = true
+	}
+	seen := a.everAlive
+	a.watchMu.Unlock()
+
+	if !on || alive || !seen {
 		return
 	}
 
@@ -336,6 +351,14 @@ func (a *App) SetWatchdog(on bool) {
 }
 
 func (a *App) StartBot() ActionResult {
+	// Отмечаем попытку до самого запуска: exec ещё не заменил cmdline bash на
+	// "python3 -m heroku" в первые мгновения, PID() короткое время видит 0, и
+	// без этой отметки вотчдог на ближайшем тике принимает только что
+	// стартовавший процесс за упавший и бьёт тревогу поверх ручного запуска.
+	a.watchMu.Lock()
+	a.lastRestartAttempt = time.Now()
+	a.watchMu.Unlock()
+
 	res := a.bot.Start()
 	switch {
 	case res.Err != nil:
