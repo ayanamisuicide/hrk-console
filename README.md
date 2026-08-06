@@ -24,11 +24,10 @@ make build
 
 Нужен [Go](https://go.dev) — если его ещё нет, команды установки есть в [документации](docs/setup.md#go).
 
-Нативное окно вместо терминала собирается отдельно (нужен [Wails](https://wails.io), см. [подробности](docs/usage.md#gui)):
+Нативное окно вместо терминала ставится отдельно — с ярлыком в меню приложений и на рабочем столе (нужен [Wails](https://wails.io), см. [подробности](docs/usage.md#gui)):
 
 ```sh
-make gui
-./gui/build/bin/hrk-console-gui
+./gui/install.sh
 ```
 
 > [!IMPORTANT]

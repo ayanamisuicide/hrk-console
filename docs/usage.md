@@ -72,7 +72,13 @@ sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config n
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
-Дальше из корня репозитория:
+Дальше — установить как обычное приложение (ярлык в меню и на рабочем столе, `sudo` не нужен):
+
+```sh
+./gui/install.sh
+```
+
+Удалить — `./gui/install.sh --uninstall`. Если нужно просто собрать, без ярлыков:
 
 ```sh
 make gui                          # соберёт gui/build/bin/hrk-console-gui
