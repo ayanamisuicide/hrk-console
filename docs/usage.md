@@ -63,13 +63,23 @@ hkc --help       # краткая справка
 
 ## GUI
 
-Нативное окно вместо терминала: тот же `HEROKU_DIR`, тот же лог, та же логика показа. Сборка — в [`gui/README.md`](../gui/README.md):
+Нативное окно вместо терминала: тот же `HEROKU_DIR`, тот же лог, та же логика показа.
+
+Собирается отдельно от `hkc`, потому что тянет свой тулчейн — [Wails](https://wails.io), Node и системные библиотеки webview. Разово:
 
 ```sh
-cd gui
-wails build -tags webkit2_41
-./build/bin/hrk-console-gui
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config nodejs npm
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
+
+Дальше из корня репозитория:
+
+```sh
+make gui                          # соберёт gui/build/bin/hrk-console-gui
+./gui/build/bin/hrk-console-gui
+```
+
+`make gui` зовёт `wails build -tags webkit2_41` по полному пути в `$GOPATH/bin` — сам `wails` после `go install` оказывается там, а этого каталога в `PATH` обычно нет. Тег `webkit2_41` обязателен: на Ubuntu/Mint 24.04 в репозиториях остался только `webkit2gtk-4.1`, а Wails по умолчанию ищет `-4.0`.
 
 Режимов, как в меню hkc, здесь нет — управление кнопками:
 

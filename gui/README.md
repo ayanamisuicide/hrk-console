@@ -11,18 +11,39 @@ TUI-консоль: тёмная btop/htop-палитра, градиентны�
 Бот по умолчанию ищется в `~/Heroku`, каталог переопределяется переменной
 `HEROKU_DIR` — как и у `hkc`.
 
-## Разработка
+## Зависимости
 
-`wails dev` — Vite hot-reload фронтенда + доступ к Go-методам из devtools на
-`http://localhost:34115`.
+Разово, помимо Go:
+
+```sh
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config nodejs npm
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+```
+
+`wails` встанет в `$(go env GOPATH)/bin` — этого каталога обычно нет в `PATH`,
+поэтому либо добавьте его туда, либо зовите по полному пути (так делает
+`make gui`).
 
 ## Сборка
 
-На Ubuntu/Mint 24.04 доступен только `webkit2gtk-4.1` (пакета `-4.0` в
-репозиториях больше нет), поэтому собирать нужно с тегом:
+Из корня репозитория:
+
+```sh
+make gui
+```
+
+Или вручную, отсюда:
 
 ```sh
 wails build -tags webkit2_41
 ```
 
+Тег обязателен: на Ubuntu/Mint 24.04 доступен только `webkit2gtk-4.1` (пакета
+`-4.0` в репозиториях больше нет), а Wails по умолчанию ищет `-4.0`.
+
 Бинарник — `build/bin/hrk-console-gui`.
+
+## Разработка
+
+`wails dev` — Vite hot-reload фронтенда + доступ к Go-методам из devtools на
+`http://localhost:34115`.

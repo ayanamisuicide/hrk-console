@@ -20,10 +20,20 @@ VERSION := $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 # при старте без исходников невозможен.
 LDFLAGS := -X main.version=$(VERSION) -X heroku-console/internal/preflight.repoRoot=$(CURDIR)
 
-.PHONY: build test vet clean install
+.PHONY: build gui test vet clean install
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/hkc
+
+# GUI собирается своим тулчейном (wails тянет ещё и сборку фронтенда), а сам
+# он живёт в GOPATH/bin, которого может не быть в PATH — поэтому зовём по
+# полному пути, а не рассчитываем, что "wails" найдётся сам.
+#
+# webkit2_41: на Ubuntu/Mint 24.04 в репозиториях остался только
+# webkit2gtk-4.1, а wails по умолчанию ищет -4.0 и без тега не собирается.
+gui:
+	cd gui && $(shell $(GO) env GOPATH)/bin/wails build -tags webkit2_41
+	@echo "собрано: gui/build/bin/hrk-console-gui"
 
 test:
 	$(GO) test ./...

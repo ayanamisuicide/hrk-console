@@ -24,6 +24,13 @@ make build
 
 Нужен [Go](https://go.dev) — если его ещё нет, команды установки есть в [документации](docs/setup.md#go).
 
+Нативное окно вместо терминала собирается отдельно (нужен [Wails](https://wails.io), см. [подробности](docs/usage.md#gui)):
+
+```sh
+make gui
+./gui/build/bin/hrk-console-gui
+```
+
 > [!IMPORTANT]
 > Перед первым запуском нужно один раз войти в аккаунт Telegram вручную — консоль запускает бота в фоне и ответить на его вопросы про `api_id` и код из Telegram будет некому. Как это сделать: [docs/setup.md](docs/setup.md#вход-в-аккаунт-telegram).
 
