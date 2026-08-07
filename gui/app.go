@@ -105,16 +105,22 @@ type App struct {
 	// не запускалось.
 	everAlive bool
 
+	// lastPID — pid бота с прошлого тика, под watchMu. tickPID подтверждает
+	// его дешёвой проверкой (AliveAt) вместо полного обхода /proc на каждой
+	// секунде — см. tickPID.
+	lastPID int
+
 	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса
 	// в /proc, запуск и остановка бота, отправка события в окно — проходит
 	// через эти поля. Без них логику вотчдога (кто, когда и на каком
 	// основании решает перезапускать) нельзя проверить, не подняв
 	// настоящего бота в настоящем окне Wails; ровно поэтому ложное
 	// срабатывание из 1.6.1 и доехало до релиза.
-	pid   func() int
-	start func() botproc.StartResult
-	stop  func() int
-	emit  func(event string, data ...interface{})
+	pid     func() int
+	aliveAt func(pid int) bool
+	start   func() botproc.StartResult
+	stop    func() int
+	emit    func(event string, data ...interface{})
 }
 
 func NewApp() *App {
@@ -125,6 +131,7 @@ func NewApp() *App {
 	}
 	a := &App{bot: botproc.New(dir)}
 	a.pid = botproc.PID
+	a.aliveAt = botproc.AliveAt
 	a.start = a.bot.Start
 	a.stop = a.bot.Stop
 	// ctx читается в момент вызова, а не сейчас: на этапе NewApp окна ещё
@@ -135,10 +142,34 @@ func NewApp() *App {
 	return a
 }
 
-// alive — единственный источник правды о живости бота для всего бэкенда:
-// и статус в шапке, и вотчдог спрашивают один и тот же pid, а не два
-// независимых обхода /proc, которые могут разойтись между собой.
+// alive — единственный источник правды о живости бота для разовых ручных
+// действий (RestartBot и подобные), где нет смысла кэшировать pid между
+// вызовами — в отличие от statusLoop, тут нет тика раз в секунду. Сам тик
+// использует tickPID, дешевле.
 func (a *App) alive() bool { return a.pid() != 0 }
+
+// tickPID — pid бота для очередного тика statusLoop. Пока бот жив на том
+// же pid, что и на прошлом тике, подтверждает это одним чтением
+// /proc/<pid>/cmdline (aliveAt) вместо полного обхода /proc (a.pid) —
+// раньше он делался дважды за тик (statusLocked и maybeWatchdogRestart
+// спрашивали независимо), теперь не делается вовсе, пока бот стабильно
+// жив. Полный обход остаётся источником истины при первом тике и сразу
+// после падения или перезапуска бота, когда lastPID не подтверждается.
+func (a *App) tickPID() int {
+	a.watchMu.Lock()
+	last := a.lastPID
+	a.watchMu.Unlock()
+
+	if last != 0 && a.aliveAt(last) {
+		return last
+	}
+
+	pid := a.pid()
+	a.watchMu.Lock()
+	a.lastPID = pid
+	a.watchMu.Unlock()
+	return pid
+}
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -243,22 +274,25 @@ func (a *App) statusLoop() {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for range t.C {
-		a.emitStatus()
-		a.maybeWatchdogRestart()
+		// Один pid на весь тик: раньше statusLocked и maybeWatchdogRestart
+		// спрашивали его независимо, то есть дважды сканировали /proc в
+		// одну и ту же секунду ради одного и того же ответа.
+		pid := a.tickPID()
+		a.emitStatus(pid)
+		a.maybeWatchdogRestart(pid)
 	}
 }
 
-func (a *App) emitStatus() {
+func (a *App) emitStatus(pid int) {
 	a.mu.Lock()
-	st := a.statusLocked()
+	st := a.statusLocked(pid)
 	a.mu.Unlock()
 	a.emit("status", st)
 }
 
 // statusLocked собирает Status из текущего состояния. Вызывающий обязан
 // держать a.mu (кроме watchMu — это отдельный замок, дедлока не будет).
-func (a *App) statusLocked() Status {
-	pid := a.pid()
+func (a *App) statusLocked(pid int) Status {
 	uptime := "—"
 	if pid != 0 {
 		uptime = botproc.Uptime(pid)
@@ -282,13 +316,14 @@ func (a *App) statusLocked() Status {
 
 // maybeWatchdogRestart — тот же контракт, что у watchdog в TUI-вьюере:
 // включается вручную, поднимает бота заново только если он упал сам, не
-// чаще watchdogCooldown.
-func (a *App) maybeWatchdogRestart() {
+// чаще watchdogCooldown. pid — тот же, что уже получил statusLoop за этот
+// тик (tickPID), отдельно не спрашивается.
+func (a *App) maybeWatchdogRestart(pid int) {
 	a.mu.Lock()
 	on := a.ui.Watchdog
 	a.mu.Unlock()
 
-	alive := a.alive()
+	alive := pid != 0
 	a.watchMu.Lock()
 	if alive {
 		a.everAlive = true
@@ -321,9 +356,10 @@ func (a *App) maybeWatchdogRestart() {
 // ─── методы, вызываемые с фронтенда ────────────────────────────────────────
 
 func (a *App) Bootstrap() Bootstrap {
+	pid := a.tickPID()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return Bootstrap{Status: a.statusLocked(), UIState: a.ui, Records: toRecs(a.visible)}
+	return Bootstrap{Status: a.statusLocked(pid), UIState: a.ui, Records: toRecs(a.visible)}
 }
 
 // ClearLog сбрасывает буфер и показанную историю — старые накопленные

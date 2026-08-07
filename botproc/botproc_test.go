@@ -57,6 +57,21 @@ func TestVersionFromLog(t *testing.T) {
 	}
 }
 
+// AliveAt читает один pid вместо полного обхода /proc — используется вместо
+// PIDs() там, где pid уже известен с прошлого тика (gui/app.go, tickPID).
+func TestAliveAt(t *testing.T) {
+	// Свой процесс жив, но это тест, а не бот — needle не совпадёт.
+	if AliveAt(os.Getpid()) {
+		t.Error("AliveAt(себя) — не бот, ожидался false")
+	}
+	if AliveAt(-1) {
+		t.Error("AliveAt(-1) — несуществующий pid, ожидался false")
+	}
+	if AliveAt(1 << 30) {
+		t.Error("AliveAt(заведомо отсутствующий pid) — ожидался false")
+	}
+}
+
 func TestNewPaths(t *testing.T) {
 	m := New("/tmp/бот")
 	if m.LogFile != "/tmp/бот/heroku.log" {

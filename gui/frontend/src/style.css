@@ -14,8 +14,13 @@
   --glow-violet: rgba(124, 99, 255, .38);
   --glow-teal: rgba(53, 201, 193, .20);
 
-  --glass: rgba(255, 255, 255, .055);
-  --glass-strong: rgba(255, 255, 255, .09);
+  /* Тонированное стекло, не прозрачное: непрозрачность несёт контраст сама
+     по себе, blur — необязательное украшение поверх (см. комментарий у
+     .topbar, .sidebar, .log-pane, .help-card ниже). На webkitgtk backdrop-
+     filter не везде отрисовывается вообще, и с почти нулевой alpha панель
+     без блюра превращалась в такой же цвет фона, как и всё вокруг. */
+  --glass: rgba(23, 18, 38, .88);
+  --glass-strong: rgba(38, 30, 58, .94);
   --glass-border: rgba(255, 255, 255, .12);
 
   --text-primary: #f2eefb;
@@ -72,10 +77,14 @@ html, body {
 
 /* ─── общий язык стеклянной панели ─────────────────────────────────── */
 
+/* Непрозрачный тонированный фон — контраст с текстом не зависит от
+   backdrop-filter, который где-то не отрисовывается вовсе (тогда панель на
+   почти нулевой alpha сливается с фоном за ней — реальный баг предыдущей
+   версии), а где-то стоит недёшево на постоянно перерисовываемых больших
+   областях (список модулей и лог скроллятся). Blur — необязательное
+   украшение сверху, без него всё по-прежнему читаемо. */
 .topbar, .sidebar, .log-pane, .help-card {
   background: var(--glass);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
   border: 1px solid var(--glass-border);
   border-radius: 18px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 24px 48px rgba(0, 0, 0, .35);
@@ -124,11 +133,17 @@ html, body {
 }
 
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
-.status-pill.live .status-dot { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.status-pill.live .status-dot { background: var(--good); animation: live-glow 2.6s ease-in-out infinite; }
 .status-pill.down .status-dot { background: var(--critical); }
 .status-pill.warn .status-dot { background: var(--warning); animation: pulse 1.4s ease-in-out infinite; }
 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Живой бот дышит, а не просто горит — один маленький элемент, стоит
+   недорого даже в вечно открытом окне. */
+@keyframes live-glow {
+  0%, 100% { box-shadow: 0 0 5px var(--good); }
+  50% { box-shadow: 0 0 11px 1px var(--good); }
+}
 
 .topbar .spacer { flex: 1; -webkit-app-region: drag; }
 
@@ -147,17 +162,17 @@ button {
   border-radius: 999px;
   padding: 6px 14px;
   cursor: pointer;
-  transition: background .15s, border-color .15s, transform .1s;
+  transition: background .15s ease, border-color .15s ease, transform .15s cubic-bezier(.2, .8, .3, 1.3);
 }
-button:hover { background: rgba(255, 255, 255, .14); }
-button:active { transform: translateY(1px); }
+button:hover { background: rgba(255, 255, 255, .16); transform: translateY(-1px); }
+button:active { transform: translateY(1px); transition-duration: .05s; }
 button.primary {
   color: #16112a;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   border-color: transparent;
   font-weight: 700;
 }
-button.primary:hover { filter: brightness(1.08); }
+button.primary:hover { filter: brightness(1.1); box-shadow: 0 4px 14px rgba(124, 99, 255, .35); }
 button.danger { color: var(--critical); }
 button.toggled {
   color: #241a10;
@@ -248,7 +263,7 @@ button.toggled {
    всегда свой цвет модуля, чтобы «громко» и «плохо» не читались одним и
    тем же сигналом (состояние — отдельно, точкой слева от имени). */
 .meter { position: relative; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, .08); }
-.meter .fill { position: absolute; inset: 0; right: auto; border-radius: 999px; opacity: 0.9; }
+.meter .fill { position: absolute; inset: 0; right: auto; border-radius: 999px; opacity: 0.9; transition: width .35s ease; }
 .module-count { width: 26px; flex: none; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* Модуль в панели — не подпись, а кнопка фильтра. */
@@ -257,26 +272,38 @@ button.toggled {
 .module-row.active { background: rgba(156, 139, 255, .14); box-shadow: inset 0 0 0 1px rgba(156, 139, 255, .4); }
 
 /* Подсказка о том, что прыгать больше некуда: всплывает над логом и гаснет
-   сама — иначе нажатие n на последней ошибке выглядит как залипшая клавиша. */
+   сама — иначе нажатие n на последней ошибке выглядит как залипшая клавиша.
+   Маленький и недолго живущий элемент — здесь blur дёшев и безопасен, в
+   отличие от больших постоянно видимых панелей выше. */
 .jump-hint {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 12px; left: 50%;
   padding: 6px 14px; border-radius: 999px;
   background: var(--glass-strong); border: 1px solid var(--glass-border);
   backdrop-filter: blur(12px);
   color: var(--text-secondary); font-size: 11px;
-  opacity: 0; transition: opacity 0.18s ease; pointer-events: none;
+  opacity: 0; transform: translate(-50%, -6px);
+  transition: opacity .2s ease, transform .2s cubic-bezier(.2, .8, .3, 1.3);
+  pointer-events: none;
 }
-.jump-hint.visible { opacity: 1; }
+.jump-hint.visible { opacity: 1; transform: translate(-50%, 0); }
 
 .help-overlay {
   position: fixed; inset: 0; z-index: 10;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(5, 5, 10, 0.55);
-  backdrop-filter: blur(4px);
+  background: rgba(5, 5, 10, 0.6);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .16s ease, visibility 0s linear .16s;
+}
+.help-overlay.visible {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity .16s ease;
 }
 .help-card {
   max-width: 520px; padding: 24px 28px;
+  transform: scale(.94) translateY(10px);
+  transition: transform .2s cubic-bezier(.2, .8, .3, 1.3);
 }
+.help-overlay.visible .help-card { transform: scale(1) translateY(0); }
 .help-card h2 { margin: 0 0 14px; font-size: 14px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
 .help-card table { border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); }
 .help-card td { padding: 5px 0; vertical-align: top; color: var(--text-secondary); }
@@ -356,6 +383,7 @@ button.toggled {
   align-items: baseline;
 }
 .row.zebra { background: rgba(255,255,255,0.025); }
+.row:hover { background: rgba(255, 255, 255, .045); }
 
 .row .time { color: var(--text-muted); }
 .row .badge {
@@ -396,8 +424,17 @@ button.toggled {
   font-weight: 600;
   font-size: 12px;
   font-family: var(--font-ui);
+  /* Редкое, осмысленное событие (старт/рестарт/стоп) — в отличие от строк
+     лога, которых могут быть сотни за секунду, тут анимация ничего не
+     стоит и подчёркивает, что это не рядовая запись. */
+  animation: banner-in .22s cubic-bezier(.2, .8, .3, 1.1);
 }
 .banner.alert { border-color: rgba(255, 143, 168, .35); background: rgba(255, 143, 168, .1); color: var(--critical); }
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .log-footer {
   flex: none;
@@ -433,3 +470,11 @@ button.toggled {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .14); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .22); background-clip: padding-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -40,6 +40,11 @@ func newHarness(t *testing.T) *harness {
 		defer h.mu.Unlock()
 		return h.pid
 	}
+	// aliveAt всегда "нет" — тесты меняют h.pid между тиками через setPID и
+	// ожидают, что каждый тик увидит актуальное значение немедленно;
+	// настоящий кэш (tickPID) не должен подтверждать устаревший lastPID по
+	// реальному /proc, которого в тестовом окружении для этого pid и нет.
+	a.aliveAt = func(int) bool { return false }
 	a.start = func() botproc.StartResult {
 		h.mu.Lock()
 		h.starts++
@@ -82,7 +87,7 @@ func (h *harness) counts() (starts, stops, notices int) {
 // тик увидит недостоверное состояние.
 func (h *harness) tick(t *testing.T) {
 	t.Helper()
-	h.app.maybeWatchdogRestart()
+	h.app.maybeWatchdogRestart(h.app.tickPID())
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		h.app.watchMu.Lock()
@@ -204,6 +209,45 @@ func TestStartBotArmsCooldownAgainstWatchdog(t *testing.T) {
 	}
 	if starts, _, _ := h.counts(); starts != 1 {
 		t.Errorf("ожидался только ручной запуск, получено %d", starts)
+	}
+}
+
+// tickPID кэширует pid между тиками, пока aliveAt подтверждает его — иначе
+// вся оптимизация (не сканировать /proc заново на каждой секунде) ничего
+// не даёт. bot/mu не нужны: tickPID их не трогает.
+func TestTickPIDCachesWhileAlive(t *testing.T) {
+	a := &App{}
+	pidCalls := 0
+	a.pid = func() int {
+		pidCalls++
+		return 4242
+	}
+	a.aliveAt = func(pid int) bool { return pid == 4242 }
+
+	if got := a.tickPID(); got != 4242 || pidCalls != 1 {
+		t.Fatalf("первый тик: pid=%d calls=%d, ожидалось 4242/1", got, pidCalls)
+	}
+	for i := 0; i < 5; i++ {
+		if got := a.tickPID(); got != 4242 {
+			t.Fatalf("тик %d: pid=%d, ожидалось 4242", i, got)
+		}
+	}
+	if pidCalls != 1 {
+		t.Errorf("полный обход (a.pid) вызван %d раз, пока бот жив на том же pid — ожидался 1", pidCalls)
+	}
+
+	// Бот упал — кэш обязан не соврать, что pid ещё жив, и вернуться к
+	// полному обходу.
+	a.aliveAt = func(int) bool { return false }
+	a.pid = func() int {
+		pidCalls++
+		return 0
+	}
+	if got := a.tickPID(); got != 0 {
+		t.Errorf("после падения бота tickPID вернул %d, ожидался 0", got)
+	}
+	if pidCalls != 2 {
+		t.Errorf("после падения ожидался повторный полный обход, calls=%d", pidCalls)
 	}
 }
 

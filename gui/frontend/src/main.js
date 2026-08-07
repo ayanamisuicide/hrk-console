@@ -66,7 +66,7 @@ document.querySelector('#app').innerHTML = `
       </div>
     </div>
   </div>
-  <div class="help-overlay" id="help-overlay" style="display:none">
+  <div class="help-overlay" id="help-overlay">
     <div class="help-card">
       <h2>Горячие клавиши</h2>
       <table>
@@ -365,7 +365,10 @@ function flushTail() {
     logScroll.appendChild(frag);
     trimLog();
     if (pinned) logScroll.scrollTop = logScroll.scrollHeight; // одна запись в конце пакета
-    renderSidebar(); // один раз на пакет, а не на каждую строку
+    // Только счётчики — список модулей дороже (innerHTML='' + N узлов и
+    // обработчиков), ему хватит тика раз в секунду ниже, даже во время
+    // всплеска лога, когда этот путь срабатывает по несколько раз за кадр.
+    renderCounts();
 
     if (pendingTail.length > 0) {
         flushScheduled = true;
@@ -437,7 +440,10 @@ function showBanner(text, alert) {
 
 // ─── панель ──────────────────────────────────────────────────────────────
 
-function renderSidebar() {
+// renderCounts — дешёвая часть панели: счётчики и бейджи, только textContent
+// и toggle стилей. Зовётся на каждый пакет строк, даже во время всплеска
+// лога — здесь нет ничего, что стоило бы приберечь.
+function renderCounts() {
     countWarn.textContent = warnCount;
     countErr.textContent = errCount;
 
@@ -457,10 +463,16 @@ function renderSidebar() {
     } else {
         filterBadge.style.display = 'none';
     }
+}
 
-    // ─── модули: громче всех — сверху, список полный (не 7, как раньше) —
-    // сама область прокручивается своим скроллом, чтобы длинный список не
-    // выталкивал блок «Процесс» с Start/Stop за пределы окна.
+// renderModules — дорогая часть: пересобирает весь список модулей заново
+// (innerHTML='' + N узлов + N новых обработчиков клика). Список теперь
+// полный, а не топ-7, поэтому N может быть за сорок — звать это на каждый
+// кадр всплеска лога (как раньше) значит десятки полных пересборок панели
+// в секунду ради данных, которые всё равно обновит ближайший тик спарклайна.
+// Дёргается из renderSidebar (полная перерисовка) и из тикера ниже — не из
+// «горячего» пути flushTail.
+function renderModules() {
     const stats = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
         .sort((a, b) => b.count - a.count);
@@ -507,8 +519,9 @@ function renderSidebar() {
 
         moduleList.appendChild(row);
     }
+}
 
-    // ─── поток: спарклайн по последним секундам ───
+function renderSparkline() {
     sparkline.innerHTML = '';
     const peakA = Math.max(1, ...activityBuckets);
     for (const v of activityBuckets) {
@@ -520,10 +533,20 @@ function renderSidebar() {
     }
 }
 
+// renderSidebar — полная перерисовка панели. Дёшево звать по факту события
+// (смена фильтра/порога/DEBUG, полная пересборка) — дорого на каждый кадр
+// потока лога, поэтому «горячий» путь (flushTail) зовёт только renderCounts.
+function renderSidebar() {
+    renderCounts();
+    renderModules();
+    renderSparkline();
+}
+
 setInterval(() => {
     activityBuckets = [...activityBuckets.slice(1), activityNow];
     activityNow = 0;
-    renderSidebar();
+    renderModules();
+    renderSparkline();
 }, 1000);
 
 // ─── прыжки по логу ──────────────────────────────────────────────────────
@@ -655,7 +678,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (helpOverlay.style.display === '' && e.key !== '?') {
+    if (helpOverlay.classList.contains('visible') && e.key !== '?') {
         // Любая клавиша закрывает справку — она перекрывает лог, и первое
         // желание после прочтения именно такое.
         toggleHelp(false);
@@ -692,8 +715,8 @@ function toggleSidebar(force) {
 }
 
 function toggleHelp(force) {
-    const show = force === undefined ? helpOverlay.style.display === 'none' : force;
-    helpOverlay.style.display = show ? '' : 'none';
+    const show = force === undefined ? !helpOverlay.classList.contains('visible') : force;
+    helpOverlay.classList.toggle('visible', show);
 }
 
 btnHelp.addEventListener('click', () => toggleHelp());

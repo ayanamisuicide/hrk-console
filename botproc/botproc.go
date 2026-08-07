@@ -74,6 +74,20 @@ func PID() int {
 
 func Alive() bool { return PID() != 0 }
 
+// AliveAt проверяет один конкретный pid вместо полного обхода /proc —
+// читает единственный файл, а не листинг + cmdline на каждый процесс в
+// системе. Для опроса "тот же бот, что и на прошлом тике, ещё жив?" раз в
+// секунду это на порядки дешевле, чем PIDs(): полный скан остаётся нужен
+// только когда прошлый pid не подтвердился (бот упал, ещё не запускался,
+// или сменил pid при перезапуске).
+func AliveAt(pid int) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(bytes.ReplaceAll(data, []byte{0}, []byte{' '}), []byte(needle))
+}
+
 // Uptime форматирует время жизни процесса: "1ч 12м" / "34м 05с" / "—".
 func Uptime(pid int) string {
 	if pid == 0 {
