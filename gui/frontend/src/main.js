@@ -1,7 +1,7 @@
 import './style.css';
 
 import {
-    Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog,
+    Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
     StartBot, StopBot, RestartBot, ClearLog,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle } from '../wailsjs/runtime/runtime';
@@ -25,6 +25,7 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-debug">debug</button>
       <button id="btn-level">порог: всё</button>
       <button id="btn-clear" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
+      <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
   </div>
   <div class="stream-issue" id="stream-issue" style="display:none"></div>
@@ -64,6 +65,24 @@ document.querySelector('#app').innerHTML = `
       </div>
     </div>
   </div>
+  <div class="help-overlay" id="help-overlay" style="display:none">
+    <div class="help-card">
+      <h2>Горячие клавиши</h2>
+      <table>
+        <tr><td><kbd>d</kbd></td><td>показать/скрыть строки уровня DEBUG</td></tr>
+        <tr><td><kbd>s</kbd></td><td>показать/скрыть панель</td></tr>
+        <tr><td><kbd>w</kbd></td><td>порог показа по кругу: всё → warning+ → error+</td></tr>
+        <tr><td><kbd>a</kbd></td><td>авто-перезапуск бота при падении</td></tr>
+        <tr><td><kbd>/</kbd></td><td>поиск: подстрока или <code>re:шаблон</code></td></tr>
+        <tr><td><kbd>n</kbd> <kbd>N</kbd></td><td>к следующей / предыдущей проблеме (warning и выше)</td></tr>
+        <tr><td><kbd>r</kbd> <kbd>R</kbd></td><td>к следующему / предыдущему перезапуску</td></tr>
+        <tr><td><kbd>g</kbd> <kbd>G</kbd></td><td>в начало / в конец лога</td></tr>
+        <tr><td><kbd>клик</kbd></td><td>по модулю в панели — фильтр по нему, повторный клик снимает</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>закрыть справку, снять фильтр</td></tr>
+      </table>
+      <p class="help-foot">Те же клавиши, что в консольной версии <code>hkc</code>.</p>
+    </div>
+  </div>
 `;
 
 const el = (id) => document.getElementById(id);
@@ -87,6 +106,9 @@ const btnDebug = el('btn-debug');
 const btnLevel = el('btn-level');
 const btnWatchdog = el('btn-watchdog');
 const btnClear = el('btn-clear');
+const btnHelp = el('btn-help');
+const helpOverlay = el('help-overlay');
+const sidebar = document.querySelector('.sidebar');
 
 el('gui-version').textContent = 'gui dev';
 
@@ -115,7 +137,10 @@ function moduleColor(name) {
 
 function buildRow(rec, zebra) {
     const row = document.createElement('div');
-    row.className = 'row' + (zebra ? ' zebra' : '');
+    // problem — метка для прыжков n/N. Ставится по уровню записи, как в TUI:
+    // продолжения трейсбека наследуют уровень родителя, поэтому длинная
+    // ошибка остаётся одной целью прыжка, а не десятком подряд.
+    row.className = 'row' + (zebra ? ' zebra' : '') + (rec.level >= LEVEL_WARNING ? ' problem' : '');
 
     const time = document.createElement('span');
     time.className = 'time';
@@ -185,11 +210,20 @@ function trimLog() {
     }
 }
 
-function trackModule(rec) {
+// trackModule учитывает запись в статистике панели.
+//
+// Продолжения (трейсбек, дамп) приходят с пустым модулем — они принадлежат
+// записи выше, и считать их отдельным «модулем без имени» значит выдумать
+// самого шумного участника из ничего. TUI их пропускает, здесь тоже.
+//
+// n — сколько срабатываний схлопнуто в эту запись: при пересборке истории
+// одна строка «×50» означает полсотни событий, а не одно.
+function trackModule(rec, n = 1) {
+    if (!rec.module) return;
     const s = moduleStats.get(rec.module) || { count: 0, warn: 0, err: 0 };
-    s.count += 1;
-    if (rec.level === LEVEL_WARNING) s.warn += 1;
-    if (rec.level >= LEVEL_ERROR) s.err += 1;
+    s.count += n;
+    if (rec.level === LEVEL_WARNING) s.warn += n;
+    if (rec.level >= LEVEL_ERROR) s.err += n;
     moduleStats.set(rec.module, s);
 }
 
@@ -202,10 +236,10 @@ function renderAll(recs) {
     recs.forEach((rec, i) => frag.appendChild(buildRow(rec, i % 2 === 1)));
     logScroll.appendChild(frag); // один append, а не N — одна перекомпоновка вместо N
     recs.forEach((rec) => {
-        trackModule(rec);
         // rec.count — сколько повторов схлопнуто в эту строку; каждый считался
         // отдельным срабатыванием ещё до схлопывания.
         const n = rec.count > 1 ? rec.count : 1;
+        trackModule(rec, n);
         if (rec.warn) warnCount += n;
         else if (rec.err) errCount += n;
     });
@@ -374,14 +408,19 @@ function renderSidebar() {
         .slice(0, 7);
     const peak = stats.length ? stats[0].count : 1;
     moduleList.innerHTML = '';
+    const active = filterInput.value;
     for (const m of stats) {
         const row = document.createElement('div');
-        row.className = 'module-row';
+        // Клик по модулю ставит его имя обычным фильтром — отдельного
+        // «режима модуля» нет, как и в TUI: снимается он тем же способом,
+        // что любой другой фильтр, и объяснять две механики не нужно.
+        row.className = 'module-row clickable' + (m.name === active ? ' active' : '');
+        row.title = m.name === active ? 'снять фильтр' : 'фильтр по модулю ' + m.name;
+        row.addEventListener('click', () => applyFilter(m.name === active ? '' : m.name));
         const name = document.createElement('span');
         name.className = 'module-name' + (m.err > 0 ? ' has-err' : m.warn > 0 ? ' has-warn' : '');
         name.style.color = (m.err > 0 || m.warn > 0) ? '' : moduleColor(m.name);
         name.textContent = m.name;
-        name.title = m.name;
         const meter = document.createElement('span');
         meter.className = 'meter';
         const mask = document.createElement('span');
@@ -413,11 +452,60 @@ setInterval(() => {
     renderSidebar();
 }, 1000);
 
+// ─── прыжки по логу ──────────────────────────────────────────────────────
+//
+// Ищем ближайшую отметку в направлении прыжка относительно текущей позиции
+// прокрутки — то же правило, что у n/N и r/R в TUI. Упёрлись в край —
+// уезжаем в конец (или в начало), а не замираем молча на месте: иначе
+// нажатие выглядит как зависшая клавиша.
+function jumpTo(selector, dir) {
+    const marks = [...logScroll.querySelectorAll(selector)];
+    if (marks.length === 0) {
+        flashHint(dir > 0 ? 'дальше отметок нет' : 'выше отметок нет');
+        return;
+    }
+    const cur = logScroll.scrollTop;
+    // +1/-1 — чтобы повторное нажатие уходило дальше, а не залипало на той
+    // же отметке, к которой мы только что прокрутились.
+    const target = dir > 0
+        ? marks.find((m) => m.offsetTop > cur + 1)
+        : [...marks].reverse().find((m) => m.offsetTop < cur - 1);
+    logScroll.scrollTop = target ? target.offsetTop : (dir > 0 ? logScroll.scrollHeight : 0);
+}
+
+let hintTimer = null;
+function flashHint(text) {
+    let hint = el('jump-hint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'jump-hint';
+        hint.className = 'jump-hint';
+        document.querySelector('.log-pane').appendChild(hint);
+    }
+    hint.textContent = text;
+    hint.classList.add('visible');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hint.classList.remove('visible'), 1200);
+}
+
 // ─── управление ──────────────────────────────────────────────────────────
 
-btnStart.addEventListener('click', () => StartBot());
-btnRestart.addEventListener('click', () => RestartBot());
-btnStop.addEventListener('click', () => StopBot());
+// Перезапуск отмечается в самом логе: без этой строки падение с автоподъёмом
+// и ручной рестарт выглядят в истории одинаково — просто обрыв и новый старт.
+// Заодно это цель для прыжков r/R.
+async function withBanner(action, label) {
+    const res = await action();
+    if (res && res.ok) {
+        const time = new Date().toTimeString().slice(0, 8);
+        showBanner(`⟳  ${label}  ·  ${time}  ·  ${res.message}`, false);
+    } else if (res) {
+        showBanner(`✗  ${label}: ${res.message}`, true);
+    }
+}
+
+btnStart.addEventListener('click', () => withBanner(StartBot, 'ЗАПУСК'));
+btnRestart.addEventListener('click', () => withBanner(RestartBot, 'ПЕРЕЗАПУСК'));
+btnStop.addEventListener('click', () => withBanner(StopBot, 'ОСТАНОВКА'));
 
 btnDebug.addEventListener('click', async () => {
     uiState.showDebug = !uiState.showDebug;
@@ -461,10 +549,80 @@ filterInput.addEventListener('input', () => {
     }, 150);
 });
 
+// applyFilter ставит фильтр помимо ввода — кликом по модулю или Esc. Правит
+// и поле ввода тоже: оно показывает действующий фильтр, и разойтись с
+// реальностью ему нельзя.
+async function applyFilter(text) {
+    clearTimeout(filterDebounce); // отменяем ещё не сработавший ввод, иначе он вернёт старое
+    filterInput.value = text;
+    renderAll(await SetFilter(text));
+}
+
+// ─── горячие клавиши ─────────────────────────────────────────────────────
+//
+// Те же буквы, что в TUI: заглавная — то же действие в обратную сторону.
+// Пока курсор в поле поиска, клавиши не перехватываются — там печатают
+// текст, а не командуют.
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (document.activeElement === filterInput) {
+        if (e.key === 'Escape') {
+            filterInput.blur();
+            if (filterInput.value) applyFilter('');
+        }
+        return;
+    }
+
+    if (helpOverlay.style.display === '' && e.key !== '?') {
+        // Любая клавиша закрывает справку — она перекрывает лог, и первое
+        // желание после прочтения именно такое.
+        toggleHelp(false);
+        if (e.key === 'Escape') return;
+    }
+
+    switch (e.key) {
+        case 'd': btnDebug.click(); break;
+        case 'w': btnLevel.click(); break;
+        case 'a': btnWatchdog.click(); break;
+        case 's': toggleSidebar(); break;
+        case '?': toggleHelp(); break;
+        case 'n': jumpTo('.row.problem', 1); break;
+        case 'N': jumpTo('.row.problem', -1); break;
+        case 'r': jumpTo('.banner', 1); break;
+        case 'R': jumpTo('.banner', -1); break;
+        case 'g': logScroll.scrollTop = 0; break;
+        case 'G': logScroll.scrollTop = logScroll.scrollHeight; break;
+        case 'Escape': if (filterInput.value) applyFilter(''); break;
+        case '/':
+            e.preventDefault(); // иначе "/" попадёт в поле первым же символом
+            filterInput.focus();
+            filterInput.select();
+            break;
+        default: return;
+    }
+});
+
+function toggleSidebar(force) {
+    const show = force === undefined ? sidebar.style.display === 'none' : force;
+    sidebar.style.display = show ? '' : 'none';
+    uiState.showSidebar = show;
+    SetShowSidebar(show);
+}
+
+function toggleHelp(force) {
+    const show = force === undefined ? helpOverlay.style.display === 'none' : force;
+    helpOverlay.style.display = show ? '' : 'none';
+}
+
+btnHelp.addEventListener('click', () => toggleHelp());
+helpOverlay.addEventListener('click', () => toggleHelp(false));
+
 // ─── старт ───────────────────────────────────────────────────────────────
 
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
+    if (!uiState.showSidebar) sidebar.style.display = 'none';
     btnDebug.classList.toggle('toggled', uiState.showDebug);
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'

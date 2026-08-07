@@ -367,6 +367,17 @@ func (a *App) CycleMinLevel() []Rec {
 	return recs
 }
 
+// SetShowSidebar — клавиша s. Лога не касается, пересобирать нечего, но
+// сохранить надо: ShowSidebar лежит в общем с TUI state.json, и без этого
+// два интерфейса расходились бы в настройке, которая у них одна на двоих.
+func (a *App) SetShowSidebar(on bool) {
+	a.mu.Lock()
+	a.ui.ShowSidebar = on
+	ui := a.ui
+	a.mu.Unlock()
+	state.Save(ui)
+}
+
 func (a *App) SetWatchdog(on bool) {
 	a.mu.Lock()
 	a.ui.Watchdog = on
