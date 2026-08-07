@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -256,6 +257,31 @@ func TestFeedLineKeepsDistinctRecords(t *testing.T) {
 
 	if n := len(h.app.visible); n != 2 {
 		t.Fatalf("разные строки схлопнулись: %d записей вместо двух", n)
+	}
+}
+
+// Окно, которое просто оставили открытым, копило показанные записи всю свою
+// жизнь: обрезала их только пересборка при смене фильтра и кнопка очистки.
+func TestFeedLineBoundsVisibleHistory(t *testing.T) {
+	h := newHarness(t)
+
+	// Записи заведомо разные, иначе они схлопнутся в одну и расти будет нечему.
+	for i := 0; i < ringCapacity+2000; i++ {
+		h.app.feedLine(fmt.Sprintf(
+			"2026-08-08 00:13:04 [WARNING] heroku.modules.spotify: попытка %d", i))
+	}
+
+	if n := len(h.app.visible); n > ringCapacity+500 {
+		t.Errorf("показанных записей %d, предел %d — история растёт без границы", n, ringCapacity+500)
+	}
+	if n := len(h.app.ring); n > ringCapacity+500 {
+		t.Errorf("сырых строк %d, предел %d", n, ringCapacity+500)
+	}
+
+	// Обрезка идёт с начала: свежие записи должны остаться на месте.
+	last := h.app.visible[len(h.app.visible)-1]
+	if want := fmt.Sprintf("попытка %d", ringCapacity+2000-1); last.Lines[0] != want {
+		t.Errorf("последняя запись %q, ожидалась %q", last.Lines[0], want)
 	}
 }
 
