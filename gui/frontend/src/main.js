@@ -15,8 +15,10 @@ const MODULE_COLORS = 8; // --mod-1..--mod-8 в style.css
 
 document.querySelector('#app').innerHTML = `
   <div class="topbar">
-    <span class="brand">HEROKU</span>
-    <span class="version" id="hkc-version"></span>
+    <div class="brand-group">
+      <span class="brand">HEROKU</span>
+      <span class="version" id="hkc-version"></span>
+    </div>
     <span class="status-pill down" id="status-pill">
       <span class="status-dot"></span><span id="status-text">…</span>
     </span>
@@ -110,7 +112,13 @@ const btnHelp = el('btn-help');
 const helpOverlay = el('help-overlay');
 const sidebar = document.querySelector('.sidebar');
 
-el('gui-version').textContent = 'gui dev';
+// setProjectVersion — номер самого проекта (hrk-console), а не бота: тот
+// виден отдельно в status-pill ("live · Heroku X.X.X · ..."). Имя и номер —
+// разными span'ами, чтобы номер был заметнее тусклой подписи рядом с ним.
+function setProjectVersion(v) {
+    el('gui-version').innerHTML = '<span class="gv-name">hrk-console</span><span class="gv-num">' + v + '</span>';
+}
+setProjectVersion('dev');
 
 // ─── состояние ───────────────────────────────────────────────────────────
 
@@ -330,6 +338,7 @@ EventsOn('notice', (text) => {
 
 function renderStatus(st) {
     el('hkc-version').textContent = 'hkc ' + (st.hkcVersion || 'dev');
+    setProjectVersion(st.hkcVersion || 'dev');
 
     statusPill.classList.remove('live', 'down', 'warn');
     if (st.streamIssue) {

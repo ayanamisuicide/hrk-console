@@ -31,8 +31,12 @@ build:
 #
 # webkit2_41: на Ubuntu/Mint 24.04 в репозиториях остался только
 # webkit2gtk-4.1, а wails по умолчанию ищет -4.0 и без тега не собирается.
+#
+# Тот же -X main.version, что и у hkc, — иначе GUI всегда показывал бы "dev"
+# независимо от тега, из которого собран (repoRoot-флаг hkc сюда не идёт:
+# gui/internal/preflight не импортирует и тестов при старте не гоняет).
 gui:
-	cd gui && $(shell $(GO) env GOPATH)/bin/wails build -tags webkit2_41
+	cd gui && $(shell $(GO) env GOPATH)/bin/wails build -tags webkit2_41 -ldflags "-X main.version=$(VERSION)"
 	@echo "собрано: gui/build/bin/hrk-console-gui"
 
 test:
