@@ -24,6 +24,7 @@ document.querySelector('#app').innerHTML = `
     </span>
     <div class="spacer"></div>
     <div class="controls">
+      <button id="btn-ru" title="Переводить известные шаблонные сообщения на русский (словарь, не живой перевод)">RU</button>
       <button id="btn-debug">debug</button>
       <button id="btn-level">порог: всё</button>
       <button id="btn-clear" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
@@ -103,6 +104,7 @@ const filterInput = el('filter-input');
 const btnStart = el('btn-start');
 const btnRestart = el('btn-restart');
 const btnStop = el('btn-stop');
+const btnRu = el('btn-ru');
 const btnDebug = el('btn-debug');
 const btnLevel = el('btn-level');
 const btnWatchdog = el('btn-watchdog');
@@ -140,7 +142,60 @@ function moduleColor(name) {
     return `var(--mod-${(Math.abs(h) % MODULE_COLORS) + 1})`;
 }
 
+// ─── локализация известных шаблонных сообщений ──────────────────────────
+//
+// Не перевод произвольного текста — живой поток лога слишком быстрый для
+// сетевого переводчика на каждую строку (десятки строк в секунду), а
+// трейсбеки и пути переводить нельзя вообще, иначе отладка ломается.
+// Вместо этого — словарь: известные повторяющиеся шаблоны (urllib3,
+// asyncio, heartbeat загрузчика) подменяются на русский текст регэкспом,
+// всё остальное остаётся как есть. Список короткий и лёгкий в расширении —
+// новые повторяющиеся строки из своего heroku.log добавляются одной парой.
+const RU_DICT = [
+    [/^Starting new HTTPS connection \((\d+)\): (.+)$/, (m) => `Новое HTTPS-соединение (${m[1]}): ${m[2]}`],
+    [/^Starting new HTTP connection \((\d+)\): (.+)$/, (m) => `Новое HTTP-соединение (${m[1]}): ${m[2]}`],
+    [/^Using selector: (.+)$/, (m) => `Используется селектор ввода-вывода: ${m[1]}`],
+    [/^Reloaded (\d+) commands?$/, (m) => `Перезагружено команд: ${m[1]}`],
+    [/^Loading (.+) from filesystem$/, (m) => `Загрузка «${m[1]}» из файловой системы`],
+    [/^Loaded (\d+) modules?,\s*(\d+) skipped$/, (m) => `Загружено модулей: ${m[1]}, пропущено: ${m[2]}`],
+];
+
+function translateLine(text) {
+    for (const [re, tr] of RU_DICT) {
+        const m = text.match(re);
+        if (m) return tr(m);
+    }
+    return text;
+}
+
+let ruEnabled = localStorage.getItem('hkc-gui-ru') === '1';
+
 // ─── рендер одной записи ────────────────────────────────────────────────
+
+function buildMsgEl(rec) {
+    const msg = document.createElement('span');
+    const msgClass = rec.level === LEVEL_CRITICAL ? 'crt' : rec.level === LEVEL_ERROR ? 'err' : rec.level === LEVEL_WARNING ? 'wrn' : '';
+    msg.className = 'msg' + (msgClass ? ' ' + msgClass : '');
+    // Переводим только настоящий заголовок записи (i === 0, rec.hard[0] не
+    // взведён) — физический перенос (трейсбек, дамп) переносит rec.hard[0]
+    // в true и в словарь никогда не попадает.
+    const translatable = ruEnabled && !(rec.hard && rec.hard[0]);
+    (rec.lines || ['']).forEach((line, i) => {
+        const display = (i === 0 && translatable) ? translateLine(line) : line;
+        if (i > 0) {
+            const br = document.createElement('div');
+            const arrow = document.createElement('span');
+            arrow.className = 'continuation-arrow';
+            arrow.textContent = '↳ ';
+            br.appendChild(arrow);
+            br.appendChild(document.createTextNode(display));
+            msg.appendChild(br);
+        } else {
+            msg.appendChild(document.createTextNode(display));
+        }
+    });
+    return msg;
+}
 
 function buildRow(rec, zebra) {
     const row = document.createElement('div');
@@ -165,23 +220,7 @@ function buildRow(rec, zebra) {
     mod.textContent = rec.module;
     row.appendChild(mod);
 
-    const msg = document.createElement('span');
-    const msgClass = rec.level === LEVEL_CRITICAL ? 'crt' : rec.level === LEVEL_ERROR ? 'err' : rec.level === LEVEL_WARNING ? 'wrn' : '';
-    msg.className = 'msg' + (msgClass ? ' ' + msgClass : '');
-    (rec.lines || ['']).forEach((line, i) => {
-        if (i > 0) {
-            const br = document.createElement('div');
-            const arrow = document.createElement('span');
-            arrow.className = 'continuation-arrow';
-            arrow.textContent = '↳ ';
-            br.appendChild(arrow);
-            br.appendChild(document.createTextNode(line));
-            msg.appendChild(br);
-        } else {
-            msg.appendChild(document.createTextNode(line));
-        }
-    });
-    row.appendChild(msg);
+    row.appendChild(buildMsgEl(rec));
 
     const count = document.createElement('span');
     count.className = 'count';
@@ -194,6 +233,16 @@ function buildRow(rec, zebra) {
 
     row._rec = rec;
     return row;
+}
+
+// retranslateAll — переключение RU меняет только то, что уже нарисовано,
+// без похода к бэкенду: у каждой строки уже есть исходная запись (row._rec),
+// достаточно перестроить только .msg, не пересоздавая всю строку заново.
+function retranslateAll() {
+    for (const row of logScroll.querySelectorAll('.row')) {
+        if (!row._rec) continue;
+        row.querySelector('.msg').replaceWith(buildMsgEl(row._rec));
+    }
 }
 
 function updateRowCount(rowEl, rec) {
@@ -532,6 +581,13 @@ btnStart.addEventListener('click', () => withBanner(StartBot, 'ЗАПУСК'));
 btnRestart.addEventListener('click', () => withBanner(RestartBot, 'ПЕРЕЗАПУСК'));
 btnStop.addEventListener('click', () => withBanner(StopBot, 'ОСТАНОВКА'));
 
+btnRu.addEventListener('click', () => {
+    ruEnabled = !ruEnabled;
+    localStorage.setItem('hkc-gui-ru', ruEnabled ? '1' : '0');
+    btnRu.classList.toggle('toggled', ruEnabled);
+    retranslateAll();
+});
+
 btnDebug.addEventListener('click', async () => {
     uiState.showDebug = !uiState.showDebug;
     btnDebug.classList.toggle('toggled', uiState.showDebug);
@@ -644,6 +700,8 @@ btnHelp.addEventListener('click', () => toggleHelp());
 helpOverlay.addEventListener('click', () => toggleHelp(false));
 
 // ─── старт ───────────────────────────────────────────────────────────────
+
+btnRu.classList.toggle('toggled', ruEnabled);
 
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
