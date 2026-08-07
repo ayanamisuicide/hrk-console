@@ -22,9 +22,6 @@
   --serious: #ec835a;
   --critical: #e14b4b;
 
-  /* meter-градиент: заполнение зелёное в начале, к жёлтому и красному ближе к краю */
-  --meter-grad: linear-gradient(90deg, #3ee06b 0%, #f5d130 55%, #ff3b3b 100%);
-
   /* категориальные цвета модулей — тот же валидированный набор, что и в
      dataviz-палитре проекта (dark instance), не циклируется произвольно */
   --mod-1: #3987e5;
@@ -179,17 +176,43 @@ button.toggled { color: var(--surface-0); background: var(--warning); border-col
   word-break: break-all;
 }
 
-.module-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
-.module-name { width: 78px; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Список модулей — теперь полный (не топ-7), поэтому сама область гибкая и
+   скроллится независимо: длинный список не должен выталкивать «Процесс» со
+   Start/Stop за пределы окна. min-height: 0 — иначе flex-элемент не
+   сжимается меньше содержимого и скролл внутри него не включается вовсе. */
+.module-list {
+  flex: 1 1 auto;
+  min-height: 54px;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.h3-total { letter-spacing: normal; text-transform: none; color: var(--text-secondary); font-weight: 500; }
+
+.module-row {
+  display: grid;
+  grid-template-columns: 7px 1fr 44px 26px;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.module-dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.module-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-name.has-err { color: var(--critical); font-weight: 700; }
 .module-name.has-warn { color: var(--warning); font-weight: 700; }
-.meter { position: relative; flex: 1; height: 7px; border-radius: 4px; overflow: hidden; background: var(--meter-grad); }
-.meter .mask { position: absolute; top: 0; right: 0; bottom: 0; background: var(--surface-2); }
-.module-count { width: 26px; flex: none; text-align: right; color: var(--text-muted); }
+
+/* Полоса — объём (доля от самого шумного модуля), не тревога: красит её
+   всегда свой цвет модуля, а не общий зелёно-красный градиент, чтобы
+   «громко» и «плохо» не читались одним и тем же сигналом. */
+.meter { position: relative; height: 5px; border-radius: 3px; overflow: hidden; background: var(--surface-2); }
+.meter .fill { position: absolute; inset: 0; right: auto; border-radius: 3px; opacity: 0.85; }
+.module-count { width: 26px; flex: none; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* Модуль в панели — не подпись, а кнопка фильтра. Отрицательные отступы
    расширяют зону клика до краёв панели, не сдвигая саму строку. */
-.module-row.clickable { cursor: pointer; margin-inline: -4px; padding: 2px 4px; border-radius: 4px; }
+.module-row.clickable { cursor: pointer; margin-inline: -4px; padding: 3px 4px; border-radius: 4px; }
 .module-row.clickable:hover { background: var(--surface-2); }
 .module-row.active { background: rgba(34, 211, 238, 0.12); box-shadow: inset 2px 0 0 var(--accent); }
 
@@ -230,12 +253,21 @@ button.toggled { color: var(--surface-0); background: var(--warning); border-col
 .sparkline .bar { flex: 1; background: var(--accent); border-radius: 1px 1px 0 0; min-height: 2px; opacity: 0.85; }
 .sparkline .bar.hot { background: var(--warning); }
 
-.proc-block { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px; }
+.proc-block {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
 .proc-block .live-label { color: var(--good); font-weight: 700; }
 .proc-block .down-label { color: var(--critical); font-weight: 700; }
+.proc-block .proc-meta { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; }
 
-.proc-controls { display: flex; gap: 6px; }
-.proc-controls button { flex: 1; padding: 5px 4px; font-size: 11px; text-align: center; }
+.proc-controls { display: flex; gap: 8px; }
+.proc-controls button { flex: 1; padding: 6px 4px; font-size: 11px; text-align: center; }
 
 .proc-watchdog-btn { width: 100%; margin-top: 6px; font-size: 11px; }
 

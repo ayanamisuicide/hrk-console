@@ -44,10 +44,8 @@ document.querySelector('#app').innerHTML = `
       <h3>Поток</h3>
       <div class="sparkline" id="sparkline"></div>
 
-      <h3>Модули</h3>
-      <div id="module-list"></div>
-
-      <div style="flex:1"></div>
+      <h3>Модули <span class="h3-total" id="module-total"></span></h3>
+      <div class="module-list" id="module-list"></div>
 
       <h3>Процесс</h3>
       <div class="proc-block" id="proc-block">—</div>
@@ -97,6 +95,7 @@ const thresholdBadge = el('threshold-badge');
 const filterBadge = el('filter-badge');
 const sparkline = el('sparkline');
 const moduleList = el('module-list');
+const moduleTotal = el('module-total');
 const procBlock = el('proc-block');
 const watchdogNote = el('watchdog-note');
 const logScroll = el('log-scroll');
@@ -358,7 +357,7 @@ function renderStatus(st) {
     }
 
     procBlock.innerHTML = st.alive
-        ? `<span class="live-label">● live</span><br/>pid ${st.pid}<br/>${st.uptime}`
+        ? `<span class="live-label">● live</span><span class="proc-meta">pid ${st.pid} · ${st.uptime}</span>`
         : `<span class="down-label">○ не запущен</span>`;
 
     if (st.restarting) {
@@ -410,12 +409,14 @@ function renderSidebar() {
         filterBadge.style.display = 'none';
     }
 
-    // ─── модули: громче всех — сверху, максимум 7, как в TUI ───
+    // ─── модули: громче всех — сверху, список полный (не 7, как раньше) —
+    // сама область прокручивается своим скроллом, чтобы длинный список не
+    // выталкивал блок «Процесс» с Start/Stop за пределы окна.
     const stats = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 7);
+        .sort((a, b) => b.count - a.count);
     const peak = stats.length ? stats[0].count : 1;
+    moduleTotal.textContent = stats.length ? '· ' + stats.length : '';
     moduleList.innerHTML = '';
     const active = filterInput.value;
     for (const m of stats) {
@@ -426,20 +427,35 @@ function renderSidebar() {
         row.className = 'module-row clickable' + (m.name === active ? ' active' : '');
         row.title = m.name === active ? 'снять фильтр' : 'фильтр по модулю ' + m.name;
         row.addEventListener('click', () => applyFilter(m.name === active ? '' : m.name));
+
+        // Точка — состояние модуля (проблема ярче самого частого случая, что
+        // это просто разные модули): свой цвет в норме, warn/err — цветом
+        // проблемы. Полоса ниже красит объём тем же цветом модуля всегда —
+        // так объём и состояние не спорят за один и тот же сигнал.
+        const dot = document.createElement('span');
+        dot.className = 'module-dot';
+        dot.style.background = m.err > 0 ? 'var(--critical)' : m.warn > 0 ? 'var(--warning)' : moduleColor(m.name);
+        row.appendChild(dot);
+
         const name = document.createElement('span');
         name.className = 'module-name' + (m.err > 0 ? ' has-err' : m.warn > 0 ? ' has-warn' : '');
-        name.style.color = (m.err > 0 || m.warn > 0) ? '' : moduleColor(m.name);
         name.textContent = m.name;
+        row.appendChild(name);
+
         const meter = document.createElement('span');
         meter.className = 'meter';
-        const mask = document.createElement('span');
-        mask.className = 'mask';
-        mask.style.width = (100 - Math.round((m.count / peak) * 100)) + '%';
-        meter.appendChild(mask);
+        const fill = document.createElement('span');
+        fill.className = 'fill';
+        fill.style.width = Math.round((m.count / peak) * 100) + '%';
+        fill.style.background = moduleColor(m.name);
+        meter.appendChild(fill);
+        row.appendChild(meter);
+
         const count = document.createElement('span');
         count.className = 'module-count';
         count.textContent = m.count;
-        row.append(name, meter, count);
+        row.appendChild(count);
+
         moduleList.appendChild(row);
     }
 
