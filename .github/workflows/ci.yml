@@ -38,3 +38,46 @@ jobs:
 
       - name: build
         run: make build
+
+  # gui — вложенный модуль, и "./..." из корня в него не заходит: ни vet, ни
+  # test его не видели, из-за чего ложное срабатывание вотчдога доехало до
+  # релиза через зелёный CI. Отдельный job, потому что тут свой тулчейн.
+  gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # webkit2gtk-4.1: в 24.04 пакета -4.0 в репозиториях уже нет, поэтому
+      # везде дальше идёт тег webkit2_41 — тот же, что в make gui.
+      - name: системные библиотеки webview
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      # Полная сборка идёт до проверок не для галочки: она генерирует
+      # frontend/wailsjs (импорты фронтенда) и frontend/dist (его тянет
+      # go:embed) — оба каталога в .gitignore, и без них модуль не
+      # компилируется вообще.
+      - name: wails build
+        working-directory: gui
+        run: wails build -tags webkit2_41
+
+      - name: go vet
+        working-directory: gui
+        run: go vet -tags webkit2_41 ./...
+
+      - name: go test
+        working-directory: gui
+        run: go test -count=1 -race -tags webkit2_41 ./...

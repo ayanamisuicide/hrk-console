@@ -104,6 +104,17 @@ type App struct {
 	// и радостно рапортует "не отвечает — перезапускаю" тому, что никогда
 	// не запускалось.
 	everAlive bool
+
+	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса
+	// в /proc, запуск и остановка бота, отправка события в окно — проходит
+	// через эти поля. Без них логику вотчдога (кто, когда и на каком
+	// основании решает перезапускать) нельзя проверить, не подняв
+	// настоящего бота в настоящем окне Wails; ровно поэтому ложное
+	// срабатывание из 1.6.1 и доехало до релиза.
+	pid   func() int
+	start func() botproc.StartResult
+	stop  func() int
+	emit  func(event string, data ...interface{})
 }
 
 func NewApp() *App {
@@ -112,8 +123,22 @@ func NewApp() *App {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, "Heroku")
 	}
-	return &App{bot: botproc.New(dir)}
+	a := &App{bot: botproc.New(dir)}
+	a.pid = botproc.PID
+	a.start = a.bot.Start
+	a.stop = a.bot.Stop
+	// ctx читается в момент вызова, а не сейчас: на этапе NewApp окна ещё
+	// нет, его подставит startup.
+	a.emit = func(event string, data ...interface{}) {
+		wailsrt.EventsEmit(a.ctx, event, data...)
+	}
+	return a
 }
+
+// alive — единственный источник правды о живости бота для всего бэкенда:
+// и статус в шапке, и вотчдог спрашивают один и тот же pid, а не два
+// независимых обхода /proc, которые могут разойтись между собой.
+func (a *App) alive() bool { return a.pid() != 0 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -202,7 +227,7 @@ func (a *App) feedLine(raw string) {
 	}
 	a.mu.Unlock()
 	if evt != nil {
-		wailsrt.EventsEmit(a.ctx, "log-tail", evt)
+		a.emit("log-tail", evt)
 	}
 }
 
@@ -219,13 +244,13 @@ func (a *App) emitStatus() {
 	a.mu.Lock()
 	st := a.statusLocked()
 	a.mu.Unlock()
-	wailsrt.EventsEmit(a.ctx, "status", st)
+	a.emit("status", st)
 }
 
 // statusLocked собирает Status из текущего состояния. Вызывающий обязан
 // держать a.mu (кроме watchMu — это отдельный замок, дедлока не будет).
 func (a *App) statusLocked() Status {
-	pid := botproc.PID()
+	pid := a.pid()
 	uptime := "—"
 	if pid != 0 {
 		uptime = botproc.Uptime(pid)
@@ -255,7 +280,7 @@ func (a *App) maybeWatchdogRestart() {
 	on := a.ui.Watchdog
 	a.mu.Unlock()
 
-	alive := botproc.Alive()
+	alive := a.alive()
 	a.watchMu.Lock()
 	if alive {
 		a.everAlive = true
@@ -276,9 +301,9 @@ func (a *App) maybeWatchdogRestart() {
 	a.lastRestartAttempt = time.Now()
 	a.watchMu.Unlock()
 
-	wailsrt.EventsEmit(a.ctx, "notice", "watchdog: бот не отвечает — перезапускаю")
+	a.emit("notice", "watchdog: бот не отвечает — перезапускаю")
 	go func() {
-		a.bot.Start()
+		a.start()
 		a.watchMu.Lock()
 		a.restarting = false
 		a.watchMu.Unlock()
@@ -359,7 +384,7 @@ func (a *App) StartBot() ActionResult {
 	a.lastRestartAttempt = time.Now()
 	a.watchMu.Unlock()
 
-	res := a.bot.Start()
+	res := a.start()
 	switch {
 	case res.Err != nil:
 		return ActionResult{OK: false, Message: res.Err.Error()}
@@ -371,7 +396,7 @@ func (a *App) StartBot() ActionResult {
 }
 
 func (a *App) StopBot() ActionResult {
-	switch a.bot.Stop() {
+	switch a.stop() {
 	case 0:
 		return ActionResult{OK: true, Message: "остановлен"}
 	case 2:
@@ -382,8 +407,8 @@ func (a *App) StopBot() ActionResult {
 }
 
 func (a *App) RestartBot() ActionResult {
-	if botproc.Alive() {
-		a.bot.Stop()
+	if a.alive() {
+		a.stop()
 	}
 	return a.StartBot()
 }
