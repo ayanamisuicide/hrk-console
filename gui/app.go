@@ -222,6 +222,14 @@ func (a *App) feedLine(raw string) {
 			evt = &TailEvent{Replace: true, Rec: toRec(last)}
 		} else {
 			a.visible = append(a.visible, rec)
+			// Тот же предел, что у кольцевого буфера. Без него visible рос
+			// без границы всю жизнь окна: обрезала его только пересборка при
+			// смене фильтра и кнопка очистки, то есть у окна, которое просто
+			// оставили открытым, — никогда. Показать больше, чем помнит ring,
+			// всё равно нельзя: пересборка возьмёт историю именно оттуда.
+			if len(a.visible) > ringCapacity+500 {
+				a.visible = a.visible[len(a.visible)-ringCapacity:]
+			}
 			evt = &TailEvent{Replace: false, Rec: toRec(rec)}
 		}
 	}
