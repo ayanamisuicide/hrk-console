@@ -30,6 +30,8 @@ make build
 ./gui/install.sh
 ```
 
+Окно необязательно держать на той же машине, где стоит бот — есть готовая сборка под Windows в [релизах](https://github.com/ayanamisuicide/hrk-console/releases/latest), подключается к боту на Linux по SSH (см. [«Бот на другой машине»](docs/usage.md#бот-на-другой-машине)).
+
 > [!IMPORTANT]
 > Перед первым запуском нужно один раз войти в аккаунт Telegram вручную — консоль запускает бота в фоне и ответить на его вопросы про `api_id` и код из Telegram будет некому. Как это сделать: [docs/setup.md](docs/setup.md#вход-в-аккаунт-telegram).
 

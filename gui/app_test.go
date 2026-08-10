@@ -49,18 +49,20 @@ func newHarness(t *testing.T) *harness {
 	// настоящий кэш (tickPID) не должен подтверждать устаревший lastPID по
 	// реальному /proc, которого в тестовом окружении для этого pid и нет.
 	a.aliveAt = func(int) bool { return false }
-	a.start = func() botproc.StartResult {
+	a.start = func() startResult {
 		h.mu.Lock()
 		h.starts++
 		h.mu.Unlock()
-		return botproc.StartResult{PID: 4242}
+		return startResult{PID: 4242}
 	}
-	a.stop = func() int {
+	a.stop = func() (int, error) {
 		h.mu.Lock()
 		h.stops++
 		h.mu.Unlock()
-		return 0
+		return 0, nil
 	}
+	a.uptime = func(int) string { return "—" }
+	a.botVersion = func() string { return "" }
 	a.emit = func(event string, data ...interface{}) {
 		if event != "notice" || len(data) == 0 {
 			return

@@ -3,7 +3,7 @@ import './style.css';
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
     StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
-    PreflightChecks,
+    PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
@@ -77,6 +77,11 @@ document.querySelector('#app').innerHTML = `
       </div>
       <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
       <div class="watchdog-note" id="watchdog-note"></div>
+
+      <h3>Подключение</h3>
+      <div class="remote-status" id="remote-status">локально</div>
+      <button id="btn-remote" class="remote-open-btn">Удалённый бот…</button>
+
       <div class="gui-version" id="gui-version"></div>
     </div>
     <div class="log-pane">
@@ -102,6 +107,23 @@ document.querySelector('#app').innerHTML = `
         <tr><td><kbd>Esc</kbd></td><td>закрыть справку, снять фильтр</td></tr>
       </table>
       <p class="help-foot">Те же клавиши, что в консольной версии <code>hkc</code>.</p>
+    </div>
+  </div>
+  <div class="remote-overlay" id="remote-overlay">
+    <div class="remote-card">
+      <h2>Удалённый бот</h2>
+      <p class="remote-hint">Бот управляется на другой машине по SSH — окно только показывает и командует, ничего из бота на этом компьютере не хранится.</p>
+      <label>Хост или IP<input type="text" id="remote-host" placeholder="192.168.31.128" autocomplete="off"></label>
+      <label>Пользователь<input type="text" id="remote-user" placeholder="ayanami" autocomplete="off"></label>
+      <label>Приватный ключ<input type="text" id="remote-key" placeholder="C:\Users\...\.ssh\id_ed25519" autocomplete="off"></label>
+      <label>Каталог бота на той машине<input type="text" id="remote-dir" placeholder="Heroku" autocomplete="off"></label>
+      <div class="remote-note" id="remote-note"></div>
+      <div class="remote-actions">
+        <button id="btn-remote-test">Проверить соединение</button>
+        <button id="btn-remote-connect" class="primary">Подключиться</button>
+        <button id="btn-remote-disconnect" class="danger" style="display:none">Вернуться к локальному боту</button>
+        <button id="btn-remote-cancel">Отмена</button>
+      </div>
     </div>
   </div>
 `;
@@ -141,6 +163,18 @@ const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
+const remoteStatusEl = el('remote-status');
+const btnRemote = el('btn-remote');
+const remoteOverlay = el('remote-overlay');
+const remoteHostInput = el('remote-host');
+const remoteUserInput = el('remote-user');
+const remoteKeyInput = el('remote-key');
+const remoteDirInput = el('remote-dir');
+const remoteNote = el('remote-note');
+const btnRemoteTest = el('btn-remote-test');
+const btnRemoteConnect = el('btn-remote-connect');
+const btnRemoteDisconnect = el('btn-remote-disconnect');
+const btnRemoteCancel = el('btn-remote-cancel');
 
 // setProjectVersion — номер самого проекта (hrk-console), а не бота: тот
 // виден отдельно в status-pill ("live · Heroku X.X.X · ..."). Имя и номер —
@@ -644,6 +678,104 @@ function renderPreflightChecks(names) {
 
 PreflightChecks().then(renderPreflightChecks);
 
+// ─── удалённое подключение ───────────────────────────────────────────────
+//
+// remote в uiState (Bootstrap/status) — те же четыре поля, что и
+// state.Remote на бэкенде; host пустой значит "локально". Подключение и
+// отключение оба идут через честный перезапуск приложения (ConnectRemote/
+// DisconnectRemote вызывают RestartApp на бэкенде) — переключение
+// источника бота на лету было бы источником гонок между старыми и новыми
+// горутинами, а перезапуск окна занимает меньше секунды и уже есть готовым
+// после самообновления.
+function renderRemoteStatus(remote) {
+    if (remote && remote.host) {
+        remoteStatusEl.textContent = remote.host + (remote.user ? ' · ' + remote.user : '');
+        remoteStatusEl.classList.add('active');
+        btnRemoteDisconnect.style.display = '';
+    } else {
+        remoteStatusEl.textContent = 'локально';
+        remoteStatusEl.classList.remove('active');
+        btnRemoteDisconnect.style.display = 'none';
+    }
+}
+
+function openRemoteOverlay(remote) {
+    remoteHostInput.value = (remote && remote.host) || '';
+    remoteUserInput.value = (remote && remote.user) || '';
+    remoteKeyInput.value = (remote && remote.keyPath) || '';
+    remoteDirInput.value = (remote && remote.dir) || 'Heroku';
+    remoteNote.textContent = '';
+    remoteNote.className = 'remote-note';
+    btnRemoteTest.disabled = false;
+    btnRemoteConnect.disabled = false;
+    remoteOverlay.classList.add('visible');
+}
+
+function closeRemoteOverlay() {
+    remoteOverlay.classList.remove('visible');
+}
+
+btnRemote.addEventListener('click', () => openRemoteOverlay(uiState.remote));
+btnRemoteCancel.addEventListener('click', closeRemoteOverlay);
+remoteOverlay.addEventListener('click', (e) => {
+    if (e.target === remoteOverlay) closeRemoteOverlay();
+});
+
+// readRemoteForm — общее чтение+валидация для "проверить" и "подключиться":
+// обе кнопки хотят один и тот же конфиг, дублировать проверку незачем.
+function readRemoteForm() {
+    const cfg = {
+        host: remoteHostInput.value.trim(),
+        user: remoteUserInput.value.trim(),
+        keyPath: remoteKeyInput.value.trim(),
+        dir: remoteDirInput.value.trim() || 'Heroku',
+    };
+    if (!cfg.host || !cfg.user || !cfg.keyPath) {
+        remoteNote.textContent = 'заполните хост, пользователя и путь к ключу';
+        remoteNote.className = 'remote-note';
+        return null;
+    }
+    return cfg;
+}
+
+btnRemoteTest.addEventListener('click', async () => {
+    const cfg = readRemoteForm();
+    if (!cfg) return;
+    btnRemoteTest.disabled = true;
+    remoteNote.textContent = 'проверяю…';
+    remoteNote.className = 'remote-note';
+    const res = await TestRemoteConnection(cfg);
+    btnRemoteTest.disabled = false;
+    remoteNote.textContent = res.message;
+    remoteNote.className = 'remote-note' + (res.ok ? ' ok' : ' bad');
+});
+
+btnRemoteConnect.addEventListener('click', async () => {
+    const cfg = readRemoteForm();
+    if (!cfg) return;
+    btnRemoteConnect.disabled = true;
+    remoteNote.textContent = 'подключаюсь и перезапускаю окно…';
+    remoteNote.className = 'remote-note';
+    const res = await ConnectRemote(cfg);
+    if (!res.ok) {
+        btnRemoteConnect.disabled = false;
+        remoteNote.textContent = 'не удалось: ' + res.message;
+        remoteNote.className = 'remote-note bad';
+    }
+    // При успехе окно вот-вот перезапустится само (RestartApp на бэкенде) —
+    // отдельно закрывать оверлей не нужно.
+});
+
+btnRemoteDisconnect.addEventListener('click', async () => {
+    btnRemoteDisconnect.disabled = true;
+    remoteNote.textContent = 'возвращаюсь к локальному боту…';
+    const res = await DisconnectRemote();
+    if (!res.ok) {
+        btnRemoteDisconnect.disabled = false;
+        remoteNote.textContent = 'не удалось: ' + res.message;
+    }
+});
+
 // ─── шапка / статус ──────────────────────────────────────────────────────
 
 function renderStatus(st) {
@@ -1071,6 +1203,7 @@ Bootstrap().then((boot) => {
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'
         : uiState.minLevel === LEVEL_ERROR ? 'порог: error+' : 'порог: всё';
+    renderRemoteStatus(uiState.remote);
     renderStatus(boot.status);
     renderAll(boot.records);
 });
