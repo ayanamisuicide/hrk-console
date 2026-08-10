@@ -31,6 +31,14 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # Конфиг — .golangci.yml в корне: стандартный набор без errcheck (см.
+      # комментарий в файле — закрытие уже прочитанных файлов и cleanup
+      # os.Remove в defer здесь игнорируются намеренно по всему проекту).
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
       # -count=1 отключает кэш: прогон в CI должен быть настоящим, иначе
       # зелёная галочка не означает ничего.
       - name: go test
@@ -77,6 +85,15 @@ jobs:
       - name: go vet
         working-directory: gui
         run: go vet -tags webkit2_41 ./...
+
+      # Тот же .golangci.yml из корня — golangci-lint-action сам находит
+      # его, поднимаясь от рабочей директории вверх по дереву.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: gui
+          args: --build-tags webkit2_41
 
       - name: go test
         working-directory: gui

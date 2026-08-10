@@ -3,6 +3,7 @@ import './style.css';
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
     StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
+    PreflightChecks,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
@@ -14,6 +15,20 @@ const MODULE_COLORS = 8; // --mod-1..--mod-8 в style.css
 // ─── разметка ────────────────────────────────────────────────────────────
 
 document.querySelector('#app').innerHTML = `
+  <div class="preflight-overlay" id="preflight-overlay">
+    <div class="preflight-card">
+      <div class="preflight-head">
+        <span class="preflight-brand">HEROKU</span>
+        <span class="preflight-sub">проверка окружения</span>
+      </div>
+      <div class="preflight-list" id="preflight-list"></div>
+      <div class="preflight-foot">
+        <div class="preflight-bar"><div class="preflight-bar-fill" id="preflight-bar-fill"></div></div>
+        <div class="preflight-status" id="preflight-status">запускаю проверки…</div>
+      </div>
+      <button class="preflight-continue" id="preflight-continue" style="display:none">продолжить всё равно</button>
+    </div>
+  </div>
   <div class="topbar">
     <div class="brand-group">
       <span class="brand">HEROKU</span>
@@ -46,6 +61,9 @@ document.querySelector('#app').innerHTML = `
 
       <h3>Поток</h3>
       <div class="sparkline" id="sparkline"></div>
+
+      <h3>История <span class="h3-total" id="history-total"></span></h3>
+      <div class="history-chart" id="history-chart"></div>
 
       <h3>Модули <span class="h3-total" id="module-total"></span></h3>
       <div class="module-list" id="module-list"></div>
@@ -97,6 +115,8 @@ const countErr = el('count-err');
 const thresholdBadge = el('threshold-badge');
 const filterBadge = el('filter-badge');
 const sparkline = el('sparkline');
+const historyChart = el('history-chart');
+const historyTotal = el('history-total');
 const moduleList = el('module-list');
 const moduleTotal = el('module-total');
 const procBlock = el('proc-block');
@@ -116,6 +136,11 @@ const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
 const helpOverlay = el('help-overlay');
 const sidebar = document.querySelector('.sidebar');
+const preflightOverlay = el('preflight-overlay');
+const preflightList = el('preflight-list');
+const preflightBarFill = el('preflight-bar-fill');
+const preflightStatus = el('preflight-status');
+const preflightContinue = el('preflight-continue');
 
 // setProjectVersion — номер самого проекта (hrk-console), а не бота: тот
 // виден отдельно в status-pill ("live · Heroku X.X.X · ..."). Имя и номер —
@@ -132,6 +157,15 @@ let lastRowEl = null;   // DOM-узел последней записи — дл
 let moduleStats = new Map(); // имя → {count, warn, err}
 let activityBuckets = new Array(40).fill(0);
 let activityNow = 0;
+
+// historyBuckets — та же идея, что у сперклайна активности (кольцо,
+// растущее по мере жизни окна), но на другом масштабе: не последние 40
+// секунд «шумит или нет», а последний час «когда именно участились
+// проблемы» — секундный сперклайн для этого слишком короткий, за минуту
+// прокручивается целиком. Ведро — не общий счёт событий, а warn/err
+// отдельно: важно видеть, что именно накопилось, а не просто «было шумно».
+const HISTORY_MINUTES = 60;
+let historyBuckets = Array.from({ length: HISTORY_MINUTES }, () => ({ warn: 0, err: 0 }));
 // warnCount/errCount считаются нарастающим итогом по КАЖДОМУ событию, а не
 // по числу строк на экране: одно и то же предупреждение, повторившееся 10
 // раз и схлопнутое в одну строку "×10", всё равно означает 10 срабатываний.
@@ -416,6 +450,9 @@ function flushTail() {
         // экране, а про то, сколько раз это реально произошло.
         if (evt.rec.warn) warnCount++;
         else if (evt.rec.err) errCount++;
+        const bucket = historyBuckets[historyBuckets.length - 1];
+        if (evt.rec.warn) bucket.warn++;
+        else if (evt.rec.err) bucket.err++;
     }
 
     logScroll.appendChild(frag);
@@ -519,6 +556,93 @@ updateBadge.addEventListener('click', async () => {
     setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
     applyUpdateResult(await CheckForUpdate(), true);
 });
+
+// ─── проверки перед стартом ──────────────────────────────────────────────
+//
+// Те же восемь проверок, что у TUI (preflight.All), тем же контрактом:
+// по одной, а не разом — прогон должен читаться как последовательность
+// шагов. Бэкенд начинает гонять их сразу при старте окна (gui/app.go,
+// runPreflight), параллельно с загрузкой истории лога — сама проверка
+// окружения не блокирует то, что уже можно показать.
+//
+// Имена проверок и их результаты приезжают разными путями: PreflightChecks()
+// — обычный запрос-ответ, событие 'preflight-check' — поток. Порядок их
+// прибытия не гарантирован (первое событие вполне может успеть раньше, чем
+// разрешится запрос имён), поэтому события, пришедшие до того, как строки
+// отрисованы, копятся в очереди и применяются разом, как только список
+// готов — тот же приём, что и pendingTail для строк лога.
+let preflightRows = [];
+let preflightPending = [];
+let preflightFailed = false;
+
+EventsOn('preflight-check', (ev) => {
+    if (preflightRows.length === 0) {
+        preflightPending.push(ev);
+        return;
+    }
+    applyPreflightEvent(ev);
+});
+
+function applyPreflightEvent(ev) {
+    const row = preflightRows[ev.index];
+    if (!row) return;
+
+    row.dataset.state = ev.status;
+    row.querySelector('.pf-detail').textContent = ev.detail || '';
+    if (ev.status === 'failed') preflightFailed = true;
+
+    preflightBarFill.style.width = Math.round(((ev.index + 1) / ev.total) * 100) + '%';
+
+    const next = preflightRows[ev.index + 1];
+    if (next) {
+        next.dataset.state = 'running';
+        preflightStatus.className = 'preflight-status';
+        preflightStatus.textContent = next.querySelector('.pf-name').textContent + '…';
+    } else {
+        finishPreflight();
+    }
+}
+
+function finishPreflight() {
+    if (preflightFailed) {
+        preflightStatus.textContent = 'не всё в порядке';
+        preflightStatus.className = 'preflight-status bad';
+        preflightContinue.style.display = '';
+    } else {
+        preflightStatus.textContent = 'всё готово';
+        preflightStatus.className = 'preflight-status ok';
+        // Короткая пауза, чтобы взгляд успел долистать до "всё готово" —
+        // без неё зелёная строка появлялась бы и тут же сменялась логом.
+        setTimeout(dismissPreflight, 900);
+    }
+}
+
+function dismissPreflight() {
+    preflightOverlay.classList.add('dismissed');
+}
+
+preflightContinue.addEventListener('click', dismissPreflight);
+
+function renderPreflightChecks(names) {
+    if (!names || names.length === 0) {
+        dismissPreflight();
+        return;
+    }
+    preflightRows = names.map((name, i) => {
+        const row = document.createElement('div');
+        row.className = 'pf-row';
+        row.dataset.state = i === 0 ? 'running' : 'pending';
+        row.innerHTML = '<span class="pf-dot"></span><span class="pf-name"></span><span class="pf-detail"></span>';
+        row.querySelector('.pf-name').textContent = name;
+        preflightList.appendChild(row);
+        return row;
+    });
+    preflightStatus.textContent = names[0] + '…';
+    preflightPending.forEach(applyPreflightEvent);
+    preflightPending = [];
+}
+
+PreflightChecks().then(renderPreflightChecks);
 
 // ─── шапка / статус ──────────────────────────────────────────────────────
 
@@ -668,6 +792,32 @@ function renderSparkline() {
     }
 }
 
+// renderHistory — 60 столбиков, каждый минута жизни окна, самый правый —
+// текущая. Высота — суммарный объём warn+err за минуту относительно пика
+// за весь час, цвет — что там накопилось (err перекрывает warn: если в
+// минуте была хоть одна ошибка, она и определяет цвет всей минуты, warn
+// сам по себе не должен теряться на фоне более частых warning). Подсказка
+// при наведении — точное число и когда это было, столбик сам по себе
+// только про «плохо/терпимо/тихо».
+function renderHistory() {
+    historyChart.innerHTML = '';
+    const peak = Math.max(1, ...historyBuckets.map((b) => b.warn + b.err));
+    let totalWarn = 0, totalErr = 0;
+    historyBuckets.forEach((b, i) => {
+        totalWarn += b.warn;
+        totalErr += b.err;
+        const total = b.warn + b.err;
+        const bar = document.createElement('span');
+        bar.className = 'history-bar' + (b.err > 0 ? ' err' : b.warn > 0 ? ' warn' : '');
+        bar.style.height = (total === 0 ? 4 : Math.max(10, Math.round((total / peak) * 100))) + '%';
+        const minutesAgo = historyBuckets.length - 1 - i;
+        bar.title = (minutesAgo === 0 ? 'эта минута' : minutesAgo + ' мин назад') +
+            (total ? `  ·  ⚠${b.warn} ✗${b.err}` : '  ·  тихо');
+        historyChart.appendChild(bar);
+    });
+    historyTotal.textContent = (totalWarn + totalErr) ? `· ⚠${totalWarn} ✗${totalErr}` : '';
+}
+
 // renderSidebar — полная перерисовка панели. Дёшево звать по факту события
 // (смена фильтра/порога/DEBUG, полная пересборка) — дорого на каждый кадр
 // потока лога, поэтому «горячий» путь (flushTail) зовёт только renderCounts.
@@ -675,6 +825,7 @@ function renderSidebar() {
     renderCounts();
     renderModules();
     renderSparkline();
+    renderHistory();
 }
 
 setInterval(() => {
@@ -683,6 +834,14 @@ setInterval(() => {
     renderModules();
     renderSparkline();
 }, 1000);
+
+// Отдельный, более редкий тикер — минутные вёдра не обязаны ждать секундный,
+// вращать их каждую секунду означало бы почти всегда просто перерисовывать
+// тот же самый набор без изменений.
+setInterval(() => {
+    historyBuckets = [...historyBuckets.slice(1), { warn: 0, err: 0 }];
+    renderHistory();
+}, 60000);
 
 // ─── прыжки по логу ──────────────────────────────────────────────────────
 //

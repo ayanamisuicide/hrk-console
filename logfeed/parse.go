@@ -196,7 +196,9 @@ func Visible(rec *Record, showDebug bool, filter string, minLevel Level) bool {
 		return false
 	}
 	if rec.Level == LevelDebug && !showDebug {
-		if !loudModules.MatchString(rec.fullModule) && !(len(rec.Lines) > 0 && loudMessages.MatchString(rec.Lines[0])) {
+		loud := loudModules.MatchString(rec.fullModule) ||
+			(len(rec.Lines) > 0 && loudMessages.MatchString(rec.Lines[0]))
+		if !loud {
 			return false
 		}
 	}

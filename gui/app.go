@@ -1,19 +1,11 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +13,8 @@ import (
 
 	"heroku-console/botproc"
 	"heroku-console/logfeed"
+	"heroku-console/preflight"
+	"heroku-console/selfupdate"
 	"heroku-console/state"
 )
 
@@ -209,79 +203,89 @@ func (a *App) startup(ctx context.Context) {
 	go a.followLog()
 	go a.statusLoop()
 	go a.checkUpdateOnce()
+	go a.runPreflight()
 }
 
-// updateCheckURL — репозиторий консоли, не бота: у Heroku-юзербота своя
-// версия и свои релизы, здесь речь про саму hrk-console/GUI. var, а не
-// const, — тесты подменяют его на httptest.Server, не ходить же в GitHub
-// ради проверки разбора ответа.
-var updateCheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases/latest"
+// preflightCheckDwell — минимум, который проверка держится на экране, тот
+// же, что у TUI (internal/tui/preflight.go): проверки окружения отрабатывают
+// за доли миллисекунды, и без выдержки список сменился бы внутри одного
+// кадра фронтенда — смотреть было бы не на что.
+const preflightCheckDwell = 260 * time.Millisecond
+
+// PreflightEvent — одна проверка окружения, отданная фронтенду по мере
+// прогона. Та же информация, что в preflight.Check, но в JSON-пригодном виде
+// и с индексом — фронтенд не пересчитывает порядок сам, просто раскладывает
+// события по местам.
+type PreflightEvent struct {
+	Index  int    `json:"index"`
+	Total  int    `json:"total"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // passed | failed | skipped
+	Detail string `json:"detail"`
+	TookMs int64  `json:"tookMs"`
+}
+
+// runPreflight гоняет те же проверки окружения, что и TUI (preflight.All),
+// последовательно, не параллельно — прогон должен читаться как цепочка
+// шагов, а не список, обновившийся целиком разом, тот же контракт, что и в
+// internal/tui/preflight.go. Шлёт результат каждой отдельным событием, а не
+// одним ответом в конце: "модульные тесты" внутри могут идти секундами, и
+// окно не должно висеть немым всё это время.
+//
+// Идёт в фоне параллельно с loadHistory/followLog/statusLoop, а не до них —
+// сами проверки лишь показывают состояние окружения, они не blocking-условие
+// для того, чтобы начать читать уже существующий heroku.log.
+func (a *App) runPreflight() {
+	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+	for i, c := range checks {
+		start := time.Now()
+		detail, status := c.Run()
+		if rest := preflightCheckDwell - time.Since(start); rest > 0 {
+			time.Sleep(rest)
+		}
+		a.emit("preflight-check", PreflightEvent{
+			Index: i, Total: len(checks), Name: c.Name,
+			Status: preflightStatusString(status), Detail: detail,
+			TookMs: time.Since(start).Milliseconds(),
+		})
+	}
+}
+
+// PreflightChecks — только имена проверок, без запуска. Фронтенду нужно
+// нарисовать полный список строк ДО того, как первая проверка успеет
+// отработать (события 'preflight-check' начинают идти сразу при старте
+// окна) — иначе экран открывался бы пустым и достраивался бы по одной
+// строке снизу, а не показывал сразу, сколько шагов всего и какие.
+func (a *App) PreflightChecks() []string {
+	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return names
+}
+
+func preflightStatusString(s preflight.Status) string {
+	switch s {
+	case preflight.Passed:
+		return "passed"
+	case preflight.Failed:
+		return "failed"
+	case preflight.Skipped:
+		return "skipped"
+	default:
+		return "passed"
+	}
+}
 
 // guiAssetPrefix/guiAssetSuffix — имя архива с GUI-бинарником в релизе,
 // как его кладёт release.yml: tar -czf hrk-console-gui-$TAG-linux-amd64.tar.gz.
+// hkc в том же релизе носит своё имя (hkc-*) — selfupdate.Apply различает
+// их по этим prefix/suffix, иначе скачал бы не то.
 const (
 	guiAssetPrefix = "hrk-console-gui-"
 	guiAssetSuffix = "-linux-amd64.tar.gz"
 )
-
-// cleanVersionRe — "vX.Y.Z" без хвоста. У сборки из тега (git describe на
-// чистом дереве без коммитов после тега) версия выглядит ровно так; у
-// сборки из рабочего дерева (make gui без тега, wails dev) — с суффиксом
-// коммитов/-dirty или просто "dev". Сравнивать в обоих этих случаях не с
-// чем: непонятно, новее хвостатая сборка последнего релиза или старее.
-var cleanVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
-
-// ghRelease/ghAsset — часть ответа GitHub API "последний релиз", которая
-// нужна: тег, страница релиза и ассеты (среди них ищем архив GUI).
-type ghRelease struct {
-	TagName string    `json:"tag_name"`
-	HTMLURL string    `json:"html_url"`
-	Assets  []ghAsset `json:"assets"`
-}
-
-type ghAsset struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-}
-
-// fetchLatestRelease — единственное место, которое реально ходит в GitHub
-// API. И checkUpdateOnce (просто узнать, есть ли новее), и ApplyUpdate
-// (скачать и подменить себя) идут через него — два независимых запроса
-// ради одного и того же ответа были бы тем же дублированием, что раньше
-// чинили в statusLoop для /proc.
-func fetchLatestRelease() (*ghRelease, error) {
-	req, err := http.NewRequest(http.MethodGet, updateCheckURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub ответил %d", resp.StatusCode)
-	}
-	var rel ghRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, err
-	}
-	return &rel, nil
-}
-
-// findGUIAsset ищет в релизе архив с GUI-бинарником по имени. У hkc в том
-// же релизе своё имя (hkc-*), поэтому просто "первый ассет" не годится —
-// нужен именно этот, иначе ApplyUpdate тихо скачал бы не то.
-func findGUIAsset(rel *ghRelease) string {
-	for _, a := range rel.Assets {
-		if strings.HasPrefix(a.Name, guiAssetPrefix) && strings.HasSuffix(a.Name, guiAssetSuffix) {
-			return a.BrowserDownloadURL
-		}
-	}
-	return ""
-}
 
 // checkUpdateOnce — разовая проверка последнего релиза на GitHub при
 // старте окна. Шлёт фронтенду результат через CheckForUpdate, но только на
@@ -299,148 +303,29 @@ func (a *App) checkUpdateOnce() {
 }
 
 // CheckForUpdate — вызывается и из checkUpdateOnce при старте окна, и по
-// клику на бейдж в шапке ("менюшка обновлений" — сам бейдж). В отличие от
-// checkUpdateOnce не молчит на осечке: по явному запросу пользователь ждёт
-// хоть какого-то ответа, а не тишины, неотличимой от "ещё грузится".
+// клику на бейдж в шапке ("менюшка обновлений" — сам бейдж). Логика запроса
+// и сравнения версий общая с TUI, см. selfupdate.Check.
 func (a *App) CheckForUpdate() UpdateCheckResult {
-	if !cleanVersionRe.MatchString(version) {
-		return UpdateCheckResult{Current: version, Message: "сборка не из релиза (dev/грязное дерево) — сравнивать не с чем"}
+	r := selfupdate.Check(version)
+	return UpdateCheckResult{
+		OK: r.OK, Available: r.Available,
+		Current: r.Current, Latest: r.Latest,
+		URL: r.URL, Message: r.Message,
 	}
-	rel, err := fetchLatestRelease()
-	if err != nil {
-		return UpdateCheckResult{Current: version, Message: err.Error()}
-	}
-	if !cleanVersionRe.MatchString(rel.TagName) {
-		return UpdateCheckResult{Current: version, Message: "релиз на GitHub в неожиданном формате версии"}
-	}
-	if !versionLess(version, rel.TagName) {
-		return UpdateCheckResult{OK: true, Current: version, Latest: rel.TagName}
-	}
-	return UpdateCheckResult{OK: true, Available: true, Current: version, Latest: rel.TagName, URL: rel.HTMLURL}
-}
-
-// versionLess сравнивает "vX.Y.Z" по номерам, а не строками — иначе
-// v1.10.0 проиграл бы v1.9.0 при обычном посимвольном сравнении.
-// Вызывающий обязан убедиться, что оба аргумента прошли cleanVersionRe.
-func versionLess(a, b string) bool {
-	pa := strings.Split(strings.TrimPrefix(a, "v"), ".")
-	pb := strings.Split(strings.TrimPrefix(b, "v"), ".")
-	for i := 0; i < 3; i++ {
-		na, _ := strconv.Atoi(pa[i])
-		nb, _ := strconv.Atoi(pb[i])
-		if na != nb {
-			return na < nb
-		}
-	}
-	return false
-}
-
-// downloadGUIBinary скачивает архив релиза и достаёт из него единственный
-// файл — сам бинарник: release.yml кладёт в архив только его, без
-// вложенных путей (tar -czf ... -C build/bin hrk-console-gui), так что
-// первый же обычный файл в архиве и есть искомое, искать по имени незачем.
-// Возвращает путь к временному файлу с правом на исполнение — вызывающий
-// обязан его удалить.
-func downloadGUIBinary(url string) (string, error) {
-	client := &http.Client{Timeout: 2 * time.Minute}
-	resp, err := client.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("скачивание вернуло %d", resp.StatusCode)
-	}
-
-	gz, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	defer gz.Close()
-
-	out, err := os.CreateTemp("", "hrk-console-gui-update-*")
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			os.Remove(out.Name())
-			return "", fmt.Errorf("в архиве не нашёлся бинарник")
-		}
-		if err != nil {
-			os.Remove(out.Name())
-			return "", err
-		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		if _, err := io.Copy(out, tr); err != nil {
-			os.Remove(out.Name())
-			return "", err
-		}
-		break
-	}
-	if err := out.Chmod(0o755); err != nil {
-		os.Remove(out.Name())
-		return "", err
-	}
-	return out.Name(), nil
-}
-
-// copyFile читает src целиком и пишет в dst с правом на исполнение — файлы
-// обновления маленькие (один бинарник), читать потоково смысла нет.
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0o755)
 }
 
 // ApplyUpdate скачивает GUI-бинарник из последнего релиза и подменяет им
-// себя на диске. Не вызывается сам по себе в фоне — только по явному клику
-// из фронтенда (см. update-available): подмена собственного исполняемого
-// файла необратима без переустановки, и молчаливый автозапуск для такого
-// не подходит, в отличие от простой проверки в checkUpdateOnce.
-//
-// Замена атомарна в пределах одной директории (той же ФС, что и сам
-// exe) — os.Rename либо подменяет файл целиком, либо не трогает его вовсе,
-// никакого промежуточного "наполовину записанного бинарника" быть не
-// может. Уже запущенный процесс продолжает работать со старым (теперь
-// отвязанным от пути) файлом, пока не перезапустится через RestartApp.
+// себя на диске (selfupdate.Apply — общая логика с TUI). Не вызывается сам
+// по себе в фоне — только по явному клику из фронтенда (см. update-status):
+// подмена собственного исполняемого файла необратима без переустановки, и
+// молчаливый автозапуск для такого не подходит, в отличие от простой
+// проверки в checkUpdateOnce. Перезапуск (RestartApp) — отдельный шаг.
 func (a *App) ApplyUpdate() ActionResult {
-	rel, err := fetchLatestRelease()
+	applied, err := selfupdate.Apply(guiAssetPrefix, guiAssetSuffix)
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}
 	}
-	assetURL := findGUIAsset(rel)
-	if assetURL == "" {
-		return ActionResult{OK: false, Message: "в релизе нет сборки GUI для Linux"}
-	}
-
-	tmpBinary, err := downloadGUIBinary(assetURL)
-	if err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	defer os.Remove(tmpBinary)
-
-	exe, err := os.Executable()
-	if err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	staged := exe + ".update"
-	if err := copyFile(tmpBinary, staged); err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	if err := os.Rename(staged, exe); err != nil {
-		os.Remove(staged)
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	return ActionResult{OK: true, Message: rel.TagName}
+	return ActionResult{OK: true, Message: applied}
 }
 
 // RestartApp поднимает новый процесс того же бинарника (уже подменённого

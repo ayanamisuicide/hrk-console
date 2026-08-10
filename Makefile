@@ -18,7 +18,7 @@ VERSION := $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 # Путь к исходникам вшивается в бинарник: после `make install` он лежит в
 # ~/.local/bin и сам по себе репозиторий рядом не находит, а прогон тестов
 # при старте без исходников невозможен.
-LDFLAGS := -X main.version=$(VERSION) -X heroku-console/internal/preflight.repoRoot=$(CURDIR)
+LDFLAGS := -X main.version=$(VERSION) -X heroku-console/preflight.repoRoot=$(CURDIR)
 
 .PHONY: build gui test vet clean install
 
@@ -33,10 +33,13 @@ build:
 # webkit2gtk-4.1, а wails по умолчанию ищет -4.0 и без тега не собирается.
 #
 # Тот же -X main.version, что и у hkc, — иначе GUI всегда показывал бы "dev"
-# независимо от тега, из которого собран (repoRoot-флаг hkc сюда не идёт:
-# gui/internal/preflight не импортирует и тестов при старте не гоняет).
+# независимо от тега, из которого собран. repoRoot-флаг тоже нужен, как и у
+# hkc: GUI показывает тот же экран проверок перед стартом, и проверка
+# "модульные тесты" (preflight.goTest) без вшитого пути к исходникам не
+# находит их после `make install`/`install.sh` (бинарник живёт отдельно от
+# репозитория, ~/.local/bin).
 gui:
-	cd gui && $(shell $(GO) env GOPATH)/bin/wails build -tags webkit2_41 -ldflags "-X main.version=$(VERSION)"
+	cd gui && $(shell $(GO) env GOPATH)/bin/wails build -tags webkit2_41 -ldflags "-X main.version=$(VERSION) -X heroku-console/preflight.repoRoot=$(CURDIR)"
 	@echo "собрано: gui/build/bin/hrk-console-gui"
 
 test:

@@ -1,19 +1,17 @@
 package main
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"heroku-console/botproc"
 	"heroku-console/logfeed"
+	"heroku-console/preflight"
+	"heroku-console/selfupdate"
 	"heroku-console/state"
 )
 
@@ -218,116 +216,10 @@ func TestStartBotArmsCooldownAgainstWatchdog(t *testing.T) {
 	}
 }
 
-// versionLess сравнивает по номерам, а не строками — посимвольное сравнение
-// строк наврало бы на переходе через второй знак ("v1.9.0" < "v1.10.0" как
-// строки — false, хотя релиз реально новее).
-func TestVersionLess(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want bool
-	}{
-		{"v1.7.6", "v1.7.7", true},
-		{"v1.7.7", "v1.7.6", false},
-		{"v1.7.6", "v1.7.6", false},
-		{"v1.9.0", "v1.10.0", true},
-		{"v2.0.0", "v1.99.99", false},
-	}
-	for _, c := range cases {
-		if got := versionLess(c.a, c.b); got != c.want {
-			t.Errorf("versionLess(%q, %q) = %v, ожидалось %v", c.a, c.b, got, c.want)
-		}
-	}
-}
-
-// cleanVersionRe отсеивает сборки из рабочего дерева (суффикс git describe,
-// "dev") — для них сравнение версий ненадёжно, проверка обновлений должна
-// промолчать, а не соврать "обновление доступно" на каждой dev-сборке.
-func TestCleanVersionRe(t *testing.T) {
-	for _, v := range []string{"v1.7.6", "v0.0.1"} {
-		if !cleanVersionRe.MatchString(v) {
-			t.Errorf("cleanVersionRe не совпал с чистым тегом %q", v)
-		}
-	}
-	for _, v := range []string{"dev", "v1.7.6-3-gabc1234", "v1.7.6-dirty", "1.7.6"} {
-		if cleanVersionRe.MatchString(v) {
-			t.Errorf("cleanVersionRe ошибочно совпал с %q", v)
-		}
-	}
-}
-
-// findGUIAsset должен найти именно архив GUI, а не первый попавшийся ассет
-// релиза — рядом в том же релизе лежит ещё и hkc-*, с другим содержимым.
-func TestFindGUIAsset(t *testing.T) {
-	rel := &ghRelease{Assets: []ghAsset{
-		{Name: "hkc-v1.8.1-linux-amd64.tar.gz", BrowserDownloadURL: "https://example/hkc"},
-		{Name: "hrk-console-gui-v1.8.1-linux-amd64.tar.gz", BrowserDownloadURL: "https://example/gui"},
-	}}
-	if got := findGUIAsset(rel); got != "https://example/gui" {
-		t.Errorf("findGUIAsset вернул %q, ожидался gui-ассет", got)
-	}
-	if got := findGUIAsset(&ghRelease{}); got != "" {
-		t.Errorf("findGUIAsset на пустом релизе вернул %q, ожидалась пустая строка", got)
-	}
-}
-
-// downloadGUIBinary разбирает настоящий tar.gz (не заглушку) — важно
-// проверить именно распаковку, а не то, что HTTP-клиент умеет ходить по
-// URL. Архив собирается in-memory, без реального обращения к GitHub.
-func TestDownloadGUIBinaryExtractsExecutable(t *testing.T) {
-	want := []byte("fake-binary-content")
-
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "hrk-console-gui", Mode: 0o755, Size: int64(len(want))}); err != nil {
-		t.Fatalf("подготовка архива: %v", err)
-	}
-	if _, err := tw.Write(want); err != nil {
-		t.Fatalf("подготовка архива: %v", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("подготовка архива: %v", err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatalf("подготовка архива: %v", err)
-	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(buf.Bytes())
-	}))
-	defer srv.Close()
-
-	path, err := downloadGUIBinary(srv.URL)
-	if err != nil {
-		t.Fatalf("downloadGUIBinary: %v", err)
-	}
-	defer os.Remove(path)
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("чтение результата: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("содержимое %q, ожидалось %q", got, want)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode()&0o111 == 0 {
-		t.Error("результат должен быть исполняемым")
-	}
-}
-
-func TestDownloadGUIBinaryFailsOnHTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-	if _, err := downloadGUIBinary(srv.URL); err == nil {
-		t.Error("ожидалась ошибка на HTTP 404")
-	}
-}
+// Разбор ответа GitHub, сравнение версий и распаковка архива теперь общие с
+// TUI — см. selfupdate/selfupdate_test.go (TestVersionLess, TestCleanVersionRe,
+// TestFindAsset, TestDownloadBinary*). Здесь остаётся только то, что
+// специфично для GUI: как App пробрасывает результат наружу событиями.
 
 // checkUpdateOnce молчит на dev-сборке (её версия — "dev", не тег) — не
 // с чем сравнивать, а не "всегда есть обновление". CheckForUpdate вернул бы
@@ -351,14 +243,14 @@ func TestCheckUpdateOnceSilentOnDevBuild(t *testing.T) {
 }
 
 func TestCheckUpdateOnceEmitsOnNewerRelease(t *testing.T) {
-	origURL := updateCheckURL
-	defer func() { updateCheckURL = origURL }()
+	origURL := selfupdate.CheckURL
+	defer func() { selfupdate.CheckURL = origURL }()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example/release"}`))
 	}))
 	defer srv.Close()
-	updateCheckURL = srv.URL
+	selfupdate.CheckURL = srv.URL
 
 	origVersion := version
 	defer func() { version = origVersion }()
@@ -385,14 +277,14 @@ func TestCheckUpdateOnceEmitsOnNewerRelease(t *testing.T) {
 // должен получить возможность показать "актуально", а не молчание, из
 // которого не отличить "всё ок" от "проверка ещё не случилась".
 func TestCheckUpdateOnceEmitsWhenUpToDate(t *testing.T) {
-	origURL := updateCheckURL
-	defer func() { updateCheckURL = origURL }()
+	origURL := selfupdate.CheckURL
+	defer func() { selfupdate.CheckURL = origURL }()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"tag_name":"v1.0.0","html_url":"https://example/release"}`))
 	}))
 	defer srv.Close()
-	updateCheckURL = srv.URL
+	selfupdate.CheckURL = srv.URL
 
 	origVersion := version
 	defer func() { version = origVersion }()
@@ -418,9 +310,9 @@ func TestCheckUpdateOnceEmitsWhenUpToDate(t *testing.T) {
 // CheckForUpdate не молчит на сетевой ошибке в отличие от checkUpdateOnce —
 // ручной клик пользователя должен получить ответ, а не тишину.
 func TestCheckForUpdateReportsNetworkError(t *testing.T) {
-	origURL := updateCheckURL
-	defer func() { updateCheckURL = origURL }()
-	updateCheckURL = "http://127.0.0.1:1" // порт, на котором заведомо никто не слушает
+	origURL := selfupdate.CheckURL
+	defer func() { selfupdate.CheckURL = origURL }()
+	selfupdate.CheckURL = "http://127.0.0.1:1" // порт, на котором заведомо никто не слушает
 
 	origVersion := version
 	defer func() { version = origVersion }()
@@ -433,6 +325,45 @@ func TestCheckForUpdateReportsNetworkError(t *testing.T) {
 	}
 	if res.Message == "" {
 		t.Error("CheckForUpdate() при ошибке должен объяснить, что пошло не так")
+	}
+}
+
+// runPreflight — тот же контракт, что у экрана проверок в TUI: одна проверка
+// за другой (не параллельно), каждая отдаёт отдельное событие с её местом в
+// общем счёте — фронтенд не должен пересчитывать порядок сам.
+func TestRunPreflightEmitsAllChecksInOrder(t *testing.T) {
+	h := newHarness(t)
+	var mu sync.Mutex
+	var events []PreflightEvent
+	h.app.emit = func(event string, data ...interface{}) {
+		if event != "preflight-check" || len(data) != 1 {
+			return
+		}
+		if ev, ok := data[0].(PreflightEvent); ok {
+			mu.Lock()
+			events = append(events, ev)
+			mu.Unlock()
+		}
+	}
+
+	h.app.runPreflight()
+
+	want := len(preflight.All(h.app.bot.HerokuDir, h.app.bot.LogFile))
+	if len(events) != want {
+		t.Fatalf("получено %d событий, ожидалось %d (по числу проверок)", len(events), want)
+	}
+	for i, ev := range events {
+		if ev.Index != i {
+			t.Errorf("событие %d: Index=%d, ожидался %d", i, ev.Index, i)
+		}
+		if ev.Total != want {
+			t.Errorf("событие %d: Total=%d, ожидалось %d", i, ev.Total, want)
+		}
+		switch ev.Status {
+		case "passed", "failed", "skipped":
+		default:
+			t.Errorf("событие %d: неожиданный статус %q", i, ev.Status)
+		}
 	}
 }
 

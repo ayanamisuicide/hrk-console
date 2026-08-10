@@ -224,8 +224,8 @@ func TestVisibleMinLevel(t *testing.T) {
 // Уровни идут по возрастанию важности — на этом стоит и фильтр по уровню,
 // и признак «проблемная запись» (>= LevelWarning) во вьюере.
 func TestLevelOrder(t *testing.T) {
-	if !(LevelDebug < LevelInfo && LevelInfo < LevelWarning &&
-		LevelWarning < LevelError && LevelError < LevelCritical) {
+	if LevelDebug >= LevelInfo || LevelInfo >= LevelWarning ||
+		LevelWarning >= LevelError || LevelError >= LevelCritical {
 		t.Error("порядок уровней нарушен")
 	}
 }

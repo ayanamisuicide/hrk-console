@@ -57,7 +57,7 @@ jobs:
       - name: сборка GUI
         working-directory: gui
         run: |
-          wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
+          wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME} -X heroku-console/preflight.repoRoot=${GITHUB_WORKSPACE}"
           tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C build/bin hrk-console-gui
 
       - name: проверки GUI

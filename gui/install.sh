@@ -40,9 +40,13 @@ echo "Собираю…"
 # Тот же трюк с версией, что у make build/make gui: без неё бинарник вечно
 # показывал бы "dev" в GUI, даже собранный из тега релиза.
 VERSION="$(cd "$GUI_DIR" && git describe --tags --dirty 2>/dev/null || echo dev)"
+# repoRoot — тот же вшитый путь к исходникам, что у hkc (Makefile): экран
+# проверок перед стартом GUI гоняет "модульные тесты" через него, а после
+# установки в ~/.local/bin бинарник сам по себе репозиторий не найдёт.
+REPO_ROOT="$(dirname "$GUI_DIR")"
 # webkit2_41: на Ubuntu/Mint 24.04 в репозиториях остался только
 # webkit2gtk-4.1, а wails по умолчанию ищет -4.0.
-(cd "$GUI_DIR" && "$WAILS" build -tags webkit2_41 -ldflags "-X main.version=$VERSION")
+(cd "$GUI_DIR" && "$WAILS" build -tags webkit2_41 -ldflags "-X main.version=$VERSION -X heroku-console/preflight.repoRoot=$REPO_ROOT")
 
 # ─── установка ───
 install -Dm755 "$GUI_DIR/build/bin/$APP_ID" "$BIN_DIR/$APP_ID"

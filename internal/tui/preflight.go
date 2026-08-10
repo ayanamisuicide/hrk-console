@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/preflight"
 	"heroku-console/internal/theme"
+	"heroku-console/preflight"
 )
 
 // Preflight — экран проверок перед запуском. Проверки идут по одной, а не
@@ -51,7 +51,6 @@ type checkDoneMsg struct {
 	took   time.Duration
 }
 type frameMsg time.Time
-type holdOverMsg struct{}
 
 // Частота кадров: полоса догоняет цель по экспоненте, и на 12 кадрах
 // движение получалось ступенчатым — видно отдельные кадры, а не движение.

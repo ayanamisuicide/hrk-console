@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"heroku-console/internal/preflight"
+	"heroku-console/preflight"
 )
 
 // Полоса всегда ровно заданной ширины: она стоит в строке рядом со

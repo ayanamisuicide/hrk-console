@@ -21,6 +21,7 @@ var menuItems = []struct{ title, desc string }{
 	{"Перезапустить бота", "стоп и старт заново"},
 	{"Два окна", "логи + родная консоль"},
 	{"Остановить бота", "просто stop, без окна"},
+	{"Проверить обновления", "новее hkc на GitHub"},
 }
 
 // Menu — стартовый экран выбора режима, в той же рамке и с той же
@@ -31,7 +32,7 @@ type Menu struct {
 	cursor int
 	width  int
 	height int
-	Choice int // 1..4, 0 — ничего не выбрано (вышли по q)
+	Choice int // 1..5, 0 — ничего не выбрано (вышли по q)
 	done   bool
 
 	botPID int
@@ -65,7 +66,7 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor - 1 + len(menuItems)) % len(menuItems)
 		case "down", "j":
 			m.cursor = (m.cursor + 1) % len(menuItems)
-		case "1", "2", "3", "4":
+		case "1", "2", "3", "4", "5":
 			m.Choice = int(msg.String()[0] - '0')
 			m.done = true
 			return m, tea.Quit
@@ -156,7 +157,7 @@ func (m *Menu) View() string {
 		Padding(1, 2).
 		Render(card.String()))
 	b.WriteString("\n\n")
-	b.WriteString(theme.Faint.Render("↑↓ выбор  ·  Enter запуск  ·  1–4 сразу  ·  q выход"))
+	b.WriteString(theme.Faint.Render("↑↓ выбор  ·  Enter запуск  ·  1–5 сразу  ·  q выход"))
 
 	// Карточка ставится по центру экрана целиком, вместе с шапкой и
 	// подсказками: центрируется композиция, а не каждый кусок по отдельности,

@@ -356,13 +356,13 @@ func (v *Viewer) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		v.search.Focus()
 		return v, textinput.Blink
 	case "up", "k":
-		v.vp.LineUp(1)
+		v.vp.ScrollUp(1)
 	case "down", "j":
-		v.vp.LineDown(1)
+		v.vp.ScrollDown(1)
 	case "pgup":
-		v.vp.HalfViewUp()
+		v.vp.HalfPageUp()
 	case "pgdown":
-		v.vp.HalfViewDown()
+		v.vp.HalfPageDown()
 	case "g", "home":
 		v.vp.GotoTop()
 	case "G", "end":

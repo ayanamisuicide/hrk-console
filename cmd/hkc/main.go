@@ -29,6 +29,7 @@ const usage = `hkc — консоль Heroku-юзербота.
   hkc              проверки, затем меню выбора режима
   hkc 1|2|3|4      сразу нужный режим, без меню
   hkc console      родная консоль бота в текущем терминале
+  hkc update       проверить обновления hkc и, если есть, поставить
 
   --no-check       пропустить проверки окружения
   --no-setup       не ставить автоматически то, чего не хватает
@@ -87,6 +88,13 @@ func main() {
 		os.Exit(bot.RunForeground())
 	}
 
+	// update — путь в обход и автонастройки, и проверок окружения: сама
+	// проверка версии hkc не имеет отношения к тому, поднят ли venv бота.
+	if len(args) == 1 && args[0] == "update" {
+		runUpdateScreen()
+		return
+	}
+
 	// Автонастройка идёт до всего остального и обычным stdout, а не в
 	// Bubble Tea: git clone и sudo apt-get могут попросить пароль или
 	// показать прогресс, внутри alt-screen TUI это не показать. Пропускается
@@ -125,7 +133,11 @@ func main() {
 		}
 	}
 
-	if choice == 0 {
+	// Пункт 5 (проверить обновления) — не режим, а действие: он не должен
+	// выходить из программы, а должен вернуть обратно в меню, поэтому сам
+	// показ меню в цикле, а не однократно. Прямой запуск "hkc 1".."hkc 4"
+	// в меню вообще не заходит (choice уже не 0, цикл сразу ломается).
+	for choice == 0 {
 		m := tui.NewMenu(bot)
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		res, err := p.Run()
@@ -136,6 +148,10 @@ func main() {
 		choice = res.(*tui.Menu).Choice
 		if choice == 0 {
 			return // вышли по q
+		}
+		if choice == 5 {
+			runUpdateScreen()
+			choice = 0
 		}
 	}
 
@@ -189,6 +205,17 @@ func ensureRunning(bot *botproc.Manager) (logFrom int, ok bool) {
 	}
 	fmt.Println("процесс не поднялся")
 	return 0, false
+}
+
+// runUpdateScreen показывает tui.UpdateScreen (проверка версии на GitHub,
+// по явному нажатию — скачивание и подмена себя, ещё раз — перезапуск).
+// Вызывается и из "hkc update" напрямую, и из пункта 5 меню.
+func runUpdateScreen() {
+	u := tui.NewUpdateScreen(version)
+	p := tea.NewProgram(u, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ошибка экрана обновлений:", err)
+	}
 }
 
 func runViewer(bot *botproc.Manager, opts tui.ViewerOpts) {

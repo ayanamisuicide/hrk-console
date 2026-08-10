@@ -1,0 +1,11 @@
+# Стандартный набор golangci-lint (govet, ineffassign, staticcheck, unused),
+# без errcheck: закрытие уже прочитанных файлов и cleanup-`os.Remove` в
+# defer здесь игнорируются намеренно, той же логикой, что "не стоит того,
+# чтобы ронять запуск" в остальном проекте — errcheck такого не различает и
+# шумел бы на каждый такой defer, а не на реальные пропущенные ошибки.
+version: "2"
+
+linters:
+  default: standard
+  disable:
+    - errcheck
