@@ -2,7 +2,7 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
-## [Unreleased]
+## [1.12.2] — 2026-08-11
 
 ### Исправлено
 
