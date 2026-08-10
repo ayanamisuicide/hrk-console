@@ -48,6 +48,12 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
   </div>
+  <div class="update-toast" id="update-toast" style="display:none">
+    <span class="ut-icon">↑</span>
+    <span class="ut-text">Доступна версия <b id="ut-version"></b></span>
+    <button id="ut-update" class="primary">Обновить</button>
+    <button id="ut-dismiss" class="ut-dismiss" title="Не сейчас">×</button>
+  </div>
   <div class="stream-issue" id="stream-issue" style="display:none">
     <span class="si-icon">⚠</span>
     <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
@@ -89,7 +95,7 @@ document.querySelector('#app').innerHTML = `
           <span class="conn-label" id="conn-label">локально</span>
           <span class="conn-meta" id="conn-meta">бот на этом компьютере</span>
         </div>
-        <button id="btn-remote" class="remote-open-btn">Удалённый бот…</button>
+        <button id="btn-remote" class="remote-open-btn"><span id="btn-remote-label">Удалённый бот</span><span class="btn-chevron">›</span></button>
       </div>
 
       <div class="gui-version" id="gui-version"></div>
@@ -166,6 +172,10 @@ const btnClear = el('btn-clear');
 const btnExport = el('btn-export');
 const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
+const updateToast = el('update-toast');
+const utVersion = el('ut-version');
+const btnUtUpdate = el('ut-update');
+const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
 const sidebar = document.querySelector('.sidebar');
 const preflightOverlay = el('preflight-overlay');
@@ -180,6 +190,7 @@ const connMeta = el('conn-meta');
 const streamIssueReason = el('si-reason');
 const streamIssueFor = el('si-for');
 const btnRemote = el('btn-remote');
+const btnRemoteLabel = el('btn-remote-label');
 const remoteOverlay = el('remote-overlay');
 const remoteHostInput = el('remote-host');
 const remoteUserInput = el('remote-user');
@@ -563,9 +574,18 @@ function applyUpdateResult(res, manual) {
         updateInfo = { version: res.latest, url: res.url };
         setUpdateBadge('available', '↑ ' + res.latest,
             `Доступна версия ${res.latest} — клик обновит на месте, ПКМ откроет релиз в браузере`);
+        // Тост — только по итогам АВТО-проверки при старте окна, не ручной:
+        // пользователь, только что сам нажавший "проверить", уже смотрит на
+        // бейдж и не нуждается в отдельном приглашении поверх того же
+        // ответа. И только если ещё не отклонял именно эту версию в этом
+        // запуске — иначе он мигал бы заново на каждый случайный ре-рендер.
+        if (!manual && dismissedUpdateVersion !== res.latest) {
+            showUpdateToast(res.latest);
+        }
         return;
     }
     updateInfo = null;
+    hideUpdateToast();
     if (res.ok) {
         setUpdateBadge('uptodate', '✓ актуально',
             `Уже последняя версия (${res.current}) — клик проверит ещё раз`);
@@ -573,6 +593,46 @@ function applyUpdateResult(res, manual) {
         setUpdateBadge('error', '⚠ ошибка проверки', `Не удалось проверить: ${res.message} — клик попробует снова`);
     }
 }
+
+// dismissedUpdateVersion — версия, которую явно отклонили крестиком: тост
+// для неё больше не всплывает сам, бейдж в шапке остаётся тихим
+// напоминанием и обновляет всё равно можно кликом по нему в любой момент.
+let dismissedUpdateVersion = null;
+
+function showUpdateToast(version) {
+    utVersion.textContent = version;
+    updateToast.style.display = '';
+    updateToast.classList.remove('ut-enter');
+    void updateToast.offsetWidth; // перезапуск анимации, если тост уже был показан
+    updateToast.classList.add('ut-enter');
+}
+
+function hideUpdateToast() {
+    updateToast.style.display = 'none';
+}
+
+// startUpdate — общее действие для клика по бейджу в состоянии "available"
+// и для кнопки "Обновить" в тосте: один и тот же переход (скачать →
+// подменить на диске → предложить перезапустить), запускать который может
+// любой из двух — тост просто более заметный способ добраться до того же
+// самого действия.
+async function startUpdate() {
+    hideUpdateToast();
+    setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
+    const res = await ApplyUpdate();
+    if (res.ok) {
+        setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
+    } else {
+        setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
+        showBanner(`✗  обновление: ${res.message}`, true);
+    }
+}
+
+btnUtUpdate.addEventListener('click', startUpdate);
+btnUtDismiss.addEventListener('click', () => {
+    dismissedUpdateVersion = updateInfo ? updateInfo.version : null;
+    hideUpdateToast();
+});
 
 updateBadge.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -590,18 +650,12 @@ updateBadge.addEventListener('click', async () => {
     }
 
     if (state === 'available') {
-        setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
-        const res = await ApplyUpdate();
-        if (res.ok) {
-            setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
-        } else {
-            setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
-            showBanner(`✗  обновление: ${res.message}`, true);
-        }
+        await startUpdate();
         return;
     }
 
     // idle / uptodate / error — все три ведут к ручной проверке.
+    hideUpdateToast();
     setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
     applyUpdateResult(await CheckForUpdate(), true);
 });
@@ -723,12 +777,12 @@ function renderRemoteTarget(remote) {
         connMeta.textContent = remote.user ? remote.user + ' · подключаюсь…' : 'подключаюсь…';
         connBlock.dataset.state = 'connecting';
         btnRemoteDisconnect.style.display = '';
-        btnRemote.textContent = 'Изменить подключение…';
+        btnRemoteLabel.textContent = 'Изменить подключение';
         return;
     }
     connBlock.dataset.state = 'local';
     btnRemoteDisconnect.style.display = 'none';
-    btnRemote.textContent = 'Удалённый бот…';
+    btnRemoteLabel.textContent = 'Удалённый бот';
     // «Локально» на Windows означало бы бота, которого там нет и быть не
     // может: сам Heroku запускается только на Linux. Пока машина не
     // указана, окну попросту нечем управлять, и сказать об этом честно
