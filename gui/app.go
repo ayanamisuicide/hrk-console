@@ -134,6 +134,10 @@ type App struct {
 	// секунде — см. tickPID.
 	lastPID int
 
+	tray         *Tray
+	trayMu       sync.Mutex
+	windowHidden bool // под trayMu — переключается только из колбэка трея
+
 	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса
 	// в /proc, запуск и остановка бота, отправка события в окно — проходит
 	// через эти поля. Без них логику вотчдога (кто, когда и на каком
@@ -204,6 +208,35 @@ func (a *App) startup(ctx context.Context) {
 	go a.statusLoop()
 	go a.checkUpdateOnce()
 	go a.runPreflight()
+
+	a.tray = &Tray{}
+	go a.tray.Start(a.toggleWindow, func() { wailsrt.Quit(a.ctx) })
+}
+
+// shutdown закрывает соединение трея с D-Bus, если он поднялся. Отдельный
+// хук (options.App.OnShutdown), а не просто оставить процессу самому
+// прибраться при выходе: незакрытое соединение — не критично (ОС закроет
+// сокет вместе с процессом), но явный Close честнее, чем полагаться на это.
+func (a *App) shutdown(ctx context.Context) {
+	if a.tray != nil {
+		a.tray.Close()
+	}
+}
+
+// toggleWindow — единственное действие иконки в трее (клик или пункт меню
+// "Показать / скрыть"): свернуть окно, если оно видно, и наоборот. Вызывается
+// из горутины D-Bus-обработчика (см. tray.go), поэтому состояние — под
+// отдельным trayMu, а не watchMu/mu, которые про совсем другое.
+func (a *App) toggleWindow() {
+	a.trayMu.Lock()
+	hidden := a.windowHidden
+	a.windowHidden = !hidden
+	a.trayMu.Unlock()
+	if hidden {
+		wailsrt.WindowShow(a.ctx)
+	} else {
+		wailsrt.WindowHide(a.ctx)
+	}
 }
 
 // preflightCheckDwell — минимум, который проверка держится на экране, тот
