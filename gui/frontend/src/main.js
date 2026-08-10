@@ -85,6 +85,7 @@ document.querySelector('#app').innerHTML = `
       <div class="conn-section" id="conn-section" style="display:none">
         <h3>Подключение</h3>
         <div class="conn-block" id="conn-block" data-state="local">
+          <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
           <span class="conn-label" id="conn-label">локально</span>
           <span class="conn-meta" id="conn-meta">бот на этом компьютере</span>
         </div>
@@ -830,6 +831,12 @@ btnRemoteDisconnect.addEventListener('click', async () => {
 
 // ─── шапка / статус ──────────────────────────────────────────────────────
 
+// streamIssueShown — statusLoop зовёт renderStatus раз в секунду, пока
+// проблема с логом не решится; без этого флага полоса переигрывала бы
+// анимацию появления на каждый тик, а не один раз в момент, когда она
+// реально появилась.
+let streamIssueShown = false;
+
 function renderStatus(st) {
     el('hkc-version').textContent = 'hkc ' + (st.hkcVersion || 'dev');
     setProjectVersion(st.hkcVersion || 'dev');
@@ -840,11 +847,17 @@ function renderStatus(st) {
     if (st.streamIssue) {
         statusPill.classList.add('warn');
         statusText.textContent = '⚠ лог не читается';
-        streamIssueBox.style.display = '';
+        if (!streamIssueShown) {
+            streamIssueBox.style.display = '';
+            streamIssueBox.classList.add('si-enter');
+            streamIssueShown = true;
+        }
         streamIssueReason.textContent = st.streamIssue;
         streamIssueFor.textContent = st.streamIssueFor || '';
     } else {
         streamIssueBox.style.display = 'none';
+        streamIssueBox.classList.remove('si-enter');
+        streamIssueShown = false;
         if (st.alive) {
             statusPill.classList.add('live');
             statusText.textContent = `live · ${st.botVersion || '?'} · ${st.uptime}`;
