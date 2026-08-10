@@ -83,7 +83,7 @@ html, body {
    версии), а где-то стоит недёшево на постоянно перерисовываемых больших
    областях (список модулей и лог скроллятся). Blur — необязательное
    украшение сверху, без него всё по-прежнему читаемо. */
-.topbar, .sidebar, .log-pane, .help-card, .preflight-card {
+.topbar, .sidebar, .log-pane, .help-card, .preflight-card, .remote-card {
   background: var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: 18px;
@@ -507,11 +507,42 @@ button.toggled {
 .watchdog-note.on { color: var(--warning); }
 .watchdog-note.restarting { color: var(--critical); animation: pulse 1s ease-in-out infinite; }
 
-/* Статус подключения — как остальные строки-подписи в панели (proc-block,
-   watchdog-note), просто с акцентным цветом, когда бот не локальный: это
-   заметное отличие от обычного режима, глазу стоит его отличать издалека. */
-.remote-status { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 7px; }
-.remote-status.active { color: var(--accent); }
+/* Подключение — та же карточка, что и «Процесс» выше: два блока про одно
+   и то же (жив ли бот, есть ли до него связь) не должны выглядеть разными
+   по языку элементами. Цвет несёт состояние, точка слева — тот же сигнал
+   для тех, кто цвет не различает. */
+.conn-block {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+}
+.conn-block::before {
+  content: '';
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-muted);
+  align-self: center;
+}
+.conn-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.conn-meta {
+  grid-column: 2;
+  margin-top: 4px;
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.conn-block[data-state="online"]::before { background: var(--good); }
+.conn-block[data-state="online"] .conn-label { color: var(--good); }
+.conn-block[data-state="connecting"]::before { background: var(--warning); animation: pulse 1s ease-in-out infinite; }
+.conn-block[data-state="connecting"] .conn-label { color: var(--warning); }
+.conn-block[data-state="offline"]::before { background: var(--critical); }
+.conn-block[data-state="offline"] .conn-label { color: var(--critical); }
+
 .remote-open-btn { width: 100%; font-size: 11px; border-radius: 12px; }
 
 .remote-overlay {
@@ -687,11 +718,47 @@ mark.hl {
 .log-footer input[type="text"]::placeholder { color: var(--text-muted); }
 .log-footer input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
+/* Полоса «лог не читается». Раньше это была плоская розовая лента во всю
+   ширину без полей и скруглений — единственный элемент окна, выпадающий из
+   его языка, и оттого выглядевший поломкой вёрстки, а не сообщением.
+   Теперь это карточка того же языка, что и панели вокруг, с явной
+   иерархией: причина — крупно, «как давно» — тускло справа, и строкой ниже
+   то, что на самом деле хочет знать читающий, — что бот при этом
+   по-прежнему управляется. */
 .stream-issue {
-  padding: 6px 18px;
-  font-size: 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  flex: none;
+  padding: 11px 15px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid rgba(255, 143, 168, .3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 10px 24px rgba(0, 0, 0, .3);
+}
+.stream-issue .si-icon {
+  flex: none;
   color: var(--critical);
-  background: rgba(255, 143, 168, .1);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.stream-issue .si-text { flex: 1; min-width: 0; }
+.stream-issue .si-reason {
+  display: block;
+  font-size: 12px; font-weight: 600; color: var(--critical);
+  overflow-wrap: anywhere;
+}
+.stream-issue .si-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px; color: var(--text-muted);
+}
+.stream-issue .si-for {
+  flex: none;
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--glass-strong);
 }
 
 /* полоса прокрутки — тонкая, светлая на тёмном стекле, не спорит с содержимым */

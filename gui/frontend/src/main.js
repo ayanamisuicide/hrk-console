@@ -48,7 +48,11 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
   </div>
-  <div class="stream-issue" id="stream-issue" style="display:none"></div>
+  <div class="stream-issue" id="stream-issue" style="display:none">
+    <span class="si-icon">⚠</span>
+    <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
+    <span class="si-for" id="si-for"></span>
+  </div>
   <div class="body">
     <div class="sidebar">
       <h3>Проблемы</h3>
@@ -78,9 +82,14 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
       <div class="watchdog-note" id="watchdog-note"></div>
 
-      <h3>Подключение</h3>
-      <div class="remote-status" id="remote-status">локально</div>
-      <button id="btn-remote" class="remote-open-btn">Удалённый бот…</button>
+      <div class="conn-section" id="conn-section" style="display:none">
+        <h3>Подключение</h3>
+        <div class="conn-block" id="conn-block" data-state="local">
+          <span class="conn-label" id="conn-label">локально</span>
+          <span class="conn-meta" id="conn-meta">бот на этом компьютере</span>
+        </div>
+        <button id="btn-remote" class="remote-open-btn">Удалённый бот…</button>
+      </div>
 
       <div class="gui-version" id="gui-version"></div>
     </div>
@@ -163,7 +172,12 @@ const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
-const remoteStatusEl = el('remote-status');
+const connSection = el('conn-section');
+const connBlock = el('conn-block');
+const connLabel = el('conn-label');
+const connMeta = el('conn-meta');
+const streamIssueReason = el('si-reason');
+const streamIssueFor = el('si-for');
 const btnRemote = el('btn-remote');
 const remoteOverlay = el('remote-overlay');
 const remoteHostInput = el('remote-host');
@@ -687,16 +701,54 @@ PreflightChecks().then(renderPreflightChecks);
 // источника бота на лету было бы источником гонок между старыми и новыми
 // горутинами, а перезапуск окна занимает меньше секунды и уже есть готовым
 // после самообновления.
-function renderRemoteStatus(remote) {
+// Блок «Подключение» показывается не всегда. На машине, где бот и так
+// установлен рядом (Linux), удалённый режим — не то, ради чего открывают
+// окно: строка «локально» и кнопка под ней занимали место в панели, ничего
+// при этом не сообщая. Он существует ради Windows, где локального бота
+// быть не может. Исключение — если удалённый хост всё-таки настроен: тогда
+// блок нужен везде, иначе настройку негде было бы увидеть и отменить.
+let platform = 'linux';
+
+function showConnSection(remote) {
+    connSection.style.display = (platform === 'windows' || (remote && remote.host)) ? '' : 'none';
+}
+
+// Куда подключены — отдельно от того, в каком состоянии подключение:
+// адрес меняется только по воле пользователя, состояние — само по себе,
+// каждую секунду (см. Status.RemoteState).
+function renderRemoteTarget(remote) {
     if (remote && remote.host) {
-        remoteStatusEl.textContent = remote.host + (remote.user ? ' · ' + remote.user : '');
-        remoteStatusEl.classList.add('active');
+        connLabel.textContent = remote.host;
+        connMeta.textContent = remote.user ? remote.user + ' · подключаюсь…' : 'подключаюсь…';
+        connBlock.dataset.state = 'connecting';
         btnRemoteDisconnect.style.display = '';
-    } else {
-        remoteStatusEl.textContent = 'локально';
-        remoteStatusEl.classList.remove('active');
-        btnRemoteDisconnect.style.display = 'none';
+        btnRemote.textContent = 'Изменить подключение…';
+        return;
     }
+    connBlock.dataset.state = 'local';
+    btnRemoteDisconnect.style.display = 'none';
+    btnRemote.textContent = 'Удалённый бот…';
+    // «Локально» на Windows означало бы бота, которого там нет и быть не
+    // может: сам Heroku запускается только на Linux. Пока машина не
+    // указана, окну попросту нечем управлять, и сказать об этом честно
+    // полезнее, чем показать успокаивающее «локально».
+    if (platform === 'windows') {
+        connLabel.textContent = 'не настроено';
+        connMeta.textContent = 'укажите машину, где стоит бот';
+    } else {
+        connLabel.textContent = 'локально';
+        connMeta.textContent = 'бот на этом компьютере';
+    }
+}
+
+const CONN_LABEL = { connecting: 'подключаюсь…', online: 'на связи', offline: 'нет связи' };
+
+function renderConnState(st) {
+    if (!st.remoteState) return; // локальный бот — блок про адрес, а не про соединение
+    connBlock.dataset.state = st.remoteState;
+    connLabel.textContent = CONN_LABEL[st.remoteState] || st.remoteState;
+    connMeta.textContent = (uiState.remote && uiState.remote.host ? uiState.remote.host + ' · ' : '') +
+        (st.remoteStateNote || '');
 }
 
 function openRemoteOverlay(remote) {
@@ -782,12 +834,15 @@ function renderStatus(st) {
     el('hkc-version').textContent = 'hkc ' + (st.hkcVersion || 'dev');
     setProjectVersion(st.hkcVersion || 'dev');
 
+    renderConnState(st);
+
     statusPill.classList.remove('live', 'down', 'warn');
     if (st.streamIssue) {
         statusPill.classList.add('warn');
         statusText.textContent = '⚠ лог не читается';
         streamIssueBox.style.display = '';
-        streamIssueBox.textContent = st.streamIssue;
+        streamIssueReason.textContent = st.streamIssue;
+        streamIssueFor.textContent = st.streamIssueFor || '';
     } else {
         streamIssueBox.style.display = 'none';
         if (st.alive) {
@@ -1203,7 +1258,9 @@ Bootstrap().then((boot) => {
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'
         : uiState.minLevel === LEVEL_ERROR ? 'порог: error+' : 'порог: всё';
-    renderRemoteStatus(uiState.remote);
+    platform = boot.platform || platform;
+    showConnSection(uiState.remote);
+    renderRemoteTarget(uiState.remote);
     renderStatus(boot.status);
     renderAll(boot.records);
 });

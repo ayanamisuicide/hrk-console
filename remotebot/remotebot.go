@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,7 +48,7 @@ type Config struct {
 	KnownHostsPath string
 }
 
-func (c Config) logFile() string { return joinRemote(c.HerokuDir, "heroku.log") }
+func (c Config) logFile() string  { return joinRemote(c.HerokuDir, "heroku.log") }
 func (c Config) lockFile() string { return joinRemote(c.HerokuDir, ".launch.lock") }
 
 // joinRemote — путь на удалённой стороне собирается для POSIX-шелла, а не
@@ -137,18 +138,31 @@ func shq(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// findPIDsScript — та же логика, что у botproc.PIDs(): подстрока
-// "python3 -m heroku" в /proc/<pid>/cmdline, только выполняется удалённо
-// обычным шеллом, а не Go-обходом директории. Собирает все совпавшие pid,
-// не только первый — Stop() обязан остановить их все, как и локальная
-// версия.
+// findPIDsScript — та же логика, что у botproc.PIDs(): ищем
+// "python3 -m heroku" в /proc/<pid>/cmdline, только удалённо обычным
+// шеллом, а не Go-обходом директории. Собирает все совпавшие pid, не
+// только первый — Stop() обязан остановить их все, как и локальная версия.
+//
+// Совпадение — по НАЧАЛУ cmdline, а не по вхождению куда угодно, и это
+// принципиально. sshd запускает нашу команду как `bash -c '<весь этот
+// скрипт>'`, поэтому в cmdline самого сканирующего шелла лежит текст
+// скрипта — вместе с искомой строкой. При поиске подстрокой сканер
+// находил сам себя: pid в окне менялся каждую секунду (новый шелл на
+// каждый опрос), Start считал бота уже запущенным и молча ничего не
+// делал, а Stop слал SIGTERM собственному шеллу. Локальная версия этим не
+// страдает — там сканирует Go-бинарник, у которого в cmdline ничего
+// такого нет, — и потому проблема существует только здесь.
+//
+// Обёртки (`bash -c ...`) начинаются с "bash", настоящий бот — ровно с
+// "python3 -m heroku", так что якорь заодно делает проверку строже: мы
+// ищем процесс, который ЕСТЬ бот, а не любой, который его упоминает.
 const findPIDsScript = `
 pids=""
 for p in /proc/[0-9]*; do
   [ -r "$p/cmdline" ] || continue
-  if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -qF '` + needle + `'; then
-    pids="$pids ${p#/proc/}"
-  fi
+  case "$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)" in
+    '` + needle + ` '*) pids="$pids ${p#/proc/}";;
+  esac
 done
 `
 
@@ -164,6 +178,11 @@ func (c *Client) PIDs() ([]int, error) {
 			pids = append(pids, n)
 		}
 	}
+	// Шелл перебирает /proc/[0-9]* в лексикографическом порядке ("1000"
+	// раньше "999"), поэтому без сортировки PID() при нескольких найденных
+	// процессах выдаёт то один, то другой — pid в окне прыгает без всякой
+	// причины. Численный порядок делает выбор одним и тем же на каждом тике.
+	sort.Ints(pids)
 	return pids, nil
 }
 
@@ -274,21 +293,42 @@ type StartResult struct {
 // стартовать бота одновременно, setsid отвязывает процесс от SSH-сессии:
 // без него бот умер бы вместе с закрытием соединения. Тот же процесс, что
 // у botproc.Start(), просто произнесённый шеллом, а не exec.Command.
+//
+// `9>&-` у setsid обязателен: без него запускаемый бот наследует
+// дескриптор 9 вместе с уже взятым на нём flock и держит замок всю свою
+// жизнь. Локальная версия этим не страдает — exec.Command передаёт ребёнку
+// только stdin/stdout/stderr, — а здесь ребёнку достаётся всё окружение
+// шелла, и каждый следующий Start честно докладывал «запуск уже идёт в
+// другом окне», хотя никакого другого окна не было.
+//
+// Итоговый pid берётся повторным поиском по /proc, а не из `$!`: там pid
+// обёртки (setsid/bash), который совпадает с ботом только пока setsid не
+// форкается, — а разойдясь однажды, он даёт «живой» pid уже мёртвого
+// процесса.
 func (c *Client) Start() StartResult {
+	// Замок открывается как ".launch.lock", а не через cfg.lockFile(): скрипт
+	// уже стоит в каталоге бота, а lockFile() отдаёт путь относительно
+	// домашнего каталога ("Heroku/.launch.lock"). Вместе получалось
+	// "Heroku/Heroku/.launch.lock" — такого каталога нет, перенаправление
+	// падало, fd 9 не открывался, и следующий flock честно ругался на плохой
+	// дескриптор. Ошибка выглядела как "запуск уже идёт в другом окне": бот
+	// после Restart останавливался и больше не поднимался.
 	script := fmt.Sprintf(`
 cd %s || { echo ERR:каталог бота не найден; exit 0; }
-exec 9>%s
+exec 9>.launch.lock || { echo "ERR:не могу открыть .launch.lock"; exit 0; }
 if ! flock -n 9; then echo ALREADY; exit 0; fi
 %s
 set -- $pids
 if [ -n "${1:-}" ]; then echo "PID:$1"; exit 0; fi
 if [ ! -f venv/bin/activate ]; then echo "ERR:venv не найден"; exit 0; fi
-setsid bash -c 'exec > .startup.log 2>&1; source venv/bin/activate && exec python3 -m heroku' < /dev/null &
+setsid bash -c 'exec > .startup.log 2>&1; source venv/bin/activate && exec python3 -m heroku' < /dev/null 9>&- &
 newpid=$!
 disown
 sleep 0.3
-echo "PID:$newpid"
-`, shq(c.cfg.HerokuDir), shq(c.cfg.lockFile()), findPIDsScript)
+%s
+set -- $pids
+echo "PID:${1:-$newpid}"
+`, shq(c.cfg.HerokuDir), findPIDsScript, findPIDsScript)
 
 	out, err := c.run(script)
 	if err != nil {
@@ -323,7 +363,9 @@ for i in $(seq 1 50); do
   alive=0
   for p in $pids; do
     [ -r "/proc/$p/cmdline" ] || continue
-    tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -qF '` + needle + `' && alive=1
+    case "$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)" in
+      '` + needle + ` '*) alive=1;;
+    esac
   done
   [ "$alive" = 0 ] && { echo 0; exit 0; }
   sleep 0.1

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,10 @@ func PIDs() []int {
 			pids = append(pids, pid)
 		}
 	}
+	// ReadDir отдаёт /proc в лексикографическом порядке ("1000" раньше
+	// "999"), поэтому без сортировки PID() при нескольких найденных
+	// процессах возвращает то один, то другой.
+	sort.Ints(pids)
 	return pids
 }
 

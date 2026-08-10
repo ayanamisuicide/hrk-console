@@ -8,10 +8,10 @@ import (
 
 func TestShqEscapesSingleQuotes(t *testing.T) {
 	cases := map[string]string{
-		"Heroku":       `'Heroku'`,
-		"it's":         `'it'\''s'`,
-		"":             `''`,
-		"a'b'c":        `'a'\''b'\''c'`,
+		"Heroku": `'Heroku'`,
+		"it's":   `'it'\''s'`,
+		"":       `''`,
+		"a'b'c":  `'a'\''b'\''c'`,
 	}
 	for in, want := range cases {
 		if got := shq(in); got != want {

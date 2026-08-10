@@ -23,14 +23,18 @@ import (
 // Здесь эта работа делается сама: разбираем импорты загруженных модулей,
 // оставляем те, что не резолвятся в venv бота, и ставим их.
 
-// depScanScript ищет недостающие зависимости загруженных модулей. Запускается
+// DepScanScript ищет недостающие зависимости загруженных модулей. Запускается
 // python'ом из venv бота — именно его набор пакетов и надо проверять.
 //
 // Импорты берутся из AST, а не регуляркой по тексту: `import` внутри строки
 // или закомментированный не должен превращаться в попытку что-то поставить.
 // Заголовки `# requires:` читаются отдельно регуляркой — это не код, в AST
 // их нет, и имена там сразу пакетные, без перевода.
-const depScanScript = `
+//
+// Экспортирован (а не только внутренний вызов через scanModuleDeps) —
+// remotebot гоняет его же по SSH для того же экрана проверок в удалённом
+// режиме, дублировать полсотни строк разбора AST ради этого не стоило.
+const DepScanScript = `
 import ast, importlib.metadata, importlib.util, pathlib, re, sys
 
 modules_dir = pathlib.Path(sys.argv[1])
@@ -155,7 +159,7 @@ func scanModuleDeps(dir string) []string {
 		return nil
 	}
 
-	cmd := exec.Command(python, "-c", depScanScript, modules)
+	cmd := exec.Command(python, "-c", DepScanScript, modules)
 	// cwd = каталог бота: так find_spec видит сам пакет heroku и его
 	// соседей, и они не попадают в список "не хватает".
 	cmd.Dir = dir
@@ -163,13 +167,14 @@ func scanModuleDeps(dir string) []string {
 	if err != nil {
 		return nil
 	}
-	return parseDepOutput(string(out))
+	return ParseDepOutput(string(out))
 }
 
-// parseDepOutput разбирает вывод скрипта: строки вида "import httpx" и
+// ParseDepOutput разбирает вывод DepScanScript: строки вида "import httpx" и
 // "pip pillow". Имена из импортов переводятся в пакетные, объявленные
 // заголовком `# requires:` берутся как есть — там уже имя пакета.
-func parseDepOutput(out string) []string {
+// Экспортирован по той же причине, что и сам скрипт, — см. комментарий там.
+func ParseDepOutput(out string) []string {
 	seen := make(map[string]bool)
 	var missing []string
 	sc := bufio.NewScanner(strings.NewReader(out))

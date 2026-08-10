@@ -43,7 +43,7 @@ type Release struct {
 }
 
 type Asset struct {
-	Name                string `json:"name"`
+	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 

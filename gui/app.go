@@ -34,15 +34,26 @@ const ringCapacity = 5000
 const watchdogCooldown = 5 * time.Second
 
 // Status — то, что видно в шапке и панели: живость бота, версии, вотчдог.
+//
+// StreamIssue и StreamIssueFor разделены, а не склеены в одну строку:
+// причина и «как давно» — разные по важности вещи, и рисуются они по-разному.
+//
+// RemoteState — состояние SSH-подключения, когда бот на другой машине:
+// "" (локальный бот), "connecting", "online", "offline". Живость самого
+// бота (Alive) к нему отношения не имеет: подключение может работать
+// прекрасно, а бот на той стороне быть не запущен.
 type Status struct {
-	Alive       bool   `json:"alive"`
-	PID         int    `json:"pid"`
-	Uptime      string `json:"uptime"`
-	BotVersion  string `json:"botVersion"`
-	HkcVersion  string `json:"hkcVersion"`
-	Watchdog    bool   `json:"watchdog"`
-	Restarting  bool   `json:"restarting"`
-	StreamIssue string `json:"streamIssue"`
+	Alive           bool   `json:"alive"`
+	PID             int    `json:"pid"`
+	Uptime          string `json:"uptime"`
+	BotVersion      string `json:"botVersion"`
+	HkcVersion      string `json:"hkcVersion"`
+	Watchdog        bool   `json:"watchdog"`
+	Restarting      bool   `json:"restarting"`
+	StreamIssue     string `json:"streamIssue"`
+	StreamIssueFor  string `json:"streamIssueFor"`
+	RemoteState     string `json:"remoteState"`
+	RemoteStateNote string `json:"remoteStateNote"`
 }
 
 // Rec — запись лога в виде, пригодном для JSON: то же самое, что
@@ -70,10 +81,16 @@ type TailEvent struct {
 
 // Bootstrap — всё, что нужно фронтенду для первого рендера: статус,
 // сохранённые настройки экрана и уже отфильтрованная история.
+//
+// Platform — runtime.GOOS. Блок «Подключение» существует ради Windows, где
+// бота локально нет и быть не может; на машине, где бот и так стоит рядом,
+// он только занимает место в панели, и фронтенд прячет его — но знать, где
+// он запущен, может только бэкенд.
 type Bootstrap struct {
-	Status  Status      `json:"status"`
-	UIState state.State `json:"uiState"`
-	Records []Rec       `json:"records"`
+	Status   Status      `json:"status"`
+	UIState  state.State `json:"uiState"`
+	Records  []Rec       `json:"records"`
+	Platform string      `json:"platform"`
 }
 
 type ActionResult struct {
@@ -119,6 +136,12 @@ type App struct {
 	remote         *remotebot.Client
 	remoteFollower *remotebot.FollowHandle
 
+	// remoteState/remoteStateNote — что показать в блоке «Подключение»
+	// (см. Status.RemoteState). Под a.mu, как и остальное, что читает
+	// statusLocked.
+	remoteState     string
+	remoteStateNote string
+
 	mu      sync.Mutex
 	ring    []string
 	parser  *logfeed.Parser
@@ -142,6 +165,12 @@ type App struct {
 	// его дешёвой проверкой (AliveAt) вместо полного обхода /proc на каждой
 	// секунде — см. tickPID.
 	lastPID int
+
+	// remotePID/remotePIDAt — последний pid, который удалённая машина
+	// действительно назвала, и когда. Нужны только в удалённом режиме, см.
+	// stalePID.
+	remotePID   int
+	remotePIDAt time.Time
 
 	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса,
 	// запуск и остановка бота, его версия и аптайм, отправка события в
@@ -224,12 +253,40 @@ func (a *App) tickPID() int {
 	return pid
 }
 
+// remoteStaleWindow — сколько последний достоверный pid считается ещё
+// пригодным, когда удалённая машина перестала отвечать. Секунды заминки
+// пережить надо, минуты — уже нет: иначе окно бесконечно показывало бы
+// «live» давно оборванного соединения.
+const remoteStaleWindow = 15 * time.Second
+
+func (a *App) rememberPID(pid int) {
+	a.watchMu.Lock()
+	a.remotePID, a.remotePIDAt = pid, time.Now()
+	a.watchMu.Unlock()
+}
+
+func (a *App) stalePID() int {
+	a.watchMu.Lock()
+	defer a.watchMu.Unlock()
+	if a.remotePID == 0 || time.Since(a.remotePIDAt) > remoteStaleWindow {
+		return 0
+	}
+	return a.remotePID
+}
+
+func (a *App) setRemoteState(st, note string) {
+	a.mu.Lock()
+	a.remoteState, a.remoteStateNote = st, note
+	a.mu.Unlock()
+}
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.ui = state.Load()
 	a.parser = logfeed.NewParser()
 
 	if a.ui.Remote.Host != "" {
+		a.setRemoteState("connecting", "подключаюсь…")
 		go a.startRemote()
 	} else {
 		a.loadHistory()
@@ -255,6 +312,8 @@ func (a *App) startRemote() {
 	cfgDir, err := os.UserConfigDir()
 	if err != nil {
 		a.emit("notice", "не удалось определить каталог настроек: "+err.Error())
+		a.setRemoteState("offline", err.Error())
+		a.failRemotePreflight(err)
 		return
 	}
 	c, err := remotebot.Dial(remotebot.Config{
@@ -266,24 +325,51 @@ func (a *App) startRemote() {
 	})
 	if err != nil {
 		a.emit("notice", "не удалось подключиться к "+r.Host+": "+err.Error())
+		a.setRemoteState("offline", err.Error())
+		a.failRemotePreflight(err)
 		return
 	}
 	a.remote = c
+	a.setRemoteState("online", "SSH · "+r.Dir)
 
-	a.pid = func() int {
-		pid, _ := c.PID()
+	// Сорвавшаяся SSH-команда — это «не смог спросить», а не «бота нет».
+	// Разница видна невооружённым глазом: на локальной машине /proc не
+	// подводит, а через сеть ответ теряется регулярно, и без этого различия
+	// pid в окне мигал 1234 → 0 → 1234 на каждой заминке, а вотчдог
+	// принимался «спасать» живого бота. Держим последний достоверный ответ
+	// remoteStaleWindow — дальше уже честнее признать, что мы не знаем.
+	//
+	// Заодно это и единственный регулярный пульс соединения: опрос pid идёт
+	// каждую секунду, отдельно пинговать хост было бы тем же запросом ещё
+	// раз.
+	online := func(pid int) int {
+		a.setRemoteState("online", "SSH · "+r.Dir)
+		a.rememberPID(pid)
 		return pid
+	}
+	offline := func(err error) int {
+		a.setRemoteState("offline", err.Error())
+		return a.stalePID()
+	}
+	a.pid = func() int {
+		pid, err := c.PID()
+		if err != nil {
+			return offline(err)
+		}
+		return online(pid)
 	}
 	a.aliveAt = func(pid int) bool {
 		pids, err := c.PIDs()
 		if err != nil {
-			return false
+			return offline(err) == pid
 		}
 		for _, p := range pids {
 			if p == pid {
+				online(pid)
 				return true
 			}
 		}
+		a.setRemoteState("online", "SSH · "+r.Dir)
 		return false
 	}
 	a.start = func() startResult {
@@ -303,8 +389,25 @@ func (a *App) startRemote() {
 		return v
 	}
 
+	go a.runChecklist(c.Preflight())
 	a.loadRemoteHistory()
 	go a.followRemoteLog()
+}
+
+// failRemotePreflight отмечает все проверки как заведомо неудавшиеся —
+// подключиться не вышло даже для того, чтобы их выполнить (плохие
+// настройки, сеть). Экран проверок не должен виснуть с крутящимися
+// индикаторами до бесконечности только потому, что нет самого способа их
+// прогнать: пользователь должен увидеть ровно ту же причину, что уже ушла
+// в notice, прямо там, куда и так смотрит.
+func (a *App) failRemotePreflight(err error) {
+	checks := (&remotebot.Client{}).Preflight()
+	for i, c := range checks {
+		a.emit("preflight-check", PreflightEvent{
+			Index: i, Total: len(checks), Name: c.Name,
+			Status: "failed", Detail: "нет подключения: " + err.Error(),
+		})
+	}
 }
 
 // loadRemoteHistory — то же, что loadHistory делает локально, только
@@ -377,8 +480,16 @@ type PreflightEvent struct {
 // Идёт в фоне параллельно с loadHistory/followLog/statusLoop, а не до них —
 // сами проверки лишь показывают состояние окружения, они не blocking-условие
 // для того, чтобы начать читать уже существующий heroku.log.
-func (a *App) runPreflight() {
-	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+// runChecklist гоняет уже готовый список проверок последовательно, не
+// параллельно — прогон должен читаться как цепочка шагов, а не список,
+// обновившийся целиком разом, тот же контракт, что и в
+// internal/tui/preflight.go. Шлёт результат каждой отдельным событием, а не
+// одним ответом в конце: и "модульные тесты" локально, и SSH-команды
+// удалённо могут идти секундами, окно не должно молчать всё это время.
+// Общая для локального (preflight.All) и удалённого (remotebot.Client.
+// Preflight) списков — сам прогон и отправка событий не знают разницы
+// между ними.
+func (a *App) runChecklist(checks []preflight.Check) {
 	for i, c := range checks {
 		start := time.Now()
 		detail, status := c.Run()
@@ -393,29 +504,30 @@ func (a *App) runPreflight() {
 	}
 }
 
+func (a *App) runPreflight() {
+	a.runChecklist(preflight.All(a.bot.HerokuDir, a.bot.LogFile))
+}
+
 // PreflightChecks — только имена проверок, без запуска. Фронтенду нужно
 // нарисовать полный список строк ДО того, как первая проверка успеет
 // отработать (события 'preflight-check' начинают идти сразу при старте
 // окна) — иначе экран открывался бы пустым и достраивался бы по одной
 // строке снизу, а не показывал сразу, сколько шагов всего и какие.
 //
-// В удалённом режиме пустой список — проверки (venv, python3, ffmpeg и
-// так далее) про локальную файловую систему, а бот живёт на другой
-// машине; пустой список фронтенд уже умеет молча закрывать экран проверок
-// (см. renderPreflightChecks в main.js), поэтому дублировать эти проверки
-// по SSH не понадобилось.
+// В удалённом режиме список строится через (&remotebot.Client{}).Preflight()
+// — пустым, ещё не подключённым клиентом: сами имена проверок не зависят
+// от того, есть ли уже живое SSH-соединение, а вот дождаться его здесь
+// было бы неправильно — a.ui.Remote выставляется синхронно в начале
+// startup(), а a.remote только после успешного подключения (startRemote —
+// фоновая горутина), и ожидание одного из другого раньше иногда вешало
+// экран проверок навсегда, если фронтенд успевал спросить раньше.
 func (a *App) PreflightChecks() []string {
-	// a.ui.Remote, не a.remote: a.ui выставляется синхронно в startup() до
-	// первой же горутины, а a.remote появляется только после успешного SSH-
-	// подключения (startRemote — фоновая горутина). Фронтенд же зовёт этот
-	// метод сразу при загрузке страницы — гонка с a.remote раньше иногда
-	// успевала застать его ещё nil и по ошибке отдать локальный список,
-	// который потом никогда не резолвился (runPreflight() в удалённом
-	// режиме не запускается вовсе), и экран проверок зависал навсегда.
+	var checks []preflight.Check
 	if a.ui.Remote.Host != "" {
-		return nil
+		checks = (&remotebot.Client{}).Preflight()
+	} else {
+		checks = preflight.All(a.bot.HerokuDir, a.bot.LogFile)
 	}
-	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
 	names := make([]string, len(checks))
 	for i, c := range checks {
 		names[i] = c.Name
@@ -529,7 +641,6 @@ func (a *App) RestartApp() ActionResult {
 	}()
 	return ActionResult{OK: true}
 }
-
 
 // loadHistory поднимает хвост уже написанного лога при старте окна — без
 // этого приложение открывалось бы на пустом экране, пока не придёт первая
@@ -648,15 +759,15 @@ func (a *App) statusLocked(pid int) Status {
 	if pid != 0 {
 		uptime = a.uptime(pid)
 	}
-	streamIssue := ""
+	streamIssue, streamIssueFor := "", ""
 	switch {
 	case a.follower != nil:
 		if ok, reason, since := a.follower.Alive(); !ok {
-			streamIssue = reason + " · " + humanSince(time.Since(since))
+			streamIssue, streamIssueFor = reason, humanSince(time.Since(since))
 		}
 	case a.remoteFollower != nil:
 		if ok, reason, since := a.remoteFollower.Alive(); !ok {
-			streamIssue = reason + " · " + humanSince(time.Since(since))
+			streamIssue, streamIssueFor = reason, humanSince(time.Since(since))
 		}
 	}
 	a.watchMu.Lock()
@@ -666,7 +777,8 @@ func (a *App) statusLocked(pid int) Status {
 		Alive: pid != 0, PID: pid, Uptime: uptime,
 		BotVersion: a.botVersion(), HkcVersion: version,
 		Watchdog: a.ui.Watchdog, Restarting: restarting,
-		StreamIssue: streamIssue,
+		StreamIssue: streamIssue, StreamIssueFor: streamIssueFor,
+		RemoteState: a.remoteState, RemoteStateNote: a.remoteStateNote,
 	}
 }
 
@@ -716,7 +828,10 @@ func (a *App) Bootstrap() Bootstrap {
 	pid := a.tickPID()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return Bootstrap{Status: a.statusLocked(pid), UIState: a.ui, Records: toRecs(a.visible)}
+	return Bootstrap{
+		Status: a.statusLocked(pid), UIState: a.ui,
+		Records: toRecs(a.visible), Platform: runtime.GOOS,
+	}
 }
 
 // ConnectRemote сохраняет настройки подключения к боту на другой машине и
