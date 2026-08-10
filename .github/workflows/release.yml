@@ -50,15 +50,19 @@ jobs:
       - name: wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: проверки GUI
-        working-directory: gui
-        run: go vet -tags webkit2_41 ./...
-
+      # Сборка обязана идти до "go vet": //go:embed all:frontend/dist в
+      # gui/main.go ссылается на каталог, который генерирует именно
+      # wails build (Vite-сборка фронтенда) — до неё vet падает на
+      # "no matching files found", каталога попросту ещё нет.
       - name: сборка GUI
         working-directory: gui
         run: |
           wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
           tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C build/bin hrk-console-gui
+
+      - name: проверки GUI
+        working-directory: gui
+        run: go vet -tags webkit2_41 ./...
 
       # Описание релиза — раздел CHANGELOG для этой версии. Один источник
       # правды: то, что видит человек на странице релиза, и то, что лежит
