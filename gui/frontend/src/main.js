@@ -2,9 +2,9 @@ import './style.css';
 
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
-    StartBot, StopBot, RestartBot, ClearLog,
+    StartBot, StopBot, RestartBot, ClearLog, ExportLog,
 } from '../wailsjs/go/main/App';
-import { EventsOn, WindowSetTitle } from '../wailsjs/runtime/runtime';
+import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
 const LEVEL_DEBUG = 0, LEVEL_INFO = 1, LEVEL_WARNING = 2, LEVEL_ERROR = 3, LEVEL_CRITICAL = 4;
 const BADGES = ['DBG', 'INF', 'WRN', 'ERR', 'CRT'];
@@ -18,6 +18,7 @@ document.querySelector('#app').innerHTML = `
     <div class="brand-group">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
+      <button class="update-badge" id="update-badge" style="display:none" title="Открыть страницу релиза"></button>
     </div>
     <span class="status-pill down" id="status-pill">
       <span class="status-dot"></span><span id="status-text">…</span>
@@ -27,6 +28,7 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-ru" title="Переводить известные шаблонные сообщения на русский (словарь, не живой перевод)">RU</button>
       <button id="btn-debug">debug</button>
       <button id="btn-level">порог: всё</button>
+      <button id="btn-export" title="Экспортировать видимый лог в файл">Экспорт</button>
       <button id="btn-clear" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
       <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
@@ -109,7 +111,9 @@ const btnDebug = el('btn-debug');
 const btnLevel = el('btn-level');
 const btnWatchdog = el('btn-watchdog');
 const btnClear = el('btn-clear');
+const btnExport = el('btn-export');
 const btnHelp = el('btn-help');
+const updateBadge = el('update-badge');
 const helpOverlay = el('help-overlay');
 const sidebar = document.querySelector('.sidebar');
 
@@ -170,6 +174,47 @@ function translateLine(text) {
 
 let ruEnabled = localStorage.getItem('hkc-gui-ru') === '1';
 
+// ─── подсветка совпадений активного фильтра ─────────────────────────────
+//
+// logfeed.Visible на бэкенде уже решил, что запись видна — здесь просто
+// показываем, где именно в тексте совпадение, как Ctrl+F: раньше фильтр
+// только прятал нерелевантное, а само совпадение в оставшемся тексте
+// ничем не выделялось.
+function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function filterRegExp(filterValue) {
+    if (!filterValue) return null;
+    const pattern = filterValue.startsWith('re:') ? filterValue.slice(3) : escapeRegExp(filterValue);
+    try {
+        return new RegExp(pattern, 'gi');
+    } catch {
+        // Битый regexp — то же решение, что и в logfeed.matchFilter на
+        // бэкенде: трактуем как "не совпало", а не роняем рендер.
+        return null;
+    }
+}
+
+function appendHighlighted(el, text, filterValue) {
+    const re = filterRegExp(filterValue);
+    if (!re) {
+        el.appendChild(document.createTextNode(text));
+        return;
+    }
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+        if (m[0] === '') { re.lastIndex++; continue; } // не зациклиться на пустом совпадении
+        if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'hl';
+        mark.textContent = m[0];
+        el.appendChild(mark);
+        last = m.index + m[0].length;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+
 // ─── рендер одной записи ────────────────────────────────────────────────
 
 function buildMsgEl(rec) {
@@ -180,6 +225,7 @@ function buildMsgEl(rec) {
     // взведён) — физический перенос (трейсбек, дамп) переносит rec.hard[0]
     // в true и в словарь никогда не попадает.
     const translatable = ruEnabled && !(rec.hard && rec.hard[0]);
+    const filterValue = filterInput.value;
     (rec.lines || ['']).forEach((line, i) => {
         const display = (i === 0 && translatable) ? translateLine(line) : line;
         if (i > 0) {
@@ -188,10 +234,10 @@ function buildMsgEl(rec) {
             arrow.className = 'continuation-arrow';
             arrow.textContent = '↳ ';
             br.appendChild(arrow);
-            br.appendChild(document.createTextNode(display));
+            appendHighlighted(br, display, filterValue);
             msg.appendChild(br);
         } else {
-            msg.appendChild(document.createTextNode(display));
+            appendHighlighted(msg, display, filterValue);
         }
     });
     return msg;
@@ -217,7 +263,7 @@ function buildRow(rec, zebra) {
     const mod = document.createElement('span');
     mod.className = 'module';
     mod.style.color = moduleColor(rec.module);
-    mod.textContent = rec.module;
+    appendHighlighted(mod, rec.module, filterInput.value);
     row.appendChild(mod);
 
     row.appendChild(buildMsgEl(rec));
@@ -230,6 +276,16 @@ function buildRow(rec, zebra) {
         count.style.visibility = 'hidden';
     }
     row.appendChild(count);
+
+    const copyBtn = document.createElement('span');
+    copyBtn.className = 'row-copy';
+    copyBtn.title = 'Скопировать';
+    copyBtn.textContent = '⧉';
+    copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyRowText(row);
+    });
+    row.appendChild(copyBtn);
 
     row._rec = rec;
     return row;
@@ -383,6 +439,16 @@ EventsOn('status', (st) => {
 
 EventsOn('notice', (text) => {
     showBanner(text, true);
+});
+
+// Бэкенд проверяет GitHub раз при старте окна и шлёт это событие, только
+// если реально нашёл версию новее текущей — молчание не значит "нет
+// обновлений", может значить и "нет сети", разницы фронтенду не видно и
+// не нужно: бейджа просто не будет.
+EventsOn('update-available', (info) => {
+    updateBadge.textContent = '↑ ' + info.version;
+    updateBadge.style.display = '';
+    updateBadge.addEventListener('click', () => BrowserOpenURL(info.url));
 });
 
 // ─── шапка / статус ──────────────────────────────────────────────────────
@@ -585,6 +651,33 @@ function flashHint(text) {
     hintTimer = setTimeout(() => hint.classList.remove('visible'), 1200);
 }
 
+// ─── копирование строки/блока ────────────────────────────────────────────
+
+function rowPlainText(row) {
+    const rec = row._rec;
+    if (!rec) return row.textContent.trim();
+    const head = [rec.time, BADGES[rec.level], rec.module].filter(Boolean).join('  ');
+    const lines = (rec.lines || ['']).map((l, i) => i === 0 ? l : '  ↳ ' + l);
+    return (head ? head + '  ' : '') + lines.join('\n');
+}
+
+// copyRowText — на ошибке/критике забирает и идущие следом строки-продолжения
+// (трейсбек): у них пустое time и взведён hard[0], то есть они физически
+// принадлежат этой записи, а не отдельные события (см. logfeed.Parser.Feed).
+function copyRowText(row) {
+    const lines = [rowPlainText(row)];
+    let next = row.nextElementSibling;
+    while (next && next.classList && next.classList.contains('row')) {
+        const r = next._rec;
+        if (!r || r.time || !(r.hard && r.hard[0])) break;
+        lines.push(rowPlainText(next));
+        next = next.nextElementSibling;
+    }
+    ClipboardSetText(lines.join('\n')).then((ok) => {
+        flashHint(ok ? 'скопировано' : 'не удалось скопировать');
+    });
+}
+
 // ─── управление ──────────────────────────────────────────────────────────
 
 // Перезапуск отмечается в самом логе: без этой строки падение с автоподъёмом
@@ -643,6 +736,23 @@ btnClear.addEventListener('click', () => {
     activityNow = 0;
     renderAll([]);
     ClearLog();
+});
+
+btnExport.addEventListener('click', async () => {
+    // Экспортируется именно то, что видно на экране — тот же порядок и тот
+    // же набор строк, что и в момент клика, включая активный фильтр: это
+    // ожидание "экспортируй то, на что я сейчас смотрю", а не всю историю.
+    const lines = [...logScroll.querySelectorAll('.row')].map(rowPlainText);
+    if (lines.length === 0) {
+        flashHint('лог пуст — нечего экспортировать');
+        return;
+    }
+    const res = await ExportLog(lines.join('\n'));
+    if (!res.ok) {
+        showBanner(`✗  экспорт: ${res.message}`, true);
+    } else if (res.message !== 'отменено') {
+        showBanner(`✓  экспорт  ·  ${res.message}`, false);
+    }
 });
 
 let filterDebounce = null;

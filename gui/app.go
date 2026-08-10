@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,6 +80,13 @@ type Bootstrap struct {
 type ActionResult struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
+}
+
+// UpdateInfo — событие "вышла версия новее той, что запущена", шлётся
+// фронтенду не чаще раза за окно (см. checkUpdateOnce).
+type UpdateInfo struct {
+	Version string `json:"version"`
+	URL     string `json:"url"`
 }
 
 // App — состояние бэкенда. Один экземпляр на окно, живёт всё время работы
@@ -178,6 +191,78 @@ func (a *App) startup(ctx context.Context) {
 	a.loadHistory()
 	go a.followLog()
 	go a.statusLoop()
+	go a.checkUpdateOnce()
+}
+
+// updateCheckURL — репозиторий консоли, не бота: у Heroku-юзербота своя
+// версия и свои релизы, здесь речь про саму hrk-console/GUI.
+const updateCheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases/latest"
+
+// cleanVersionRe — "vX.Y.Z" без хвоста. У сборки из тега (git describe на
+// чистом дереве без коммитов после тега) версия выглядит ровно так; у
+// сборки из рабочего дерева (make gui без тега, wails dev) — с суффиксом
+// коммитов/-dirty или просто "dev". Сравнивать в обоих этих случаях не с
+// чем: непонятно, новее хвостатая сборка последнего релиза или старее.
+var cleanVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+// checkUpdateOnce — разовая проверка последнего релиза на GitHub при
+// старте окна. Молчит на любой осечке (нет сети, GitHub не ответил,
+// версия сборки не чистый тег) — само уведомление не настолько важно,
+// чтобы падать или шуметь в лог из-за его недоступности.
+func (a *App) checkUpdateOnce() {
+	if !cleanVersionRe.MatchString(version) {
+		return
+	}
+	req, err := http.NewRequest(http.MethodGet, updateCheckURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var body struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return
+	}
+	if !cleanVersionRe.MatchString(body.TagName) || !versionLess(version, body.TagName) {
+		return
+	}
+	a.emit("update-available", UpdateInfo{Version: body.TagName, URL: body.HTMLURL})
+}
+
+// versionLess сравнивает "vX.Y.Z" по номерам, а не строками — иначе
+// v1.10.0 проиграл бы v1.9.0 при обычном посимвольном сравнении.
+// Вызывающий обязан убедиться, что оба аргумента прошли cleanVersionRe.
+func versionLess(a, b string) bool {
+	pa := strings.Split(strings.TrimPrefix(a, "v"), ".")
+	pb := strings.Split(strings.TrimPrefix(b, "v"), ".")
+	for i := 0; i < 3; i++ {
+		na, _ := strconv.Atoi(pa[i])
+		nb, _ := strconv.Atoi(pb[i])
+		if na != nb {
+			return na < nb
+		}
+	}
+	return false
+}
+
+// notifyDesktop — best-effort desktop-уведомление через notify-send (часть
+// libnotify-bin, обычно уже стоит на Linux-рабочих столах): чтобы падение
+// бота было видно, даже когда окно GUI свёрнуто или не в фокусе. Нет
+// бинарника или недоступны DISPLAY/DBUS — тихо ничего не делает, само
+// уведомление не настолько важно, чтобы падать или шуметь в лог.
+func notifyDesktop(title, body string) {
+	_ = exec.Command("notify-send", "-a", "Heroku", title, body).Run()
 }
 
 // loadHistory поднимает хвост уже написанного лога при старте окна — без
@@ -345,6 +430,7 @@ func (a *App) maybeWatchdogRestart(pid int) {
 	a.watchMu.Unlock()
 
 	a.emit("notice", "watchdog: бот не отвечает — перезапускаю")
+	notifyDesktop("Heroku", "Бот не отвечает — перезапускаю")
 	go func() {
 		a.start()
 		a.watchMu.Lock()
@@ -466,6 +552,28 @@ func (a *App) RestartBot() ActionResult {
 		a.stop()
 	}
 	return a.StartBot()
+}
+
+// ExportLog сохраняет содержимое в файл через нативный диалог "сохранить
+// как". Сам текст формирует фронтенд — он уже знает, как рендерит
+// видимые строки (тот же порядок, что на экране, включая фильтр), задача
+// бэкенда — только диалог выбора пути и запись на диск, недоступные из
+// песочницы webview напрямую.
+func (a *App) ExportLog(content string) ActionResult {
+	path, err := wailsrt.SaveFileDialog(a.ctx, wailsrt.SaveDialogOptions{
+		Title:           "Экспорт лога",
+		DefaultFilename: "heroku-log-" + time.Now().Format("2006-01-02-150405") + ".txt",
+	})
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	if path == "" {
+		return ActionResult{OK: true, Message: "отменено"}
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	return ActionResult{OK: true, Message: path}
 }
 
 func maxInt(a, b int) int {

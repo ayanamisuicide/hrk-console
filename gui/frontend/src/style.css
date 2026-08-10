@@ -120,6 +120,18 @@ html, body {
   font-family: var(--font-mono);
 }
 
+.update-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--good);
+  background: rgba(116, 224, 171, .14);
+  border: 1px solid rgba(116, 224, 171, .3);
+  animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1);
+}
+.update-badge:hover { background: rgba(116, 224, 171, .22); }
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -375,7 +387,7 @@ button.toggled {
 
 .row {
   display: grid;
-  grid-template-columns: 62px 50px 96px 1fr auto;
+  grid-template-columns: 62px 50px 96px 1fr auto 20px;
   gap: 10px;
   padding: 3px 18px;
   white-space: pre-wrap;
@@ -384,6 +396,28 @@ button.toggled {
 }
 .row.zebra { background: rgba(255,255,255,0.025); }
 .row:hover { background: rgba(255, 255, 255, .045); }
+
+/* Копирование по клику — видно только при наведении, чтобы не шуметь на
+   каждой из тысяч строк лога. Колонка зарезервирована всегда (20px), а не
+   position:absolute, — проще и не наезжает на текст при переносе строк. */
+.row .row-copy {
+  opacity: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  transition: opacity .12s ease, color .12s ease;
+}
+.row:hover .row-copy { opacity: 1; }
+.row .row-copy:hover { color: var(--accent); }
+
+/* Совпадение активного фильтра в тексте — как обычный Ctrl+F. */
+mark.hl {
+  background: rgba(156, 139, 255, .38);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 0 1px;
+}
 
 .row .time { color: var(--text-muted); }
 .row .badge {

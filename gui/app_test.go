@@ -212,6 +212,43 @@ func TestStartBotArmsCooldownAgainstWatchdog(t *testing.T) {
 	}
 }
 
+// versionLess сравнивает по номерам, а не строками — посимвольное сравнение
+// строк наврало бы на переходе через второй знак ("v1.9.0" < "v1.10.0" как
+// строки — false, хотя релиз реально новее).
+func TestVersionLess(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"v1.7.6", "v1.7.7", true},
+		{"v1.7.7", "v1.7.6", false},
+		{"v1.7.6", "v1.7.6", false},
+		{"v1.9.0", "v1.10.0", true},
+		{"v2.0.0", "v1.99.99", false},
+	}
+	for _, c := range cases {
+		if got := versionLess(c.a, c.b); got != c.want {
+			t.Errorf("versionLess(%q, %q) = %v, ожидалось %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// cleanVersionRe отсеивает сборки из рабочего дерева (суффикс git describe,
+// "dev") — для них сравнение версий ненадёжно, проверка обновлений должна
+// промолчать, а не соврать "обновление доступно" на каждой dev-сборке.
+func TestCleanVersionRe(t *testing.T) {
+	for _, v := range []string{"v1.7.6", "v0.0.1"} {
+		if !cleanVersionRe.MatchString(v) {
+			t.Errorf("cleanVersionRe не совпал с чистым тегом %q", v)
+		}
+	}
+	for _, v := range []string{"dev", "v1.7.6-3-gabc1234", "v1.7.6-dirty", "1.7.6"} {
+		if cleanVersionRe.MatchString(v) {
+			t.Errorf("cleanVersionRe ошибочно совпал с %q", v)
+		}
+	}
+}
+
 // tickPID кэширует pid между тиками, пока aliveAt подтверждает его — иначе
 // вся оптимизация (не сканировать /proc заново на каждой секунде) ничего
 // не даёт. bot/mu не нужны: tickPID их не трогает.
