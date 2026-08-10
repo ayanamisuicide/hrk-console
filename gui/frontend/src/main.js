@@ -30,6 +30,9 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
   <div class="topbar">
+    <button class="drawer-toggle" id="btn-sidebar" title="Показать/скрыть панель (s)">
+      <span></span><span></span><span></span>
+    </button>
     <div class="brand-group">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
@@ -61,6 +64,7 @@ document.querySelector('#app').innerHTML = `
   </div>
   <div class="body">
     <div class="sidebar">
+      <div class="sidebar-inner">
       <h3>Проблемы</h3>
       <div class="problem-counts">
         <span class="warn">⚠ <span id="count-warn">0</span></span>
@@ -99,6 +103,7 @@ document.querySelector('#app').innerHTML = `
       </div>
 
       <div class="gui-version" id="gui-version"></div>
+      </div>
     </div>
     <div class="log-pane">
       <div class="log-scroll" id="log-scroll"></div>
@@ -177,7 +182,8 @@ const utVersion = el('ut-version');
 const btnUtUpdate = el('ut-update');
 const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
-const sidebar = document.querySelector('.sidebar');
+const body = document.querySelector('.body');
+const btnSidebar = el('btn-sidebar');
 const preflightOverlay = el('preflight-overlay');
 const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
@@ -1299,12 +1305,19 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Панель — выдвижной ящик, не display:none: .body.sidebar-hidden двигает
+// одновременно ширину .sidebar и gap самого .body (см. style.css), лог
+// расширяется в освободившееся место тем же плавным движением, а не рывком
+// после того, как панель уже исчезла. Гамбургер в шапке — тот же переход,
+// что и горячая клавиша s, просто ещё один способ его вызвать.
 function toggleSidebar(force) {
-    const show = force === undefined ? sidebar.style.display === 'none' : force;
-    sidebar.style.display = show ? '' : 'none';
+    const show = force === undefined ? body.classList.contains('sidebar-hidden') : force;
+    body.classList.toggle('sidebar-hidden', !show);
+    btnSidebar.classList.toggle('open', !show);
     uiState.showSidebar = show;
     SetShowSidebar(show);
 }
+btnSidebar.addEventListener('click', () => toggleSidebar());
 
 function toggleHelp(force) {
     const show = force === undefined ? !helpOverlay.classList.contains('visible') : force;
@@ -1320,7 +1333,17 @@ btnRu.classList.toggle('toggled', ruEnabled);
 
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
-    if (!uiState.showSidebar) sidebar.style.display = 'none';
+    if (!uiState.showSidebar) {
+        // Без .sidebar-no-anim панель на старте окна проиграла бы полный
+        // переход "открыта → закрыта" (сначала успевает нарисоваться
+        // открытой, Bootstrap — асинхронный IPC-вызов) вместо того, чтобы
+        // просто быть закрытой сразу, как раньше делал display:none.
+        body.classList.add('sidebar-no-anim');
+        body.classList.add('sidebar-hidden');
+        btnSidebar.classList.add('open');
+        void body.offsetWidth; // форсируем layout, прежде чем снять запрет на анимацию
+        body.classList.remove('sidebar-no-anim');
+    }
     btnDebug.classList.toggle('toggled', uiState.showDebug);
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'

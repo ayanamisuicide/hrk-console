@@ -266,10 +266,40 @@ button.toggled {
 
 /* ─── тело: панель + лог, две отдельные стеклянные карточки ──────────── */
 
-.body { flex: 1; display: flex; gap: 12px; min-height: 0; }
+.body {
+  flex: 1; display: flex; gap: 12px; min-height: 0;
+  transition: gap .34s cubic-bezier(.3, .74, .3, 1);
+}
 
+/* ─── панель как выдвижной ящик ────────────────────────────────────────
+   .sidebar — сама «дверь»: анимируются её width/padding/opacity, она же
+   overflow:hidden, поэтому исчезающее содержимое обрезается, а не
+   переносится по словам на сжимающейся ширине. .sidebar-inner держит
+   фиксированную ширину и весь исходный флекс-макет (модули по-прежнему
+   растягиваются на свободное место, футер — снизу) — так текст внутри не
+   сплющивается на середине анимации, просто уезжает вместе с обрезающим
+   его краем и гаснет за счёт opacity раньше, чем становится заметно узким.
+   .body.sidebar-hidden управляет обеими сразу — переход бесшовный, лог
+   расширяется в освободившееся место тем же движением, а не рывком после. */
 .sidebar {
   width: 264px;
+  flex: none;
+  overflow: hidden;
+  opacity: 1;
+  transition: width .34s cubic-bezier(.3, .74, .3, 1), opacity .22s ease;
+}
+.body.sidebar-hidden .sidebar { width: 0; opacity: 0; }
+.body.sidebar-hidden { gap: 0; }
+
+/* Гасит переход на один кадр при старте окна с уже свёрнутой панелью —
+   иначе она успевала бы на мгновение нарисоваться открытой и тут же
+   проиграть полную анимацию закрытия (см. Bootstrap().then в main.js). */
+.body.sidebar-no-anim,
+.body.sidebar-no-anim .sidebar { transition: none !important; }
+
+.sidebar-inner {
+  width: 264px;
+  height: 100%;
   flex: none;
   padding: 16px 14px;
   overflow-y: auto;
@@ -277,7 +307,7 @@ button.toggled {
   flex-direction: column;
 }
 
-.sidebar h3 {
+.sidebar-inner h3 {
   font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--text-muted);
@@ -285,7 +315,28 @@ button.toggled {
   font-weight: 700;
   text-transform: uppercase;
 }
-.sidebar h3:first-child { margin-top: 0; }
+.sidebar-inner h3:first-child { margin-top: 0; }
+
+/* Гамбургер в шапке — постоянно видимый способ вызвать ящик обратно, а не
+   только скрытая горячая клавиша (s), про которую нужно было знать заранее.
+   Три полоски складываются в крестик открытого состояния — тот же приём,
+   что у большинства мобильных меню, читается без подписи где угодно. */
+.drawer-toggle {
+  flex: none;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 4px;
+  width: 30px; height: 30px; padding: 0;
+  -webkit-app-region: no-drag;
+}
+.drawer-toggle span {
+  width: 15px; height: 2px; border-radius: 2px;
+  background: var(--text-secondary);
+  transition: transform .25s cubic-bezier(.3, .7, .3, 1.2), opacity .2s ease, width .2s ease;
+}
+.drawer-toggle:hover span { background: var(--text-primary); }
+.drawer-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.drawer-toggle.open span:nth-child(2) { opacity: 0; width: 0; }
+.drawer-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
 .problem-counts { display: flex; gap: 16px; font-size: 16px; font-weight: 700; }
 .problem-counts .warn { color: var(--warning); }
@@ -312,12 +363,12 @@ button.toggled {
   word-break: break-all;
 }
 
+.h3-total { letter-spacing: normal; text-transform: none; color: var(--text-secondary); font-weight: 600; }
+
 /* Список модулей — полный (не топ-7), сама область гибкая и скроллится
    независимо: длинный список не должен выталкивать «Процесс» со
    Start/Stop за пределы окна. min-height: 0 — иначе flex-элемент не
    сжимается меньше содержимого и скролл внутри него не включается вовсе. */
-.h3-total { letter-spacing: normal; text-transform: none; color: var(--text-secondary); font-weight: 600; }
-
 .module-list {
   flex: 1 1 auto;
   min-height: 54px;
@@ -675,17 +726,20 @@ button.toggled {
 .remote-actions { display: flex; flex-direction: column; gap: 8px; }
 .remote-actions button { width: 100%; border-radius: 12px; }
 
-/* margin-top: auto здесь почти никогда не срабатывает — .module-list уже
+/* margin-top: auto почти никогда не срабатывает — .module-list уже
    flex: 1 1 auto и сам забирает всё свободное место в колонке (нарочно,
    чтобы длинный список модулей не выталкивал «Процесс» за пределы окна),
-   так что до футера auto-отступу extra места не остаётся. Держится он
-   поэтому в основном на собственном padding-top — тот же ритм, что и у
-   отступа сверху h3 (20px), а не заметно более тесный 12px, каким он был:
-   иначе футер выглядел приклеенным прямо к кнопке над ним, а не отдельным
-   блоком. */
+   так что до футера auto-отступу extra места не остаётся, и он резолвится
+   в 0. padding-top на самом .gui-version тут не помогает вообще: padding
+   раздвигает содержимое ОТ границы (border-top), а не саму границу от
+   элемента над ней — с margin-top: auto граница вплотную упиралась в
+   кнопку над собой, а зазор появлялся только ПОСЛЕ линии, перед текстом.
+   Именно поэтому линия выглядела вросшей в кнопку, а не отступом padding
+   как таковым. Настоящий отступ — фиксированный margin-top на самом
+   футере, не полагающийся на auto вовсе. */
 .gui-version {
-  margin-top: auto;
-  padding-top: 20px;
+  margin-top: 20px;
+  padding-top: 14px;
   border-top: 1px solid var(--glass-border);
   display: flex;
   align-items: baseline;
