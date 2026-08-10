@@ -530,14 +530,6 @@ func (a *App) RestartApp() ActionResult {
 	return ActionResult{OK: true}
 }
 
-// notifyDesktop — best-effort desktop-уведомление через notify-send (часть
-// libnotify-bin, обычно уже стоит на Linux-рабочих столах): чтобы падение
-// бота было видно, даже когда окно GUI свёрнуто или не в фокусе. Нет
-// бинарника или недоступны DISPLAY/DBUS — тихо ничего не делает, само
-// уведомление не настолько важно, чтобы падать или шуметь в лог.
-func notifyDesktop(title, body string) {
-	_ = exec.Command("notify-send", "-a", "Heroku", title, body).Run()
-}
 
 // loadHistory поднимает хвост уже написанного лога при старте окна — без
 // этого приложение открывалось бы на пустом экране, пока не придёт первая
