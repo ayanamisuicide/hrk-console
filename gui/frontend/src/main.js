@@ -2,7 +2,7 @@ import './style.css';
 
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
-    StartBot, StopBot, RestartBot, ClearLog, ExportLog,
+    StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
@@ -445,10 +445,50 @@ EventsOn('notice', (text) => {
 // если реально нашёл версию новее текущей — молчание не значит "нет
 // обновлений", может значить и "нет сети", разницы фронтенду не видно и
 // не нужно: бейджа просто не будет.
+//
+// Клик — три состояния подряд, каждое явное решение: доступно → качаю и
+// подменяю себя на диске (ApplyUpdate) → готово, нажми ещё раз, чтобы
+// перезапуститься (RestartApp). Ничего само по себе не происходит —
+// подмена собственного исполняемого файла необратима без переустановки,
+// и молчаливый фон для такого не подходит. Правый клик — просто открыть
+// страницу релиза в браузере, не запуская обновление.
+let updateInfo = null;
+
 EventsOn('update-available', (info) => {
+    updateInfo = info;
     updateBadge.textContent = '↑ ' + info.version;
+    updateBadge.title = `Доступна версия ${info.version} — клик обновит на месте, ПКМ откроет релиз в браузере`;
     updateBadge.style.display = '';
-    updateBadge.addEventListener('click', () => BrowserOpenURL(info.url));
+});
+
+updateBadge.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (updateInfo) BrowserOpenURL(updateInfo.url);
+});
+
+updateBadge.addEventListener('click', async () => {
+    if (!updateInfo || updateBadge.dataset.state === 'updating') return;
+
+    if (updateBadge.dataset.state === 'done') {
+        RestartApp();
+        return;
+    }
+
+    updateBadge.dataset.state = 'updating';
+    updateBadge.textContent = '⟳ обновляю…';
+    updateBadge.title = 'Скачиваю и подменяю приложение на диске';
+
+    const res = await ApplyUpdate();
+    if (res.ok) {
+        updateBadge.dataset.state = 'done';
+        updateBadge.textContent = '✓ перезапустить';
+        updateBadge.title = `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`;
+    } else {
+        updateBadge.dataset.state = '';
+        updateBadge.textContent = '↑ ' + updateInfo.version;
+        updateBadge.title = `Не удалось обновить: ${res.message} — клик попробует снова`;
+        showBanner(`✗  обновление: ${res.message}`, true);
+    }
 });
 
 // ─── шапка / статус ──────────────────────────────────────────────────────

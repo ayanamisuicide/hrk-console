@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -195,8 +198,17 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // updateCheckURL — репозиторий консоли, не бота: у Heroku-юзербота своя
-// версия и свои релизы, здесь речь про саму hrk-console/GUI.
-const updateCheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases/latest"
+// версия и свои релизы, здесь речь про саму hrk-console/GUI. var, а не
+// const, — тесты подменяют его на httptest.Server, не ходить же в GitHub
+// ради проверки разбора ответа.
+var updateCheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases/latest"
+
+// guiAssetPrefix/guiAssetSuffix — имя архива с GUI-бинарником в релизе,
+// как его кладёт release.yml: tar -czf hrk-console-gui-$TAG-linux-amd64.tar.gz.
+const (
+	guiAssetPrefix = "hrk-console-gui-"
+	guiAssetSuffix = "-linux-amd64.tar.gz"
+)
 
 // cleanVersionRe — "vX.Y.Z" без хвоста. У сборки из тега (git describe на
 // чистом дереве без коммитов после тега) версия выглядит ровно так; у
@@ -205,39 +217,75 @@ const updateCheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/
 // чем: непонятно, новее хвостатая сборка последнего релиза или старее.
 var cleanVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
+// ghRelease/ghAsset — часть ответа GitHub API "последний релиз", которая
+// нужна: тег, страница релиза и ассеты (среди них ищем архив GUI).
+type ghRelease struct {
+	TagName string    `json:"tag_name"`
+	HTMLURL string    `json:"html_url"`
+	Assets  []ghAsset `json:"assets"`
+}
+
+type ghAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// fetchLatestRelease — единственное место, которое реально ходит в GitHub
+// API. И checkUpdateOnce (просто узнать, есть ли новее), и ApplyUpdate
+// (скачать и подменить себя) идут через него — два независимых запроса
+// ради одного и того же ответа были бы тем же дублированием, что раньше
+// чинили в statusLoop для /proc.
+func fetchLatestRelease() (*ghRelease, error) {
+	req, err := http.NewRequest(http.MethodGet, updateCheckURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub ответил %d", resp.StatusCode)
+	}
+	var rel ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, err
+	}
+	return &rel, nil
+}
+
+// findGUIAsset ищет в релизе архив с GUI-бинарником по имени. У hkc в том
+// же релизе своё имя (hkc-*), поэтому просто "первый ассет" не годится —
+// нужен именно этот, иначе ApplyUpdate тихо скачал бы не то.
+func findGUIAsset(rel *ghRelease) string {
+	for _, a := range rel.Assets {
+		if strings.HasPrefix(a.Name, guiAssetPrefix) && strings.HasSuffix(a.Name, guiAssetSuffix) {
+			return a.BrowserDownloadURL
+		}
+	}
+	return ""
+}
+
 // checkUpdateOnce — разовая проверка последнего релиза на GitHub при
 // старте окна. Молчит на любой осечке (нет сети, GitHub не ответил,
 // версия сборки не чистый тег) — само уведомление не настолько важно,
-// чтобы падать или шуметь в лог из-за его недоступности.
+// чтобы падать или шуметь в лог из-за его недоступности. Только сообщает
+// о находке — качает и подменяет себя лишь ApplyUpdate, по явному клику.
 func (a *App) checkUpdateOnce() {
 	if !cleanVersionRe.MatchString(version) {
 		return
 	}
-	req, err := http.NewRequest(http.MethodGet, updateCheckURL, nil)
+	rel, err := fetchLatestRelease()
 	if err != nil {
 		return
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
+	if !cleanVersionRe.MatchString(rel.TagName) || !versionLess(version, rel.TagName) {
 		return
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return
-	}
-	var body struct {
-		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return
-	}
-	if !cleanVersionRe.MatchString(body.TagName) || !versionLess(version, body.TagName) {
-		return
-	}
-	a.emit("update-available", UpdateInfo{Version: body.TagName, URL: body.HTMLURL})
+	a.emit("update-available", UpdateInfo{Version: rel.TagName, URL: rel.HTMLURL})
 }
 
 // versionLess сравнивает "vX.Y.Z" по номерам, а не строками — иначе
@@ -254,6 +302,138 @@ func versionLess(a, b string) bool {
 		}
 	}
 	return false
+}
+
+// downloadGUIBinary скачивает архив релиза и достаёт из него единственный
+// файл — сам бинарник: release.yml кладёт в архив только его, без
+// вложенных путей (tar -czf ... -C build/bin hrk-console-gui), так что
+// первый же обычный файл в архиве и есть искомое, искать по имени незачем.
+// Возвращает путь к временному файлу с правом на исполнение — вызывающий
+// обязан его удалить.
+func downloadGUIBinary(url string) (string, error) {
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("скачивание вернуло %d", resp.StatusCode)
+	}
+
+	gz, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	defer gz.Close()
+
+	out, err := os.CreateTemp("", "hrk-console-gui-update-*")
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			os.Remove(out.Name())
+			return "", fmt.Errorf("в архиве не нашёлся бинарник")
+		}
+		if err != nil {
+			os.Remove(out.Name())
+			return "", err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			os.Remove(out.Name())
+			return "", err
+		}
+		break
+	}
+	if err := out.Chmod(0o755); err != nil {
+		os.Remove(out.Name())
+		return "", err
+	}
+	return out.Name(), nil
+}
+
+// copyFile читает src целиком и пишет в dst с правом на исполнение — файлы
+// обновления маленькие (один бинарник), читать потоково смысла нет.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o755)
+}
+
+// ApplyUpdate скачивает GUI-бинарник из последнего релиза и подменяет им
+// себя на диске. Не вызывается сам по себе в фоне — только по явному клику
+// из фронтенда (см. update-available): подмена собственного исполняемого
+// файла необратима без переустановки, и молчаливый автозапуск для такого
+// не подходит, в отличие от простой проверки в checkUpdateOnce.
+//
+// Замена атомарна в пределах одной директории (той же ФС, что и сам
+// exe) — os.Rename либо подменяет файл целиком, либо не трогает его вовсе,
+// никакого промежуточного "наполовину записанного бинарника" быть не
+// может. Уже запущенный процесс продолжает работать со старым (теперь
+// отвязанным от пути) файлом, пока не перезапустится через RestartApp.
+func (a *App) ApplyUpdate() ActionResult {
+	rel, err := fetchLatestRelease()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	assetURL := findGUIAsset(rel)
+	if assetURL == "" {
+		return ActionResult{OK: false, Message: "в релизе нет сборки GUI для Linux"}
+	}
+
+	tmpBinary, err := downloadGUIBinary(assetURL)
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	defer os.Remove(tmpBinary)
+
+	exe, err := os.Executable()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	staged := exe + ".update"
+	if err := copyFile(tmpBinary, staged); err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	if err := os.Rename(staged, exe); err != nil {
+		os.Remove(staged)
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	return ActionResult{OK: true, Message: rel.TagName}
+}
+
+// RestartApp поднимает новый процесс того же бинарника (уже подменённого
+// ApplyUpdate) и завершает текущий. Отдельный явный шаг, а не часть
+// ApplyUpdate, — обновление на диске и разрыв текущей сессии окна должны
+// быть двумя разными решениями пользователя, не одним неожиданным.
+func (a *App) RestartApp() ActionResult {
+	exe, err := os.Executable()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	cmd := exec.Command(exe)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	// Небольшая задержка — чтобы фронтенд успел получить этот ответ и
+	// показать что-то осмысленное, прежде чем окно исчезнет.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		wailsrt.Quit(a.ctx)
+	}()
+	return ActionResult{OK: true}
 }
 
 // notifyDesktop — best-effort desktop-уведомление через notify-send (часть

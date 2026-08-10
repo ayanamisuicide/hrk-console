@@ -35,6 +35,31 @@ jobs:
         env:
           CGO_ENABLED: '0'
 
+      # GUI собирается и публикуется тем же тегом, что и hkc — самообновление
+      # GUI (App.ApplyUpdate) качает именно этот архив по имени, см. gui/app.go.
+      # webkit2gtk-4.1: в 24.04 пакета -4.0 в репозиториях уже нет.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: системные библиотеки webview
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: проверки GUI
+        working-directory: gui
+        run: go vet -tags webkit2_41 ./...
+
+      - name: сборка GUI
+        working-directory: gui
+        run: |
+          wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
+          tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C build/bin hrk-console-gui
+
       # Описание релиза — раздел CHANGELOG для этой версии. Один источник
       # правды: то, что видит человек на странице релиза, и то, что лежит
       # в репозитории, не могут разойтись.
@@ -54,4 +79,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
-          files: hkc-*-linux-amd64.tar.gz
+          files: |
+            hkc-*-linux-amd64.tar.gz
+            hrk-console-gui-*-linux-amd64.tar.gz

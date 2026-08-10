@@ -1,7 +1,13 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -246,6 +252,131 @@ func TestCleanVersionRe(t *testing.T) {
 		if cleanVersionRe.MatchString(v) {
 			t.Errorf("cleanVersionRe ошибочно совпал с %q", v)
 		}
+	}
+}
+
+// findGUIAsset должен найти именно архив GUI, а не первый попавшийся ассет
+// релиза — рядом в том же релизе лежит ещё и hkc-*, с другим содержимым.
+func TestFindGUIAsset(t *testing.T) {
+	rel := &ghRelease{Assets: []ghAsset{
+		{Name: "hkc-v1.8.1-linux-amd64.tar.gz", BrowserDownloadURL: "https://example/hkc"},
+		{Name: "hrk-console-gui-v1.8.1-linux-amd64.tar.gz", BrowserDownloadURL: "https://example/gui"},
+	}}
+	if got := findGUIAsset(rel); got != "https://example/gui" {
+		t.Errorf("findGUIAsset вернул %q, ожидался gui-ассет", got)
+	}
+	if got := findGUIAsset(&ghRelease{}); got != "" {
+		t.Errorf("findGUIAsset на пустом релизе вернул %q, ожидалась пустая строка", got)
+	}
+}
+
+// downloadGUIBinary разбирает настоящий tar.gz (не заглушку) — важно
+// проверить именно распаковку, а не то, что HTTP-клиент умеет ходить по
+// URL. Архив собирается in-memory, без реального обращения к GitHub.
+func TestDownloadGUIBinaryExtractsExecutable(t *testing.T) {
+	want := []byte("fake-binary-content")
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "hrk-console-gui", Mode: 0o755, Size: int64(len(want))}); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if _, err := tw.Write(want); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(buf.Bytes())
+	}))
+	defer srv.Close()
+
+	path, err := downloadGUIBinary(srv.URL)
+	if err != nil {
+		t.Fatalf("downloadGUIBinary: %v", err)
+	}
+	defer os.Remove(path)
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("чтение результата: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("содержимое %q, ожидалось %q", got, want)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Error("результат должен быть исполняемым")
+	}
+}
+
+func TestDownloadGUIBinaryFailsOnHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	if _, err := downloadGUIBinary(srv.URL); err == nil {
+		t.Error("ожидалась ошибка на HTTP 404")
+	}
+}
+
+// checkUpdateOnce молчит на dev-сборке (её версия — "dev", не тег) — не
+// с чем сравнивать, а не "всегда есть обновление".
+func TestCheckUpdateOnceSilentOnDevBuild(t *testing.T) {
+	origVersion := version
+	defer func() { version = origVersion }()
+	version = "dev"
+
+	h := newHarness(t)
+	called := false
+	h.app.emit = func(event string, data ...interface{}) {
+		if event == "update-available" {
+			called = true
+		}
+	}
+	h.app.checkUpdateOnce() // не должен даже пытаться сходить в сеть
+	if called {
+		t.Error("dev-сборка не должна сообщать о доступном обновлении")
+	}
+}
+
+func TestCheckUpdateOnceEmitsOnNewerRelease(t *testing.T) {
+	origURL := updateCheckURL
+	defer func() { updateCheckURL = origURL }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example/release"}`))
+	}))
+	defer srv.Close()
+	updateCheckURL = srv.URL
+
+	origVersion := version
+	defer func() { version = origVersion }()
+	version = "v1.0.0"
+
+	h := newHarness(t)
+	var got []UpdateInfo
+	h.app.emit = func(event string, data ...interface{}) {
+		if event == "update-available" && len(data) == 1 {
+			if info, ok := data[0].(UpdateInfo); ok {
+				got = append(got, info)
+			}
+		}
+	}
+
+	h.app.checkUpdateOnce()
+
+	if len(got) != 1 || got[0].Version != "v9.9.9" {
+		t.Errorf("update-available = %+v, ожидался один эвент с v9.9.9", got)
 	}
 }
 
