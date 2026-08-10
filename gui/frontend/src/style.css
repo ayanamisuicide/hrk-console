@@ -120,19 +120,50 @@ html, body {
   font-family: var(--font-mono);
 }
 
+/* Бейдж обновлений виден всегда (в отличие от старой версии, где он
+   появлялся только когда была новая версия — а "и так актуально" никак не
+   отображалось), цвет и текст несут состояние: серый (ничего не решено) →
+   зелёный (актуально) / фиолетовый (есть новее) → жёлтый (готово,
+   перезапустить) / розовый (проверка не удалась). */
 .update-badge {
   font-family: var(--font-mono);
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 999px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--glass-border);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.update-badge:hover { background: rgba(255, 255, 255, .09); }
+
+.update-badge[data-state="checking"] { color: var(--text-secondary); animation: pulse 1.2s ease-in-out infinite; cursor: default; }
+
+.update-badge[data-state="uptodate"] {
   color: var(--good);
   background: rgba(116, 224, 171, .14);
-  border: 1px solid rgba(116, 224, 171, .3);
+  border-color: rgba(116, 224, 171, .3);
   animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1);
 }
-.update-badge:hover { background: rgba(116, 224, 171, .22); }
+.update-badge[data-state="uptodate"]:hover { background: rgba(116, 224, 171, .22); }
+
+.update-badge[data-state="available"] {
+  color: var(--accent);
+  background: rgba(156, 139, 255, .14);
+  border-color: rgba(156, 139, 255, .32);
+  animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1);
+}
+.update-badge[data-state="available"]:hover { background: rgba(156, 139, 255, .22); }
+
 .update-badge[data-state="updating"] { color: var(--accent); background: rgba(156, 139, 255, .14); border-color: rgba(156, 139, 255, .3); animation: pulse 1.2s ease-in-out infinite; cursor: default; }
 .update-badge[data-state="done"] { color: var(--warning); background: rgba(255, 207, 122, .16); border-color: rgba(255, 207, 122, .35); }
+
+.update-badge[data-state="error"] {
+  color: var(--critical);
+  background: rgba(255, 143, 168, .14);
+  border-color: rgba(255, 143, 168, .32);
+}
+.update-badge[data-state="error"]:hover { background: rgba(255, 143, 168, .22); }
 
 .status-pill {
   display: inline-flex;

@@ -92,6 +92,20 @@ type UpdateInfo struct {
 	URL     string `json:"url"`
 }
 
+// UpdateCheckResult — ответ на CheckForUpdate: не только "нашлась новее
+// версия", но и "проверили — уже последняя", и "проверить не вышло". OK
+// значит "запрос отработал", а не "версия новая" — Available разводит эти
+// два вопроса, иначе фронтенду было бы не отличить "сети нет" от "и так
+// последняя".
+type UpdateCheckResult struct {
+	OK        bool   `json:"ok"`
+	Available bool   `json:"available"`
+	Current   string `json:"current"`
+	Latest    string `json:"latest"`
+	URL       string `json:"url"`
+	Message   string `json:"message"`
+}
+
 // App — состояние бэкенда. Один экземпляр на окно, живёт всё время работы
 // приложения. mu защищает ring/parser/visible/ui/filter — всё, что читает
 // и живой хвост лога (feedLine), и обработчики настроек с фронтенда
@@ -270,22 +284,39 @@ func findGUIAsset(rel *ghRelease) string {
 }
 
 // checkUpdateOnce — разовая проверка последнего релиза на GitHub при
-// старте окна. Молчит на любой осечке (нет сети, GitHub не ответил,
-// версия сборки не чистый тег) — само уведомление не настолько важно,
-// чтобы падать или шуметь в лог из-за его недоступности. Только сообщает
-// о находке — качает и подменяет себя лишь ApplyUpdate, по явному клику.
+// старте окна. Шлёт фронтенду результат через CheckForUpdate, но только на
+// успешный ответ (галочка "актуально" или бейдж новой версии) — на осечке
+// (нет сети, GitHub не ответил, версия сборки не чистый тег) молчит: само
+// уведомление не настолько важно, чтобы шуметь при каждом старте окна из-за
+// временной недоступности сети. Ручная проверка (CheckForUpdate по клику)
+// осечку уже показывает — там пользователь явно спросил и ждёт ответа.
 func (a *App) checkUpdateOnce() {
-	if !cleanVersionRe.MatchString(version) {
+	res := a.CheckForUpdate()
+	if !res.OK {
 		return
+	}
+	a.emit("update-status", res)
+}
+
+// CheckForUpdate — вызывается и из checkUpdateOnce при старте окна, и по
+// клику на бейдж в шапке ("менюшка обновлений" — сам бейдж). В отличие от
+// checkUpdateOnce не молчит на осечке: по явному запросу пользователь ждёт
+// хоть какого-то ответа, а не тишины, неотличимой от "ещё грузится".
+func (a *App) CheckForUpdate() UpdateCheckResult {
+	if !cleanVersionRe.MatchString(version) {
+		return UpdateCheckResult{Current: version, Message: "сборка не из релиза (dev/грязное дерево) — сравнивать не с чем"}
 	}
 	rel, err := fetchLatestRelease()
 	if err != nil {
-		return
+		return UpdateCheckResult{Current: version, Message: err.Error()}
 	}
-	if !cleanVersionRe.MatchString(rel.TagName) || !versionLess(version, rel.TagName) {
-		return
+	if !cleanVersionRe.MatchString(rel.TagName) {
+		return UpdateCheckResult{Current: version, Message: "релиз на GitHub в неожиданном формате версии"}
 	}
-	a.emit("update-available", UpdateInfo{Version: rel.TagName, URL: rel.HTMLURL})
+	if !versionLess(version, rel.TagName) {
+		return UpdateCheckResult{OK: true, Current: version, Latest: rel.TagName}
+	}
+	return UpdateCheckResult{OK: true, Available: true, Current: version, Latest: rel.TagName, URL: rel.HTMLURL}
 }
 
 // versionLess сравнивает "vX.Y.Z" по номерам, а не строками — иначе

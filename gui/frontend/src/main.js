@@ -2,7 +2,7 @@ import './style.css';
 
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
-    StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp,
+    StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
@@ -18,7 +18,7 @@ document.querySelector('#app').innerHTML = `
     <div class="brand-group">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
-      <button class="update-badge" id="update-badge" style="display:none" title="Открыть страницу релиза"></button>
+      <button class="update-badge" id="update-badge" data-state="idle" title="Проверить обновления">⟲ обновить</button>
     </div>
     <span class="status-pill down" id="status-pill">
       <span class="status-dot"></span><span id="status-text">…</span>
@@ -441,54 +441,83 @@ EventsOn('notice', (text) => {
     showBanner(text, true);
 });
 
-// Бэкенд проверяет GitHub раз при старте окна и шлёт это событие, только
-// если реально нашёл версию новее текущей — молчание не значит "нет
-// обновлений", может значить и "нет сети", разницы фронтенду не видно и
-// не нужно: бейджа просто не будет.
+// Состояния бейджа обновлений в шапке — одна кнопка на весь цикл, состояние
+// всегда видно (data-state), а не "бейдж есть = что-то не так, бейджа нет =
+// разбирайся сам":
 //
-// Клик — три состояния подряд, каждое явное решение: доступно → качаю и
-// подменяю себя на диске (ApplyUpdate) → готово, нажми ещё раз, чтобы
-// перезапуститься (RestartApp). Ничего само по себе не происходит —
-// подмена собственного исполняемого файла необратима без переустановки,
-// и молчаливый фон для такого не подходит. Правый клик — просто открыть
-// страницу релиза в браузере, не запуская обновление.
-let updateInfo = null;
+//   idle      → клик проверяет (или просто ждём первую авто-проверку при
+//               старте — см. 'update-status' ниже)
+//   checking  → идёт запрос, клик игнорируется
+//   uptodate  → "✓ актуально", клик проверяет заново
+//   available → "↑ vX.Y.Z", клик качает и подменяет себя на диске
+//               (ApplyUpdate); ПКМ — просто открыть страницу релиза
+//   updating  → идёт скачивание/подмена, клик игнорируется
+//   done      → "✓ перезапустить", клик перезапускает окно (RestartApp)
+//   error     → сеть/GitHub подвели, клик пробует снова
+//
+// Подмена собственного исполняемого файла необратима без переустановки,
+// поэтому и "качать", и "перезапустить" — отдельные явные клики, а не один
+// автоматический шаг.
+let updateInfo = null; // {version, url} — есть только в состоянии available
 
-EventsOn('update-available', (info) => {
-    updateInfo = info;
-    updateBadge.textContent = '↑ ' + info.version;
-    updateBadge.title = `Доступна версия ${info.version} — клик обновит на месте, ПКМ откроет релиз в браузере`;
-    updateBadge.style.display = '';
-});
+function setUpdateBadge(state, text, title) {
+    updateBadge.dataset.state = state;
+    updateBadge.textContent = text;
+    updateBadge.title = title;
+}
+
+// Авто-проверка при старте окна: бэкенд шлёт результат, только если запрос
+// реально отработал (см. checkUpdateOnce) — на сетевой осечке событие не
+// приходит вовсе, и бейдж просто остаётся в idle, приглашая проверить
+// вручную, а не рапортует об ошибке без явного запроса пользователя.
+EventsOn('update-status', (res) => applyUpdateResult(res, false));
+
+function applyUpdateResult(res, manual) {
+    if (res.available) {
+        updateInfo = { version: res.latest, url: res.url };
+        setUpdateBadge('available', '↑ ' + res.latest,
+            `Доступна версия ${res.latest} — клик обновит на месте, ПКМ откроет релиз в браузере`);
+        return;
+    }
+    updateInfo = null;
+    if (res.ok) {
+        setUpdateBadge('uptodate', '✓ актуально',
+            `Уже последняя версия (${res.current}) — клик проверит ещё раз`);
+    } else if (manual) {
+        setUpdateBadge('error', '⚠ ошибка проверки', `Не удалось проверить: ${res.message} — клик попробует снова`);
+    }
+}
 
 updateBadge.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (updateInfo) BrowserOpenURL(updateInfo.url);
+    else BrowserOpenURL('https://github.com/ayanamisuicide/hrk-console/releases');
 });
 
 updateBadge.addEventListener('click', async () => {
-    if (!updateInfo || updateBadge.dataset.state === 'updating') return;
+    const state = updateBadge.dataset.state;
+    if (state === 'checking' || state === 'updating') return;
 
-    if (updateBadge.dataset.state === 'done') {
+    if (state === 'done') {
         RestartApp();
         return;
     }
 
-    updateBadge.dataset.state = 'updating';
-    updateBadge.textContent = '⟳ обновляю…';
-    updateBadge.title = 'Скачиваю и подменяю приложение на диске';
-
-    const res = await ApplyUpdate();
-    if (res.ok) {
-        updateBadge.dataset.state = 'done';
-        updateBadge.textContent = '✓ перезапустить';
-        updateBadge.title = `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`;
-    } else {
-        updateBadge.dataset.state = '';
-        updateBadge.textContent = '↑ ' + updateInfo.version;
-        updateBadge.title = `Не удалось обновить: ${res.message} — клик попробует снова`;
-        showBanner(`✗  обновление: ${res.message}`, true);
+    if (state === 'available') {
+        setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
+        const res = await ApplyUpdate();
+        if (res.ok) {
+            setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
+        } else {
+            setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
+            showBanner(`✗  обновление: ${res.message}`, true);
+        }
+        return;
     }
+
+    // idle / uptodate / error — все три ведут к ручной проверке.
+    setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
+    applyUpdateResult(await CheckForUpdate(), true);
 });
 
 // ─── шапка / статус ──────────────────────────────────────────────────────
