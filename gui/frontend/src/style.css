@@ -581,9 +581,17 @@ button.toggled {
 .remote-actions { display: flex; flex-direction: column; gap: 8px; }
 .remote-actions button { width: 100%; border-radius: 12px; }
 
+/* margin-top: auto здесь почти никогда не срабатывает — .module-list уже
+   flex: 1 1 auto и сам забирает всё свободное место в колонке (нарочно,
+   чтобы длинный список модулей не выталкивал «Процесс» за пределы окна),
+   так что до футера auto-отступу extra места не остаётся. Держится он
+   поэтому в основном на собственном padding-top — тот же ритм, что и у
+   отступа сверху h3 (20px), а не заметно более тесный 12px, каким он был:
+   иначе футер выглядел приклеенным прямо к кнопке над ним, а не отдельным
+   блоком. */
 .gui-version {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 20px;
   border-top: 1px solid var(--glass-border);
   display: flex;
   align-items: baseline;

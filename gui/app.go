@@ -285,6 +285,10 @@ func (a *App) startup(ctx context.Context) {
 	a.ui = state.Load()
 	a.parser = logfeed.NewParser()
 
+	if a.healPendingUpdate() {
+		return
+	}
+
 	if a.ui.Remote.Host != "" {
 		a.setRemoteState("connecting", "подключаюсь…")
 		go a.startRemote()
@@ -604,6 +608,42 @@ func (a *App) ApplyUpdate() ActionResult {
 	return ActionResult{OK: true, Message: applied}
 }
 
+// healPendingUpdate подхватывает обновление, которое ApplyUpdate когда-то
+// скачал (см. RestartApp), но подмена так и не завершилась, — например,
+// предыдущий явный клик «перезапустить» запустил своп-скрипт, а тот не
+// уложился в отведённые попытки (антивирус подержал свежескачанный exe
+// дольше обычного). Без этой проверки «.new» так и лежал бы рядом с
+// прежним exe навсегда, а пользователю приходилось бы вручную стирать
+// старый файл и переименовывать новый. Тот же своп-скрипт просто
+// запускается заново при каждом обычном старте окна, без единого клика —
+// startup() зовёт это самым первым делом, до всего остального: если
+// обновление ждёт применения, окну всё равно предстоит тут же закрыться.
+func (a *App) healPendingUpdate() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	staged := selfupdate.PendingUpdate(exe)
+	if staged == "" {
+		return false
+	}
+	if err := restartWithSwap(exe, staged); err != nil {
+		return false
+	}
+	a.quitSoon()
+	return true
+}
+
+// quitSoon — небольшая задержка перед Quit, чтобы фронтенд успел получить
+// ответ на вызвавший её запрос и показать что-то осмысленное, прежде чем
+// окно исчезнет.
+func (a *App) quitSoon() {
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		wailsrt.Quit(a.ctx)
+	}()
+}
+
 // RestartApp поднимает новый процесс того же бинарника (уже подменённого
 // ApplyUpdate) и завершает текущий. Отдельный явный шаг, а не часть
 // ApplyUpdate, — обновление на диске и разрыв текущей сессии окна должны
@@ -633,12 +673,7 @@ func (a *App) RestartApp() ActionResult {
 		}
 	}
 
-	// Небольшая задержка — чтобы фронтенд успел получить этот ответ и
-	// показать что-то осмысленное, прежде чем окно исчезнет.
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		wailsrt.Quit(a.ctx)
-	}()
+	a.quitSoon()
 	return ActionResult{OK: true}
 }
 
