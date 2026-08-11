@@ -3,7 +3,7 @@ import './style.css';
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
     StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
-    PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
+    SetUpdateChannel, PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
 } from '../wailsjs/go/main/App';
 import {
     EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL,
@@ -42,6 +42,7 @@ document.querySelector('#app').innerHTML = `
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
       <button class="update-badge" id="update-badge" data-state="idle" title="Проверить обновления">⟲ обновить</button>
+      <button class="channel-badge" id="channel-badge" data-channel="" title="Канал обновлений — клик переключает stable/dev">stable</button>
     </div>
     <div class="spacer"></div>
     <div class="controls">
@@ -206,6 +207,7 @@ const btnClear = el('btn-clear');
 const btnExport = el('btn-export');
 const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
+const channelBadge = el('channel-badge');
 const updateToast = el('update-toast');
 const utVersion = el('ut-version');
 const btnUtUpdate = el('ut-update');
@@ -702,6 +704,32 @@ updateBadge.addEventListener('click', async () => {
     hideUpdateToast();
     setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
     applyUpdateResult(await CheckForUpdate(), true);
+});
+
+// ─── канал обновлений ───────────────────────────────────────────────────
+//
+// stable — релизы из main (как раньше, единственный вариант). dev — сборки
+// прямо с ветки dev (см. selfupdate.CheckChannel/dev-release.yml): не для
+// повседневной работы, зато не нужно ждать, пока что-то из dev дойдёт до
+// релиза, чтобы попробовать. Клик переключает и сразу перепроверяет —
+// separate CheckForUpdate после переключения был бы тем же самым в два шага.
+function renderChannelBadge(channel) {
+    const dev = channel === 'dev';
+    channelBadge.dataset.channel = channel || '';
+    channelBadge.textContent = dev ? 'dev' : 'stable';
+    channelBadge.title = dev
+        ? 'Канал: dev — сборки прямо с ветки разработки, могут быть сырыми. Клик — вернуться на stable'
+        : 'Канал: stable — только проверенные релизы. Клик — переключиться на dev';
+}
+
+channelBadge.addEventListener('click', async () => {
+    const next = channelBadge.dataset.channel === 'dev' ? '' : 'dev';
+    channelBadge.disabled = true;
+    setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
+    const res = await SetUpdateChannel(next);
+    channelBadge.disabled = false;
+    renderChannelBadge(res.channel);
+    applyUpdateResult(res, true);
 });
 
 // ─── проверки перед стартом ──────────────────────────────────────────────
@@ -1443,6 +1471,7 @@ Bootstrap().then((boot) => {
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'
         : uiState.minLevel === LEVEL_ERROR ? 'порог: error+' : 'порог: всё';
+    renderChannelBadge(uiState.updateChannel);
     platform = boot.platform || platform;
     showConnSection(uiState.remote);
     renderRemoteTarget(uiState.remote);

@@ -240,6 +240,28 @@ html, body {
 }
 .update-badge[data-state="error"]:hover { background: rgba(255, 143, 168, .22); }
 
+/* channel-badge — stable по умолчанию тихий (тот же язык, что update-badge
+   в состоянии idle), dev — явно тревожный жёлтый: это осознанный выбор
+   получать возможно недоделанные сборки, а не тихая настройка, которую
+   легко забыть, что она включена. */
+.channel-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--glass-border);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.channel-badge:hover { background: rgba(255, 255, 255, .09); }
+.channel-badge[data-channel="dev"] {
+  color: var(--warning);
+  background: rgba(255, 207, 122, .14);
+  border-color: rgba(255, 207, 122, .32);
+}
+.channel-badge[data-channel="dev"]:hover { background: rgba(255, 207, 122, .22); }
+
 .status-pill {
   display: inline-flex;
   align-items: center;

@@ -1,0 +1,123 @@
+name: Dev Release
+
+# Каждый пуш в dev получает свой неизменяемый тег dev-<sha> и prerelease с
+# собранными бинарниками — тот же принцип, что и у release.yml по тегу v*,
+# только без ручного тегирования: канал "dev" в GUI (selfupdate.CheckChannel)
+# должен видеть новую сборку сразу после пуша, не дожидаясь, пока кто-то
+# явно затегирует релиз.
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: тег для этого коммита
+        id: tag
+        run: |
+          TAG="dev-$(git rev-parse --short HEAD)"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Проверки
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Сборка
+        run: |
+          make build
+          tar -czf hkc-${TAG}-linux-amd64.tar.gz -C bin hkc
+        env:
+          CGO_ENABLED: '0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: системные библиотеки webview
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: сборка GUI
+        working-directory: gui
+        run: |
+          wails build -tags webkit2_41 -ldflags "-X main.version=${TAG} -X heroku-console/preflight.repoRoot=${GITHUB_WORKSPACE}"
+          tar -czf ../hrk-console-gui-${TAG}-linux-amd64.tar.gz -C build/bin hrk-console-gui
+
+      - name: проверки GUI
+        working-directory: gui
+        run: go vet -tags webkit2_41 ./...
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          prerelease: true
+          body: |
+            Автоматическая сборка с ветки `dev` — не для повседневного использования,
+            может быть недоделанной или сломанной. Собрано из коммита ${{ github.sha }}.
+          files: |
+            hkc-*-linux-amd64.tar.gz
+            hrk-console-gui-*-linux-amd64.tar.gz
+
+  release-windows-gui:
+    needs: [tag, release]
+    runs-on: windows-latest
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: сборка GUI (Windows)
+        working-directory: gui
+        shell: bash
+        run: |
+          "$(go env GOPATH)/bin/wails" build -platform windows/amd64 -ldflags "-X main.version=${TAG}"
+          tar -czf ../hrk-console-gui-${TAG}-windows-amd64.tar.gz -C build/bin hrk-console-gui.exe
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: hrk-console-gui-*-windows-amd64.tar.gz
