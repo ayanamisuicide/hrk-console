@@ -74,7 +74,7 @@ document.querySelector('#app').innerHTML = `
     <div class="sidebar">
       <div class="sidebar-inner">
       <div class="group">
-      <h3>Проблемы</h3>
+      <h3><span class="g-icon warn">!</span>Проблемы</h3>
       <div class="problem-counts">
         <span class="warn">⚠ <span id="count-warn">0</span></span>
         <span class="err">✗ <span id="count-err">0</span></span>
@@ -84,20 +84,20 @@ document.querySelector('#app').innerHTML = `
       </div>
 
       <div class="group">
-      <h3>Поток</h3>
-      <div class="sparkline" id="sparkline"></div>
+      <h3><span class="g-icon accent">◆</span>Поток</h3>
+      <canvas class="sparkline-canvas" id="sparkline-canvas" width="220" height="30"></canvas>
 
-      <h3>История <span class="h3-total" id="history-total"></span></h3>
+      <h3><span class="g-icon accent">▤</span>История <span class="h3-total" id="history-total"></span></h3>
       <div class="history-chart" id="history-chart"></div>
       </div>
 
       <div class="group">
-      <h3>Модули <span class="h3-total" id="module-total"></span></h3>
+      <h3><span class="g-icon mod">▣</span>Модули <span class="h3-total" id="module-total"></span></h3>
       <div class="module-list" id="module-list"></div>
       </div>
 
       <div class="group">
-      <h3>Процесс</h3>
+      <h3><span class="g-icon good">▶</span>Процесс</h3>
       <div class="proc-block" id="proc-block">—</div>
       <div class="proc-controls">
         <button id="btn-start" class="primary">Start</button>
@@ -109,7 +109,7 @@ document.querySelector('#app').innerHTML = `
       </div>
 
       <div class="conn-section group" id="conn-section" style="display:none">
-        <h3>Подключение</h3>
+        <h3><span class="g-icon accent">⇄</span>Подключение</h3>
         <div class="conn-block" id="conn-block" data-state="local">
           <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
           <span class="conn-label" id="conn-label">локально</span>
@@ -173,7 +173,8 @@ const countWarn = el('count-warn');
 const countErr = el('count-err');
 const thresholdBadge = el('threshold-badge');
 const filterBadge = el('filter-badge');
-const sparkline = el('sparkline');
+const sparklineCanvas = el('sparkline-canvas');
+const sparklineCtx = sparklineCanvas.getContext('2d');
 const historyChart = el('history-chart');
 const historyTotal = el('history-total');
 const moduleList = el('module-list');
@@ -1059,16 +1060,48 @@ function renderModules() {
     }
 }
 
+// renderSparkline — живая кривая на canvas (в духе Activity Monitor), а не
+// столбики: тот же массив activityBuckets, просто читается плавной линией
+// с затуханием по краям, а не решёткой отдельных прямоугольников.
+// Перерисовывается тем же тиком раз в секунду, что и раньше двигал
+// столбики, — здесь не нужен отдельный requestAnimationFrame-цикл, "живой"
+// вид даёт сама форма кривой, а не непрерывная анимация.
 function renderSparkline() {
-    sparkline.innerHTML = '';
-    const peakA = Math.max(1, ...activityBuckets);
-    for (const v of activityBuckets) {
-        const bar = document.createElement('span');
-        const pct = Math.max(6, Math.round((v / peakA) * 100));
-        bar.className = 'bar' + (v > 0 && pct > 70 ? ' hot' : '');
-        bar.style.height = pct + '%';
-        sparkline.appendChild(bar);
-    }
+    const W = sparklineCanvas.width, H = sparklineCanvas.height;
+    const ctx = sparklineCtx;
+    ctx.clearRect(0, 0, W, H);
+    const peak = Math.max(1, ...activityBuckets);
+    const n = activityBuckets.length;
+    const step = W / (n - 1);
+    const points = activityBuckets.map((v, i) => [
+        i * step,
+        H - 2 - (v / peak) * (H - 6),
+    ]);
+
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, 'rgba(156,139,255,.15)');
+    grad.addColorStop(1, 'rgba(156,139,255,.95)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(156,139,255,.5)';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Заливка под кривой — тише, чем сама линия, читается как объём, а не
+    // ещё один акцент, спорящий с ней за внимание.
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    const fill = ctx.createLinearGradient(0, 0, 0, H);
+    fill.addColorStop(0, 'rgba(156,139,255,.16)');
+    fill.addColorStop(1, 'rgba(156,139,255,0)');
+    ctx.fillStyle = fill;
+    ctx.fill();
 }
 
 // renderHistory — 60 столбиков, каждый минута жизни окна, самый правый —

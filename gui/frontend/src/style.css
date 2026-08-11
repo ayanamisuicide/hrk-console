@@ -295,8 +295,18 @@ button.primary {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   border-color: transparent;
   font-weight: 700;
+  /* Дышащее свечение — та же родная анимация default-кнопки в системных
+     диалогах macOS (та, что вокруг "OK"/"Открыть" по умолчанию), не
+     выдуманная с нуля: единственная кнопка, которая явно приглашает клик
+     без наведения, спокойная амплитуда, чтобы не мельтешить в вечно
+     открытом окне. */
+  animation: primary-breathe 2.4s ease-in-out infinite;
 }
 button.primary:hover { filter: brightness(1.1); box-shadow: 0 4px 14px rgba(124, 99, 255, .35); }
+@keyframes primary-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 99, 255, .45); }
+  50% { box-shadow: 0 0 0 5px rgba(124, 99, 255, 0); }
+}
 button.danger { color: var(--critical); }
 button.toggled {
   color: #241a10;
@@ -365,6 +375,9 @@ button.toggled {
 .group:last-of-type { margin-bottom: 0; }
 
 .sidebar-inner h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--text-muted);
@@ -374,6 +387,25 @@ button.toggled {
 }
 .group + .group h3:first-child,
 .group h3:first-child { margin-top: 0; }
+
+/* g-icon — цветной значок секции, тот же приём, что у иконок слева от
+   строк в System Settings (Wi-Fi, Bluetooth и т.д.): не просто текстовый
+   заголовок, а маленький узнаваемый цветной квадрат со своим смыслом,
+   так секции различаются на взгляд ещё до чтения подписи. */
+.g-icon {
+  width: 16px; height: 16px; flex: none;
+  border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; font-style: normal;
+  color: #fff;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.g-icon.warn { background: linear-gradient(180deg, #ffd699, var(--warning)); color: #3a2405; }
+.g-icon.err { background: linear-gradient(180deg, #ffb0c2, var(--critical)); color: #3a0916; }
+.g-icon.good { background: linear-gradient(180deg, #a6f0c6, var(--good)); color: #06301c; }
+.g-icon.accent { background: linear-gradient(180deg, var(--accent), var(--accent-strong)); }
+.g-icon.mod { background: linear-gradient(180deg, #8fc2ff, #4f8fe0); }
 
 /* Гамбургер в шапке — постоянно видимый способ вызвать ящик обратно, а не
    только скрытая горячая клавиша (s), про которую нужно было знать заранее.
@@ -614,15 +646,11 @@ button.toggled {
 }
 .preflight-continue:hover { background: rgba(255, 143, 168, .2); }
 
-.sparkline { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
-.sparkline .bar {
-  flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: 0.8;
-  /* Тикер зовёт перерисовку раз в секунду, не за кадром, — переход
-     дешёвый, а столбик, дорастающий до места, а не перескакивающий туда,
-     читается как живой пульс потока, а не разово подставленное значение. */
-  transition: height .5s cubic-bezier(.2, .7, .3, 1), background-color .25s ease;
-}
-.sparkline .bar.hot { background: var(--warning); }
+/* Живая кривая на canvas вместо решётки столбиков (см. renderSparkline в
+   main.js) — та же роль ("шумно сейчас или нет"), но читается одним
+   плавным движением, ближе к тому, как это рисует Activity Monitor,
+   а не гистограммой. */
+.sparkline-canvas { display: block; width: 100%; height: 30px; }
 
 /* История — тот же спарклайн-язык (тонкие столбики, растущие снизу), но
    на часовом окне и с цветом состояния вместо цвета объёма: сперклайн
