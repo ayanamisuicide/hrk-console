@@ -1,8 +1,8 @@
 import './style.css';
 
 import {
-    Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
-    StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
+    Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog,
+    StartBot, StopBot, RestartBot, ClearLog, ApplyUpdate, RestartApp, CheckForUpdate,
     SetUpdateChannel, PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
 } from '../wailsjs/go/main/App';
 import {
@@ -46,31 +46,44 @@ document.querySelector('#app').innerHTML = `
     </div>
     <div class="spacer"></div>
     <div class="controls">
-      <button id="btn-ru" title="Переводить известные шаблонные сообщения на русский (словарь, не живой перевод)">RU</button>
-      <button id="btn-debug">debug</button>
-      <button id="btn-level">порог: всё</button>
-      <button id="btn-export" title="Экспортировать видимый лог в файл">Экспорт</button>
+      <button id="btn-debug" title="Показывать строки уровня DEBUG (d)">debug</button>
+      <button id="btn-level" title="Порог показа: всё → warning+ → error+ (w)">порог: всё</button>
+      <button id="btn-watchdog" title="Перезапускать бота автоматически, если он упал (a)">auto-restart</button>
       <button id="btn-clear" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
-      <button id="btn-help" title="Горячие клавиши">?</button>
+      <button id="btn-help" title="Горячие клавиши (?)">?</button>
     </div>
   </div>
 
-  <!-- ── статус-строка: единственное, что видно всегда, без карточек ──── -->
+  <!-- ── статус-строка: всё, что нужно знать не отрываясь от лога ──────── -->
   <div class="statusline">
     <span class="sl-seg status-pill down" id="status-pill">
       <span class="status-dot"></span><span id="status-text">…</span>
     </span>
-    <span class="sl-seg sl-warn"><span id="sl-warn">0</span></span>
-    <span class="sl-seg sl-err"><span id="sl-err">0</span></span>
-    <span class="sl-seg sl-mods" id="sl-mods"></span>
-    <span id="threshold-badge" class="sl-seg sl-chip" style="display:none"></span>
+    <span class="sl-seg sl-warn" id="sl-warn">⚠ 0</span>
+    <span class="sl-seg sl-err" id="sl-err">✗ 0</span>
+    <button class="sl-seg sl-mods" id="btn-mods" title="Самые шумные модули — клик открывает полный список (s)">
+      <span id="sl-mods-names">—</span><span class="sl-caret">▾</span>
+    </button>
+    <!-- порог — жёлтым, а не акцентом: он означает «часть строк сейчас
+         скрыта», и путать его с активным фильтром одним цветом нельзя -->
+    <span id="threshold-badge" class="sl-seg sl-chip warn" style="display:none"></span>
     <span id="filter-badge" class="sl-seg sl-chip accent" style="display:none"></span>
+    <span id="sl-restarting" class="sl-seg sl-chip warn" style="display:none">⟳ перезапускаю…</span>
     <div class="sl-spacer"></div>
-    <span class="sl-seg sl-conn" id="sl-conn" style="display:none">
-      <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
-      <span id="sl-conn-label"></span>
-    </span>
-    <button class="sl-seg sl-panel-btn" id="btn-sidebar" title="Панель — статы, модули, подключение (s)">⋯</button>
+    <button class="sl-seg sl-conn" id="sl-conn" style="display:none" title="Подключение — клик настроит">
+      <span class="conn-dot"></span><span id="sl-conn-label"></span>
+    </button>
+  </div>
+
+  <!-- ── список модулей: выпадашка от статус-строки, а не панель ─────────
+       Единственное, ради чего раньше существовала выезжающая справа панель.
+       Списку модулей не нужен ни оверлей на полэкрана, ни затемнение фона —
+       он нужен на пару секунд, чтобы ткнуть в шумный модуль и отфильтровать
+       по нему. Позиционируется fixed по координатам кнопки (см. openMods):
+       так его не режет ни overflow статус-строки, ни её собственный layout. -->
+  <div class="mod-menu" id="mod-menu">
+    <div class="module-list" id="module-list"></div>
+    <div class="mod-menu-empty" id="mod-menu-empty">пока ни одного модуля</div>
   </div>
 
   <div class="update-toast" id="update-toast" style="display:none">
@@ -97,64 +110,20 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
 
-  <!-- ── панель по требованию: не постоянная колонка, а оверлей (s / ⋯) ── -->
-  <div class="panel-overlay" id="sidebar">
-    <div class="panel-card">
-      <div class="group">
-      <h3><span class="g-icon warn">!</span>Проблемы</h3>
-      <div class="problem-counts">
-        <span class="warn">⚠ <span id="count-warn">0</span></span>
-        <span class="err">✗ <span id="count-err">0</span></span>
-      </div>
-      </div>
-
-      <div class="group">
-      <h3><span class="g-icon accent">◆</span>Поток</h3>
-      <canvas class="sparkline-canvas" id="sparkline-canvas" width="220" height="30"></canvas>
-
-      <h3><span class="g-icon accent">▤</span>История <span class="h3-total" id="history-total"></span></h3>
-      <div class="history-chart" id="history-chart"></div>
-      </div>
-
-      <div class="group">
-      <h3><span class="g-icon mod">▣</span>Модули <span class="h3-total" id="module-total"></span></h3>
-      <div class="module-list" id="module-list"></div>
-      </div>
-
-      <div class="group">
-      <h3><span class="g-icon good">▶</span>Процесс</h3>
-      <div class="proc-block" id="proc-block">—</div>
-      <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
-      <div class="watchdog-note" id="watchdog-note"></div>
-      </div>
-
-      <div class="conn-section group" id="conn-section" style="display:none">
-        <h3><span class="g-icon accent">⇄</span>Подключение</h3>
-        <div class="conn-block" id="conn-block" data-state="local">
-          <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
-          <span class="conn-label" id="conn-label">локально</span>
-          <span class="conn-meta" id="conn-meta">бот на этом компьютере</span>
-        </div>
-        <button id="btn-remote" class="remote-open-btn"><span id="btn-remote-label">Удалённый бот</span><span class="btn-chevron">›</span></button>
-      </div>
-
-      <div class="gui-version" id="gui-version"></div>
-    </div>
-  </div>
   <div class="help-overlay" id="help-overlay">
     <div class="help-card">
       <h2>Горячие клавиши</h2>
       <table>
         <tr><td><kbd>d</kbd></td><td>показать/скрыть строки уровня DEBUG</td></tr>
-        <tr><td><kbd>s</kbd></td><td>показать/скрыть панель</td></tr>
+        <tr><td><kbd>s</kbd></td><td>список модулей</td></tr>
         <tr><td><kbd>w</kbd></td><td>порог показа по кругу: всё → warning+ → error+</td></tr>
         <tr><td><kbd>a</kbd></td><td>авто-перезапуск бота при падении</td></tr>
         <tr><td><kbd>/</kbd></td><td>поиск: подстрока или <code>re:шаблон</code></td></tr>
         <tr><td><kbd>n</kbd> <kbd>N</kbd></td><td>к следующей / предыдущей проблеме (warning и выше)</td></tr>
         <tr><td><kbd>r</kbd> <kbd>R</kbd></td><td>к следующему / предыдущему перезапуску</td></tr>
         <tr><td><kbd>g</kbd> <kbd>G</kbd></td><td>в начало / в конец лога</td></tr>
-        <tr><td><kbd>клик</kbd></td><td>по модулю в панели — фильтр по нему, повторный клик снимает</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>закрыть справку, снять фильтр</td></tr>
+        <tr><td><kbd>клик</kbd></td><td>по модулю в списке — фильтр по нему, повторный клик снимает</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>закрыть справку и список, снять фильтр</td></tr>
       </table>
       <p class="help-foot">Те же клавиши, что в консольной версии <code>hkc</code>.</p>
     </div>
@@ -182,29 +151,21 @@ const el = (id) => document.getElementById(id);
 const statusPill = el('status-pill');
 const statusText = el('status-text');
 const streamIssueBox = el('stream-issue');
-const countWarn = el('count-warn');
-const countErr = el('count-err');
 const thresholdBadge = el('threshold-badge');
 const filterBadge = el('filter-badge');
-const sparklineCanvas = el('sparkline-canvas');
-const sparklineCtx = sparklineCanvas.getContext('2d');
-const historyChart = el('history-chart');
-const historyTotal = el('history-total');
 const moduleList = el('module-list');
-const moduleTotal = el('module-total');
-const procBlock = el('proc-block');
-const watchdogNote = el('watchdog-note');
+const modMenu = el('mod-menu');
+const modMenuEmpty = el('mod-menu-empty');
+const slRestarting = el('sl-restarting');
 const logScroll = el('log-scroll');
 const filterInput = el('filter-input');
 const btnStart = el('btn-start');
 const btnRestart = el('btn-restart');
 const btnStop = el('btn-stop');
-const btnRu = el('btn-ru');
 const btnDebug = el('btn-debug');
 const btnLevel = el('btn-level');
 const btnWatchdog = el('btn-watchdog');
 const btnClear = el('btn-clear');
-const btnExport = el('btn-export');
 const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
 const channelBadge = el('channel-badge');
@@ -213,12 +174,10 @@ const utVersion = el('ut-version');
 const btnUtUpdate = el('ut-update');
 const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
-const body = document.querySelector('.body');
-const btnSidebar = el('btn-sidebar');
-const sidebarOverlay = el('sidebar');
+const btnMods = el('btn-mods');
 const slWarn = el('sl-warn');
 const slErr = el('sl-err');
-const slMods = el('sl-mods');
+const slMods = el('sl-mods-names');
 const slConn = el('sl-conn');
 const slConnLabel = el('sl-conn-label');
 const btnClose = el('btn-close');
@@ -229,14 +188,8 @@ const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
-const connSection = el('conn-section');
-const connBlock = el('conn-block');
-const connLabel = el('conn-label');
-const connMeta = el('conn-meta');
 const streamIssueReason = el('si-reason');
 const streamIssueFor = el('si-for');
-const btnRemote = el('btn-remote');
-const btnRemoteLabel = el('btn-remote-label');
 const remoteOverlay = el('remote-overlay');
 const remoteHostInput = el('remote-host');
 const remoteUserInput = el('remote-user');
@@ -248,30 +201,11 @@ const btnRemoteConnect = el('btn-remote-connect');
 const btnRemoteDisconnect = el('btn-remote-disconnect');
 const btnRemoteCancel = el('btn-remote-cancel');
 
-// setProjectVersion — номер самого проекта (hrk-console), а не бота: тот
-// виден отдельно в status-pill ("live · Heroku X.X.X · ..."). Имя и номер —
-// разными span'ами, чтобы номер был заметнее тусклой подписи рядом с ним.
-function setProjectVersion(v) {
-    el('gui-version').innerHTML = '<span class="gv-name">hrk-console</span><span class="gv-num">' + v + '</span>';
-}
-setProjectVersion('dev');
-
 // ─── состояние ───────────────────────────────────────────────────────────
 
-let uiState = { showDebug: false, showSidebar: true, minLevel: LEVEL_DEBUG, watchdog: false };
+let uiState = { showDebug: false, minLevel: LEVEL_DEBUG, watchdog: false };
 let lastRowEl = null;   // DOM-узел последней записи — для схлопывания повторов
 let moduleStats = new Map(); // имя → {count, warn, err}
-let activityBuckets = new Array(40).fill(0);
-let activityNow = 0;
-
-// historyBuckets — та же идея, что у сперклайна активности (кольцо,
-// растущее по мере жизни окна), но на другом масштабе: не последние 40
-// секунд «шумит или нет», а последний час «когда именно участились
-// проблемы» — секундный сперклайн для этого слишком короткий, за минуту
-// прокручивается целиком. Ведро — не общий счёт событий, а warn/err
-// отдельно: важно видеть, что именно накопилось, а не просто «было шумно».
-const HISTORY_MINUTES = 60;
-let historyBuckets = Array.from({ length: HISTORY_MINUTES }, () => ({ warn: 0, err: 0 }));
 // warnCount/errCount считаются нарастающим итогом по КАЖДОМУ событию, а не
 // по числу строк на экране: одно и то же предупреждение, повторившееся 10
 // раз и схлопнутое в одну строку "×10", всё равно означает 10 срабатываний.
@@ -285,34 +219,6 @@ function moduleColor(name) {
     }
     return `var(--mod-${(Math.abs(h) % MODULE_COLORS) + 1})`;
 }
-
-// ─── локализация известных шаблонных сообщений ──────────────────────────
-//
-// Не перевод произвольного текста — живой поток лога слишком быстрый для
-// сетевого переводчика на каждую строку (десятки строк в секунду), а
-// трейсбеки и пути переводить нельзя вообще, иначе отладка ломается.
-// Вместо этого — словарь: известные повторяющиеся шаблоны (urllib3,
-// asyncio, heartbeat загрузчика) подменяются на русский текст регэкспом,
-// всё остальное остаётся как есть. Список короткий и лёгкий в расширении —
-// новые повторяющиеся строки из своего heroku.log добавляются одной парой.
-const RU_DICT = [
-    [/^Starting new HTTPS connection \((\d+)\): (.+)$/, (m) => `Новое HTTPS-соединение (${m[1]}): ${m[2]}`],
-    [/^Starting new HTTP connection \((\d+)\): (.+)$/, (m) => `Новое HTTP-соединение (${m[1]}): ${m[2]}`],
-    [/^Using selector: (.+)$/, (m) => `Используется селектор ввода-вывода: ${m[1]}`],
-    [/^Reloaded (\d+) commands?$/, (m) => `Перезагружено команд: ${m[1]}`],
-    [/^Loading (.+) from filesystem$/, (m) => `Загрузка «${m[1]}» из файловой системы`],
-    [/^Loaded (\d+) modules?,\s*(\d+) skipped$/, (m) => `Загружено модулей: ${m[1]}, пропущено: ${m[2]}`],
-];
-
-function translateLine(text) {
-    for (const [re, tr] of RU_DICT) {
-        const m = text.match(re);
-        if (m) return tr(m);
-    }
-    return text;
-}
-
-let ruEnabled = localStorage.getItem('hkc-gui-ru') === '1';
 
 // ─── подсветка совпадений активного фильтра ─────────────────────────────
 //
@@ -359,25 +265,21 @@ function appendHighlighted(el, text, filterValue) {
 
 function buildMsgEl(rec) {
     const msg = document.createElement('span');
-    const msgClass = rec.level === LEVEL_CRITICAL ? 'crt' : rec.level === LEVEL_ERROR ? 'err' : rec.level === LEVEL_WARNING ? 'wrn' : '';
+    const msgClass = rec.level === LEVEL_CRITICAL ? 'crt' : rec.level === LEVEL_ERROR ? 'err'
+        : rec.level === LEVEL_WARNING ? 'wrn' : rec.level === LEVEL_DEBUG ? 'dbg' : '';
     msg.className = 'msg' + (msgClass ? ' ' + msgClass : '');
-    // Переводим только настоящий заголовок записи (i === 0, rec.hard[0] не
-    // взведён) — физический перенос (трейсбек, дамп) переносит rec.hard[0]
-    // в true и в словарь никогда не попадает.
-    const translatable = ruEnabled && !(rec.hard && rec.hard[0]);
     const filterValue = filterInput.value;
     (rec.lines || ['']).forEach((line, i) => {
-        const display = (i === 0 && translatable) ? translateLine(line) : line;
         if (i > 0) {
             const br = document.createElement('div');
             const arrow = document.createElement('span');
             arrow.className = 'continuation-arrow';
             arrow.textContent = '↳ ';
             br.appendChild(arrow);
-            appendHighlighted(br, display, filterValue);
+            appendHighlighted(br, line, filterValue);
             msg.appendChild(br);
         } else {
-            appendHighlighted(msg, display, filterValue);
+            appendHighlighted(msg, line, filterValue);
         }
     });
     return msg;
@@ -403,6 +305,7 @@ function buildRow(rec, zebra) {
     const mod = document.createElement('span');
     mod.className = 'module';
     mod.style.color = moduleColor(rec.module);
+    mod.title = rec.module; // колонка узкая, длинное имя обрезается многоточием
     appendHighlighted(mod, rec.module, filterInput.value);
     row.appendChild(mod);
 
@@ -429,16 +332,6 @@ function buildRow(rec, zebra) {
 
     row._rec = rec;
     return row;
-}
-
-// retranslateAll — переключение RU меняет только то, что уже нарисовано,
-// без похода к бэкенду: у каждой строки уже есть исходная запись (row._rec),
-// достаточно перестроить только .msg, не пересоздавая всю строку заново.
-function retranslateAll() {
-    for (const row of logScroll.querySelectorAll('.row')) {
-        if (!row._rec) continue;
-        row.querySelector('.msg').replaceWith(buildMsgEl(row._rec));
-    }
 }
 
 function updateRowCount(rowEl, rec) {
@@ -498,7 +391,8 @@ function renderAll(recs) {
     lastRowEl = logScroll.lastElementChild;
     trimLog();
     logScroll.scrollTop = logScroll.scrollHeight;
-    renderSidebar();
+    renderCounts();
+    renderModules();
 }
 
 // ─── события с бэкенда ───────────────────────────────────────────────────
@@ -550,15 +444,11 @@ function flushTail() {
             appended++;
         }
         trackModule(evt.rec);
-        activityNow++;
         // Каждое событие — одно срабатывание, даже если оно легло повтором в
         // уже показанную строку (replace): счётчик не про число строк на
         // экране, а про то, сколько раз это реально произошло.
         if (evt.rec.warn) warnCount++;
         else if (evt.rec.err) errCount++;
-        const bucket = historyBuckets[historyBuckets.length - 1];
-        if (evt.rec.warn) bucket.warn++;
-        else if (evt.rec.err) bucket.err++;
     }
 
     logScroll.appendChild(frag);
@@ -647,10 +537,9 @@ let dismissedUpdateVersion = null;
 
 function showUpdateToast(version) {
     utVersion.textContent = version;
+    // Появление анимирует сам CSS: выход из display:none перезапускает
+    // анимацию элемента, отдельный класс-триггер для этого не нужен.
     updateToast.style.display = '';
-    updateToast.classList.remove('ut-enter');
-    void updateToast.offsetWidth; // перезапуск анимации, если тост уже был показан
-    updateToast.classList.add('ut-enter');
 }
 
 function hideUpdateToast() {
@@ -828,20 +717,21 @@ PreflightChecks().then(renderPreflightChecks);
 // источника бота на лету было бы источником гонок между старыми и новыми
 // горутинами, а перезапуск окна занимает меньше секунды и уже есть готовым
 // после самообновления.
-// Блок «Подключение» показывается не всегда. На машине, где бот и так
+// Индикатор подключения показывается не всегда. На машине, где бот и так
 // установлен рядом (Linux), удалённый режим — не то, ради чего открывают
-// окно: строка «локально» и кнопка под ней занимали место в панели, ничего
-// при этом не сообщая. Он существует ради Windows, где локального бота
-// быть не может. Исключение — если удалённый хост всё-таки настроен: тогда
-// блок нужен везде, иначе настройку негде было бы увидеть и отменить.
+// окно: сегмент «локально» занимал бы место, ничего при этом не сообщая.
+// Он существует ради Windows, где локального бота быть не может.
+// Исключение — если удалённый хост всё-таки настроен: тогда сегмент нужен
+// везде, иначе настройку негде было бы увидеть и отменить.
+//
+// Раньше про подключение говорили два элемента сразу: сегмент в статус-
+// строке и отдельный блок в панели, дублировавший его слово в слово.
+// Остался один — он же и кнопка, открывающая настройку, вместо отдельной
+// кнопки «Удалённый бот» под блоком.
 let platform = 'linux';
 
 function showConnSection(remote) {
     const show = platform === 'windows' || (remote && remote.host);
-    connSection.style.display = show ? '' : 'none';
-    // Тот же вопрос, что решает connSection ("вообще имеет смысл говорить
-    // о подключении на этой платформе"), но для компактного индикатора в
-    // статус-строке, который виден и без открытой панели.
     slConn.style.display = show ? '' : 'none';
 }
 
@@ -850,44 +740,30 @@ function showConnSection(remote) {
 // каждую секунду (см. Status.RemoteState).
 function renderRemoteTarget(remote) {
     if (remote && remote.host) {
-        connLabel.textContent = remote.host;
-        connMeta.textContent = remote.user ? remote.user + ' · подключаюсь…' : 'подключаюсь…';
-        connBlock.dataset.state = 'connecting';
         slConn.dataset.state = 'connecting';
         slConnLabel.textContent = remote.host;
         btnRemoteDisconnect.style.display = '';
-        btnRemoteLabel.textContent = 'Изменить подключение';
         return;
     }
-    connBlock.dataset.state = 'local';
     slConn.dataset.state = 'local';
     btnRemoteDisconnect.style.display = 'none';
-    btnRemoteLabel.textContent = 'Удалённый бот';
     // «Локально» на Windows означало бы бота, которого там нет и быть не
     // может: сам Heroku запускается только на Linux. Пока машина не
     // указана, окну попросту нечем управлять, и сказать об этом честно
     // полезнее, чем показать успокаивающее «локально».
-    if (platform === 'windows') {
-        connLabel.textContent = 'не настроено';
-        connMeta.textContent = 'укажите машину, где стоит бот';
-        slConnLabel.textContent = 'бот не настроен';
-    } else {
-        connLabel.textContent = 'локально';
-        connMeta.textContent = 'бот на этом компьютере';
-        slConnLabel.textContent = 'локально';
-    }
+    slConnLabel.textContent = platform === 'windows' ? 'бот не настроен' : 'локально';
 }
 
 const CONN_LABEL = { connecting: 'подключаюсь…', online: 'на связи', offline: 'нет связи' };
 
 function renderConnState(st) {
-    if (!st.remoteState) return; // локальный бот — блок про адрес, а не про соединение
-    connBlock.dataset.state = st.remoteState;
-    connLabel.textContent = CONN_LABEL[st.remoteState] || st.remoteState;
-    connMeta.textContent = (uiState.remote && uiState.remote.host ? uiState.remote.host + ' · ' : '') +
-        (st.remoteStateNote || '');
+    if (!st.remoteState) return; // локальный бот — сегмент про адрес, а не про соединение
     slConn.dataset.state = st.remoteState;
     slConnLabel.textContent = (uiState.remote && uiState.remote.host) || CONN_LABEL[st.remoteState] || st.remoteState;
+    // Подробности — в подсказке, а не отдельной строкой: сегмент обязан
+    // оставаться одной строкой в один ряд с остальными.
+    slConn.title = [CONN_LABEL[st.remoteState] || st.remoteState, st.remoteStateNote]
+        .filter(Boolean).join(' · ') + ' — клик настроит';
 }
 
 function openRemoteOverlay(remote) {
@@ -906,7 +782,7 @@ function closeRemoteOverlay() {
     remoteOverlay.classList.remove('visible');
 }
 
-btnRemote.addEventListener('click', () => openRemoteOverlay(uiState.remote));
+slConn.addEventListener('click', () => openRemoteOverlay(uiState.remote));
 btnRemoteCancel.addEventListener('click', closeRemoteOverlay);
 remoteOverlay.addEventListener('click', (e) => {
     if (e.target === remoteOverlay) closeRemoteOverlay();
@@ -969,15 +845,8 @@ btnRemoteDisconnect.addEventListener('click', async () => {
 
 // ─── шапка / статус ──────────────────────────────────────────────────────
 
-// streamIssueShown — statusLoop зовёт renderStatus раз в секунду, пока
-// проблема с логом не решится; без этого флага полоса переигрывала бы
-// анимацию появления на каждый тик, а не один раз в момент, когда она
-// реально появилась.
-let streamIssueShown = false;
-
 function renderStatus(st) {
-    el('hkc-version').textContent = 'hkc ' + (st.hkcVersion || 'dev');
-    setProjectVersion(st.hkcVersion || 'dev');
+    el('hkc-version').textContent = st.hkcVersion || 'dev';
 
     renderConnState(st);
 
@@ -985,17 +854,14 @@ function renderStatus(st) {
     if (st.streamIssue) {
         statusPill.classList.add('warn');
         statusText.textContent = '⚠ лог не читается';
-        if (!streamIssueShown) {
-            streamIssueBox.style.display = '';
-            streamIssueBox.classList.add('si-enter');
-            streamIssueShown = true;
-        }
+        // statusLoop зовёт renderStatus раз в секунду, пока проблема не
+        // решится, — но выставить уже выставленный display ничего не
+        // перезапускает, так что анимация появления играет ровно один раз.
+        streamIssueBox.style.display = '';
         streamIssueReason.textContent = st.streamIssue;
         streamIssueFor.textContent = st.streamIssueFor || '';
     } else {
         streamIssueBox.style.display = 'none';
-        streamIssueBox.classList.remove('si-enter');
-        streamIssueShown = false;
         if (st.alive) {
             statusPill.classList.add('live');
             statusText.textContent = `live · ${st.botVersion || '?'} · ${st.uptime}`;
@@ -1005,25 +871,18 @@ function renderStatus(st) {
         }
     }
 
-    procBlock.innerHTML = st.alive
-        ? `<span class="live-label">● live</span><span class="proc-meta">pid ${st.pid} · ${st.uptime}</span>`
-        : `<span class="down-label">○ не запущен</span>`;
+    // pid раньше жил отдельной строкой в панели («Процесс»), где дублировал
+    // uptime из этой же пилюли. Он нужен редко и ровно один раз — когда
+    // хочется убить процесс руками мимо окна, — так что подсказка честнее
+    // постоянно занятого места.
+    statusPill.title = st.alive ? `pid ${st.pid} · запущен ${st.uptime} назад` : 'бот не запущен';
 
-    if (st.restarting) {
-        watchdogNote.textContent = '⟳ перезапускаю…';
-        watchdogNote.className = 'watchdog-note restarting';
-    } else if (st.watchdog) {
-        watchdogNote.textContent = '⟳ авто-перезапуск включён';
-        watchdogNote.className = 'watchdog-note on';
-    } else {
-        watchdogNote.textContent = '';
-        watchdogNote.className = 'watchdog-note';
-    }
+    slRestarting.style.display = st.restarting ? '' : 'none';
     btnWatchdog.classList.toggle('toggled', !!st.watchdog);
 
     // Заголовок ОКНА, а не вкладки браузера — Wails не тянет document.title
     // в нативный тайтлбар сам, нужен его собственный runtime-вызов.
-    WindowSetTitle(st.alive ? `Heroku · ⚠ ${countWarn.textContent} ✗ ${countErr.textContent}` : 'Heroku · не запущен');
+    WindowSetTitle(st.alive ? `Heroku · ⚠ ${warnCount} ✗ ${errCount}` : 'Heroku · не запущен');
 }
 
 function showBanner(text, alert) {
@@ -1037,17 +896,14 @@ function showBanner(text, alert) {
 
 // ─── панель ──────────────────────────────────────────────────────────────
 
-// renderCounts — дешёвая часть панели: счётчики и бейджи, только textContent
-// и toggle стилей. Зовётся на каждый пакет строк, даже во время всплеска
-// лога — здесь нет ничего, что стоило бы приберечь.
+// renderCounts — дешёвая часть статус-строки: счётчики и бейджи, только
+// textContent и toggle стилей. Зовётся на каждый пакет строк, даже во время
+// всплеска лога — здесь нет ничего, что стоило бы приберечь.
 function renderCounts() {
-    countWarn.textContent = warnCount;
-    countErr.textContent = errCount;
-    // Дубли в статус-строке — она видна всегда, панель с count-warn/
-    // count-err выше открывается только по требованию; ⚠/✗ должны
-    // читаться и без открытой панели.
     slWarn.textContent = '⚠ ' + warnCount;
     slErr.textContent = '✗ ' + errCount;
+    slWarn.classList.toggle('zero', warnCount === 0);
+    slErr.classList.toggle('zero', errCount === 0);
 
     if (uiState.minLevel === LEVEL_WARNING) {
         thresholdBadge.style.display = '';
@@ -1068,22 +924,22 @@ function renderCounts() {
 }
 
 // renderModules — дорогая часть: пересобирает весь список модулей заново
-// (innerHTML='' + N узлов + N новых обработчиков клика). Список теперь
-// полный, а не топ-7, поэтому N может быть за сорок — звать это на каждый
-// кадр всплеска лога (как раньше) значит десятки полных пересборок панели
-// в секунду ради данных, которые всё равно обновит ближайший тик спарклайна.
-// Дёргается из renderSidebar (полная перерисовка) и из тикера ниже — не из
-// «горячего» пути flushTail.
+// (innerHTML='' + N узлов + N новых обработчиков клика). Список полный, а не
+// топ-7, поэтому N может быть за сорок — звать это на каждый кадр всплеска
+// лога значит десятки полных пересборок в секунду. Дёргается из renderAll и
+// из секундного тикера ниже — не из «горячего» пути flushTail.
+//
+// Список живёт в выпадашке и пересобирается, даже когда она закрыта: топ-3
+// в самой статус-строке считаются здесь же, и они видны всегда.
 function renderModules() {
     const stats = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
         .sort((a, b) => b.count - a.count);
     const peak = stats.length ? stats[0].count : 1;
-    moduleTotal.textContent = stats.length ? '· ' + stats.length : '';
-    // Топ-3 в статус-строке — тот же смысл, что раньше нёс весь список в
-    // постоянной колонке (кто вообще шумит), только без постоянно занятого
-    // места: полный список по-прежнему доступен по клику на панель.
-    slMods.textContent = stats.slice(0, 3).map((m) => m.name).join(' · ');
+    // Топ-3 прямо в строке — кто вообще шумит, без единого клика; полный
+    // список за тем же сегментом, если этих трёх не хватило.
+    slMods.textContent = stats.slice(0, 3).map((m) => m.name).join(' · ') || '—';
+    modMenuEmpty.style.display = stats.length ? 'none' : '';
     moduleList.innerHTML = '';
     const active = filterInput.value;
     for (const m of stats) {
@@ -1093,7 +949,10 @@ function renderModules() {
         // что любой другой фильтр, и объяснять две механики не нужно.
         row.className = 'module-row clickable' + (m.name === active ? ' active' : '');
         row.title = m.name === active ? 'снять фильтр' : 'фильтр по модулю ' + m.name;
-        row.addEventListener('click', () => applyFilter(m.name === active ? '' : m.name));
+        row.addEventListener('click', () => {
+            applyFilter(m.name === active ? '' : m.name);
+            closeMods();
+        });
 
         // Точка — состояние модуля (проблема ярче самого частого случая, что
         // это просто разные модули): свой цвет в норме, warn/err — цветом
@@ -1127,100 +986,48 @@ function renderModules() {
     }
 }
 
-// renderSparkline — живая кривая на canvas (в духе Activity Monitor), а не
-// столбики: тот же массив activityBuckets, просто читается плавной линией
-// с затуханием по краям, а не решёткой отдельных прямоугольников.
-// Перерисовывается тем же тиком раз в секунду, что и раньше двигал
-// столбики, — здесь не нужен отдельный requestAnimationFrame-цикл, "живой"
-// вид даёт сама форма кривой, а не непрерывная анимация.
-function renderSparkline() {
-    const W = sparklineCanvas.width, H = sparklineCanvas.height;
-    const ctx = sparklineCtx;
-    ctx.clearRect(0, 0, W, H);
-    const peak = Math.max(1, ...activityBuckets);
-    const n = activityBuckets.length;
-    const step = W / (n - 1);
-    const points = activityBuckets.map((v, i) => [
-        i * step,
-        H - 2 - (v / peak) * (H - 6),
-    ]);
-
-    const grad = ctx.createLinearGradient(0, 0, W, 0);
-    grad.addColorStop(0, 'rgba(156,139,255,.15)');
-    grad.addColorStop(1, 'rgba(156,139,255,.95)');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = 1.6;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.shadowColor = 'rgba(156,139,255,.5)';
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Заливка под кривой — тише, чем сама линия, читается как объём, а не
-    // ещё один акцент, спорящий с ней за внимание.
-    ctx.lineTo(W, H);
-    ctx.lineTo(0, H);
-    ctx.closePath();
-    const fill = ctx.createLinearGradient(0, 0, 0, H);
-    fill.addColorStop(0, 'rgba(156,139,255,.16)');
-    fill.addColorStop(1, 'rgba(156,139,255,0)');
-    ctx.fillStyle = fill;
-    ctx.fill();
+// ─── выпадашка модулей ───────────────────────────────────────────────────
+//
+// Позиция считается в момент открытия и ставится в fixed-координатах, а не
+// задаётся в CSS: сегмент «модули» едет по горизонтали вслед за счётчиками
+// (⚠ 0 и ⚠ 1204 — разной ширины), и привязать выпадашку к нему статикой
+// нельзя. Правый край дополнительно прижимается к окну, чтобы длинный
+// список не уезжал за границу на узком окне.
+function openMods() {
+    const r = btnMods.getBoundingClientRect();
+    modMenu.classList.add('visible');
+    btnMods.classList.add('open');
+    const w = modMenu.offsetWidth;
+    modMenu.style.top = Math.round(r.bottom + 4) + 'px';
+    modMenu.style.left = Math.round(Math.min(r.left, window.innerWidth - w - 10)) + 'px';
 }
 
-// renderHistory — 60 столбиков, каждый минута жизни окна, самый правый —
-// текущая. Высота — суммарный объём warn+err за минуту относительно пика
-// за весь час, цвет — что там накопилось (err перекрывает warn: если в
-// минуте была хоть одна ошибка, она и определяет цвет всей минуты, warn
-// сам по себе не должен теряться на фоне более частых warning). Подсказка
-// при наведении — точное число и когда это было, столбик сам по себе
-// только про «плохо/терпимо/тихо».
-function renderHistory() {
-    historyChart.innerHTML = '';
-    const peak = Math.max(1, ...historyBuckets.map((b) => b.warn + b.err));
-    let totalWarn = 0, totalErr = 0;
-    historyBuckets.forEach((b, i) => {
-        totalWarn += b.warn;
-        totalErr += b.err;
-        const total = b.warn + b.err;
-        const bar = document.createElement('span');
-        bar.className = 'history-bar' + (b.err > 0 ? ' err' : b.warn > 0 ? ' warn' : '');
-        bar.style.height = (total === 0 ? 4 : Math.max(10, Math.round((total / peak) * 100))) + '%';
-        const minutesAgo = historyBuckets.length - 1 - i;
-        bar.title = (minutesAgo === 0 ? 'эта минута' : minutesAgo + ' мин назад') +
-            (total ? `  ·  ⚠${b.warn} ✗${b.err}` : '  ·  тихо');
-        historyChart.appendChild(bar);
-    });
-    historyTotal.textContent = (totalWarn + totalErr) ? `· ⚠${totalWarn} ✗${totalErr}` : '';
+function closeMods() {
+    modMenu.classList.remove('visible');
+    btnMods.classList.remove('open');
 }
 
-// renderSidebar — полная перерисовка панели. Дёшево звать по факту события
-// (смена фильтра/порога/DEBUG, полная пересборка) — дорого на каждый кадр
-// потока лога, поэтому «горячий» путь (flushTail) зовёт только renderCounts.
-function renderSidebar() {
-    renderCounts();
-    renderModules();
-    renderSparkline();
-    renderHistory();
+function toggleMods() {
+    if (modMenu.classList.contains('visible')) closeMods();
+    else openMods();
 }
 
-setInterval(() => {
-    activityBuckets = [...activityBuckets.slice(1), activityNow];
-    activityNow = 0;
-    renderModules();
-    renderSparkline();
-}, 1000);
+btnMods.addEventListener('click', (e) => {
+    e.stopPropagation(); // иначе тот же клик тут же закроет её обработчиком ниже
+    toggleMods();
+});
+// Клик мимо закрывает — обычное поведение меню; внутри самой выпадашки
+// клик по модулю закрывает её сам (см. renderModules).
+document.addEventListener('click', (e) => {
+    if (modMenu.classList.contains('visible') && !modMenu.contains(e.target)) closeMods();
+});
+window.addEventListener('resize', closeMods);
 
-// Отдельный, более редкий тикер — минутные вёдра не обязаны ждать секундный,
-// вращать их каждую секунду означало бы почти всегда просто перерисовывать
-// тот же самый набор без изменений.
-setInterval(() => {
-    historyBuckets = [...historyBuckets.slice(1), { warn: 0, err: 0 }];
-    renderHistory();
-}, 60000);
+// Список модулей копит статистику на каждой строке (trackModule в «горячем»
+// пути), но перерисовывается раз в секунду: на всплеске лога иначе вышли бы
+// десятки полных пересборок в секунду ради чисел, которые всё равно никто
+// не успевает прочитать между кадрами.
+setInterval(renderModules, 1000);
 
 // ─── прыжки по логу ──────────────────────────────────────────────────────
 //
@@ -1304,13 +1111,6 @@ btnStart.addEventListener('click', () => withBanner(StartBot, 'ЗАПУСК'));
 btnRestart.addEventListener('click', () => withBanner(RestartBot, 'ПЕРЕЗАПУСК'));
 btnStop.addEventListener('click', () => withBanner(StopBot, 'ОСТАНОВКА'));
 
-btnRu.addEventListener('click', () => {
-    ruEnabled = !ruEnabled;
-    localStorage.setItem('hkc-gui-ru', ruEnabled ? '1' : '0');
-    btnRu.classList.toggle('toggled', ruEnabled);
-    retranslateAll();
-});
-
 btnDebug.addEventListener('click', async () => {
     uiState.showDebug = !uiState.showDebug;
     btnDebug.classList.toggle('toggled', uiState.showDebug);
@@ -1339,27 +1139,8 @@ btnClear.addEventListener('click', () => {
     // старые строки сразу после очистки).
     pendingTail = [];
     flushScheduled = false;
-    activityBuckets = activityBuckets.map(() => 0);
-    activityNow = 0;
     renderAll([]);
     ClearLog();
-});
-
-btnExport.addEventListener('click', async () => {
-    // Экспортируется именно то, что видно на экране — тот же порядок и тот
-    // же набор строк, что и в момент клика, включая активный фильтр: это
-    // ожидание "экспортируй то, на что я сейчас смотрю", а не всю историю.
-    const lines = [...logScroll.querySelectorAll('.row')].map(rowPlainText);
-    if (lines.length === 0) {
-        flashHint('лог пуст — нечего экспортировать');
-        return;
-    }
-    const res = await ExportLog(lines.join('\n'));
-    if (!res.ok) {
-        showBanner(`✗  экспорт: ${res.message}`, true);
-    } else if (res.message !== 'отменено') {
-        showBanner(`✓  экспорт  ·  ${res.message}`, false);
-    }
 });
 
 let filterDebounce = null;
@@ -1406,7 +1187,7 @@ document.addEventListener('keydown', (e) => {
         case 'd': btnDebug.click(); break;
         case 'w': btnLevel.click(); break;
         case 'a': btnWatchdog.click(); break;
-        case 's': toggleSidebar(); break;
+        case 's': toggleMods(); break;
         case '?': toggleHelp(); break;
         case 'n': jumpTo('.row.problem', 1); break;
         case 'N': jumpTo('.row.problem', -1); break;
@@ -1414,7 +1195,13 @@ document.addEventListener('keydown', (e) => {
         case 'R': jumpTo('.banner', -1); break;
         case 'g': logScroll.scrollTop = 0; break;
         case 'G': logScroll.scrollTop = logScroll.scrollHeight; break;
-        case 'Escape': if (filterInput.value) applyFilter(''); break;
+        case 'Escape':
+            // Сначала закрываем то, что открыто поверх лога, и только если
+            // ничего не открыто — снимаем фильтр: иначе один Esc делал бы
+            // два дела разом.
+            if (modMenu.classList.contains('visible')) closeMods();
+            else if (filterInput.value) applyFilter('');
+            break;
         case '/':
             e.preventDefault(); // иначе "/" попадёт в поле первым же символом
             filterInput.focus();
@@ -1422,25 +1209,6 @@ document.addEventListener('keydown', (e) => {
             break;
         default: return;
     }
-});
-
-// Панель — оверлей по требованию, не постоянная колонка: лог всегда на
-// всю ширину, .panel-overlay всплывает поверх него (тот же механизм, что
-// у help-overlay/remote-overlay — .visible на fixed-элементе), а не
-// раздвигает layout своей шириной. showSidebar в состоянии (общем с TUI)
-// теперь значит "оверлей открыт", а не "колонка видна", но само поле и
-// SetShowSidebar на бэкенде не меняются — это по-прежнему один и тот же
-// вопрос "показывать статы сейчас или нет".
-function toggleSidebar(force) {
-    const show = force === undefined ? !sidebarOverlay.classList.contains('visible') : force;
-    sidebarOverlay.classList.toggle('visible', show);
-    btnSidebar.classList.toggle('open', show);
-    uiState.showSidebar = show;
-    SetShowSidebar(show);
-}
-btnSidebar.addEventListener('click', () => toggleSidebar());
-sidebarOverlay.addEventListener('click', (e) => {
-    if (e.target === sidebarOverlay) toggleSidebar(false);
 });
 
 // Трафик-лайты — единственный способ управлять окном теперь, когда оно
@@ -1462,16 +1230,8 @@ helpOverlay.addEventListener('click', () => toggleHelp(false));
 
 // ─── старт ───────────────────────────────────────────────────────────────
 
-btnRu.classList.toggle('toggled', ruEnabled);
-
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
-    // Оверлей по умолчанию и так закрыт (базовое состояние .panel-overlay
-    // в CSS, без .visible) — в отличие от прежней раздвижной колонки, тут
-    // не бывает вспышки "нарисовалась открытой и тут же скрылась", открыть
-    // явно нужно только если пользователь сам оставил её открытой в
-    // прошлый раз.
-    if (uiState.showSidebar) toggleSidebar(true);
     btnDebug.classList.toggle('toggled', uiState.showDebug);
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'

@@ -1027,17 +1027,6 @@ func (a *App) CycleMinLevel() []Rec {
 	return recs
 }
 
-// SetShowSidebar — клавиша s. Лога не касается, пересобирать нечего, но
-// сохранить надо: ShowSidebar лежит в общем с TUI state.json, и без этого
-// два интерфейса расходились бы в настройке, которая у них одна на двоих.
-func (a *App) SetShowSidebar(on bool) {
-	a.mu.Lock()
-	a.ui.ShowSidebar = on
-	ui := a.ui
-	a.mu.Unlock()
-	state.Save(ui)
-}
-
 func (a *App) SetWatchdog(on bool) {
 	a.mu.Lock()
 	a.ui.Watchdog = on
@@ -1086,28 +1075,6 @@ func (a *App) RestartBot() ActionResult {
 		a.stop()
 	}
 	return a.StartBot()
-}
-
-// ExportLog сохраняет содержимое в файл через нативный диалог "сохранить
-// как". Сам текст формирует фронтенд — он уже знает, как рендерит
-// видимые строки (тот же порядок, что на экране, включая фильтр), задача
-// бэкенда — только диалог выбора пути и запись на диск, недоступные из
-// песочницы webview напрямую.
-func (a *App) ExportLog(content string) ActionResult {
-	path, err := wailsrt.SaveFileDialog(a.ctx, wailsrt.SaveDialogOptions{
-		Title:           "Экспорт лога",
-		DefaultFilename: "heroku-log-" + time.Now().Format("2006-01-02-150405") + ".txt",
-	})
-	if err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	if path == "" {
-		return ActionResult{OK: true, Message: "отменено"}
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	return ActionResult{OK: true, Message: path}
 }
 
 func maxInt(a, b int) int {
