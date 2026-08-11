@@ -18,6 +18,12 @@ type State struct {
 	MinLevel    int    `json:"minLevel"`
 	Watchdog    bool   `json:"watchdog"`
 	Remote      Remote `json:"remote"`
+	// UpdateChannel — откуда самообновление берёт "последнюю версию":
+	// "" (значение по умолчанию) — стабильные релизы из main, "dev" —
+	// сборки прямо с ветки dev (см. selfupdate.CheckChannel/ApplyChannel).
+	// Только GUI даёт это выбрать — у TUI своего экрана обновления с
+	// таким выбором нет, он всегда на стабильном канале.
+	UpdateChannel string `json:"updateChannel"`
 }
 
 // Remote — настройки подключения к боту на другой машине по SSH (см. пакет

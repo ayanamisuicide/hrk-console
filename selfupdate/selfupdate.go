@@ -25,6 +25,14 @@ import (
 // httptest.Server, не ходить же в GitHub ради проверки разбора ответа.
 var CheckURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases/latest"
 
+// DevListURL — список релизов, откуда берём последнюю dev-сборку. У канала
+// "dev" нет одного стабильного адреса вроде /releases/latest — тот отдаёт
+// только опубликованные не-prerelease, а у dev-канала своего постоянного
+// тега тоже нет: каждый пуш в ветку dev получает собственный неизменяемый
+// тег dev-<sha> (см. .github/workflows/dev-release.yml) и публикуется как
+// prerelease. Список — единственный способ найти самый свежий из них.
+var DevListURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releases"
+
 // CleanVersionRe — "vX.Y.Z" без хвоста. У сборки из тега (git describe на
 // чистом дереве без коммитов после тега) версия выглядит ровно так; у
 // сборки из рабочего дерева (make gui/make build без тега, wails dev) — с
@@ -37,9 +45,10 @@ var CleanVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 // нужна: тег, страница релиза и ассеты (среди них ищем архив нужного
 // бинарника).
 type Release struct {
-	TagName string  `json:"tag_name"`
-	HTMLURL string  `json:"html_url"`
-	Assets  []Asset `json:"assets"`
+	TagName    string  `json:"tag_name"`
+	HTMLURL    string  `json:"html_url"`
+	Assets     []Asset `json:"assets"`
+	Prerelease bool    `json:"prerelease"`
 }
 
 type Asset struct {
@@ -72,6 +81,37 @@ func FetchLatest() (*Release, error) {
 		return nil, err
 	}
 	return &rel, nil
+}
+
+// fetchLatestDev — самая свежая dev-сборка: первый (GitHub отдаёт список
+// новыми вперёд) релиз с prerelease=true. dev-release.yml помечает так
+// каждый свой выпуск, а release.yml (стабильные теги) — никогда, так что
+// смешать их в одном списке нечем.
+func fetchLatestDev() (*Release, error) {
+	req, err := http.NewRequest(http.MethodGet, DevListURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub ответил %d", resp.StatusCode)
+	}
+	var rels []Release
+	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
+		return nil, err
+	}
+	for i := range rels {
+		if rels[i].Prerelease {
+			return &rels[i], nil
+		}
+	}
+	return nil, fmt.Errorf("dev-сборок среди релизов не нашлось")
 }
 
 // FindAsset ищет в релизе архив по имени: prefix+...+suffix. У hkc и GUI в
@@ -129,6 +169,27 @@ func Check(current string) CheckResult {
 		return CheckResult{Current: current, Message: "релиз на GitHub в неожиданном формате версии"}
 	}
 	if !VersionLess(current, rel.TagName) {
+		return CheckResult{OK: true, Current: current, Latest: rel.TagName}
+	}
+	return CheckResult{OK: true, Available: true, Current: current, Latest: rel.TagName, URL: rel.HTMLURL}
+}
+
+// CheckChannel — то же, что Check, но с явным каналом обновлений.
+// "dev"-канал сравнивает не по семверу (у dev-тегов его нет и быть не
+// может — dev-<sha>, не vX.Y.Z), а простым неравенством строк: тот ли это
+// тег, что уже вшит в текущий бинарник. Работает это ровно потому, что
+// dev-release.yml вшивает в -X main.version то же значение, что кладёт в
+// тег релиза, — собранный из коммита dev-aeaba90 бинарник и релиз с тегом
+// dev-aeaba90 совпадают буквально, без всякого парсинга версий.
+func CheckChannel(channel, current string) CheckResult {
+	if channel != "dev" {
+		return Check(current)
+	}
+	rel, err := fetchLatestDev()
+	if err != nil {
+		return CheckResult{Current: current, Message: err.Error()}
+	}
+	if rel.TagName == current {
 		return CheckResult{OK: true, Current: current, Latest: rel.TagName}
 	}
 	return CheckResult{OK: true, Available: true, Current: current, Latest: rel.TagName, URL: rel.HTMLURL}
@@ -216,6 +277,33 @@ func Apply(assetPrefix, assetSuffix string) (appliedVersion string, err error) {
 	if err != nil {
 		return "", err
 	}
+	return applyRelease(rel, assetPrefix, assetSuffix)
+}
+
+// ApplyChannel — то же, что Apply, но качает из dev-канала вместо
+// стабильного, когда channel == "dev". Сама подмена на диске — applyRelease,
+// общая для обоих каналов: релиз найден, дальше не важно, откуда он.
+func ApplyChannel(channel, assetPrefix, assetSuffix string) (appliedVersion string, err error) {
+	if channel != "dev" {
+		return Apply(assetPrefix, assetSuffix)
+	}
+	rel, err := fetchLatestDev()
+	if err != nil {
+		return "", err
+	}
+	return applyRelease(rel, assetPrefix, assetSuffix)
+}
+
+// applyRelease скачивает assetPrefix*assetSuffix из уже найденного релиза
+// (неважно, стабильного или dev — Apply/ApplyChannel сами разбираются,
+// откуда его брать) и атомически подменяет им себя на диске.
+//
+// Замена атомарна в пределах одной директории (той же ФС, что и сам exe) —
+// os.Rename либо подменяет файл целиком, либо не трогает его вовсе, никакого
+// промежуточного "наполовину записанного бинарника" быть не может. Уже
+// запущенный процесс продолжает работать со старым (теперь отвязанным от
+// пути) файлом, пока не перезапустится сам.
+func applyRelease(rel *Release, assetPrefix, assetSuffix string) (appliedVersion string, err error) {
 	assetURL := FindAsset(rel, assetPrefix, assetSuffix)
 	if assetURL == "" {
 		return "", fmt.Errorf("в релизе нет подходящей сборки (%s*%s)", assetPrefix, assetSuffix)

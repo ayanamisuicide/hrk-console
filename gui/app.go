@@ -117,6 +117,10 @@ type UpdateCheckResult struct {
 	Latest    string `json:"latest"`
 	URL       string `json:"url"`
 	Message   string `json:"message"`
+	// Channel — с каким каналом сверялись: фронтенд показывает бейдж и
+	// переключатель канала одним и тем же ответом, не гадая, к какому из
+	// двух опросов он относится, если оба случились почти одновременно.
+	Channel string `json:"channel"`
 }
 
 // App — состояние бэкенда. Один экземпляр на окно, живёт всё время работы
@@ -610,24 +614,45 @@ func (a *App) checkUpdateOnce() {
 
 // CheckForUpdate — вызывается и из checkUpdateOnce при старте окна, и по
 // клику на бейдж в шапке ("менюшка обновлений" — сам бейдж). Логика запроса
-// и сравнения версий общая с TUI, см. selfupdate.Check.
+// и сравнения версий общая с TUI на стабильном канале (selfupdate.Check);
+// канал "dev" — только у GUI, см. selfupdate.CheckChannel.
 func (a *App) CheckForUpdate() UpdateCheckResult {
-	r := selfupdate.Check(version)
+	a.mu.Lock()
+	channel := a.ui.UpdateChannel
+	a.mu.Unlock()
+	r := selfupdate.CheckChannel(channel, version)
 	return UpdateCheckResult{
 		OK: r.OK, Available: r.Available,
 		Current: r.Current, Latest: r.Latest,
-		URL: r.URL, Message: r.Message,
+		URL: r.URL, Message: r.Message, Channel: channel,
 	}
 }
 
-// ApplyUpdate скачивает GUI-бинарник из последнего релиза и подменяет им
-// себя на диске (selfupdate.Apply — общая логика с TUI). Не вызывается сам
-// по себе в фоне — только по явному клику из фронтенда (см. update-status):
-// подмена собственного исполняемого файла необратима без переустановки, и
+// SetUpdateChannel переключает канал самообновления ("" — стабильный,
+// "dev" — сборки с ветки dev) и сразу возвращает свежую проверку по новому
+// каналу — отдельным запросом с фронтенда после переключения было бы то же
+// самое действие, просто в два шага вместо одного.
+func (a *App) SetUpdateChannel(channel string) UpdateCheckResult {
+	a.mu.Lock()
+	a.ui.UpdateChannel = channel
+	ui := a.ui
+	a.mu.Unlock()
+	state.Save(ui)
+	return a.CheckForUpdate()
+}
+
+// ApplyUpdate скачивает GUI-бинарник из последнего релиза выбранного канала
+// и подменяет им себя на диске (selfupdate.ApplyChannel — общая логика с
+// TUI на стабильном канале, dev — только здесь). Не вызывается сам по себе
+// в фоне — только по явному клику из фронтенда (см. update-status): подмена
+// собственного исполняемого файла необратима без переустановки, и
 // молчаливый автозапуск для такого не подходит, в отличие от простой
 // проверки в checkUpdateOnce. Перезапуск (RestartApp) — отдельный шаг.
 func (a *App) ApplyUpdate() ActionResult {
-	applied, err := selfupdate.Apply(guiAssetPrefix, guiAssetSuffix())
+	a.mu.Lock()
+	channel := a.ui.UpdateChannel
+	a.mu.Unlock()
+	applied, err := selfupdate.ApplyChannel(channel, guiAssetPrefix, guiAssetSuffix())
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}
 	}
