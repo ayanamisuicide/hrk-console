@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="400" viewBox="0 0 1200 400"
+     role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">hrk-console</title>
+  <desc id="hero-desc">Слева — необработанный heroku.log, сплошной серый шум от urllib3 и git. Справа — тот же момент в hrk-console: разложено по колонкам, раскрашено по уровню и модулю, повторы схлопнуты в счётчик.</desc>
+
+  <defs>
+    <radialGradient id="glowViolet" cx="10%" cy="-10%" r="65%">
+      <stop offset="0%" stop-color="#7c63ff" stop-opacity="0.38"/>
+      <stop offset="60%" stop-color="#7c63ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowTeal" cx="102%" cy="115%" r="60%">
+      <stop offset="0%" stop-color="#35c9c1" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#35c9c1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bgBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#171129"/>
+      <stop offset="55%" stop-color="#0d0b16"/>
+      <stop offset="100%" stop-color="#0a0910"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="400" rx="28" fill="url(#bgBase)"/>
+  <rect width="1200" height="400" rx="28" fill="url(#glowViolet)"/>
+  <rect width="1200" height="400" rx="28" fill="url(#glowTeal)"/>
+
+  <!-- ── заголовок ─────────────────────────────────────────────── -->
+  <g id="title-block">
+    <text x="56" y="58" font-family="ui-monospace, 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace"
+          font-size="13" letter-spacing="2.4" fill="#786f9a" font-weight="600">TUI + GUI · ЖИВОЙ ЛОГ HEROKU-БОТА</text>
+
+    <text x="54" y="118" font-family="-apple-system, 'Segoe UI', 'Segoe UI Variable', sans-serif"
+          font-size="58" font-weight="800" letter-spacing="-1" fill="#f2eefb">hrk-console</text>
+
+    <text x="56" y="156" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="21" fill="#b3aed0">96% строк живого лога — это [DEBUG] от urllib3, git и кэша.</text>
+    <text x="56" y="184" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="21" fill="#b3aed0">hrk-console схлопывает их в счётчик и оставляет то, что важно.</text>
+
+    <g font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="12.5" font-weight="600">
+      <rect x="56" y="204" width="112" height="26" rx="13" fill="rgba(156,139,255,0.16)" stroke="rgba(156,139,255,0.4)"/>
+      <text x="112" y="221" fill="#c9befa" text-anchor="middle">Bubble Tea</text>
+
+      <rect x="178" y="204" width="76" height="26" rx="13" fill="rgba(156,139,255,0.16)" stroke="rgba(156,139,255,0.4)"/>
+      <text x="216" y="221" fill="#c9befa" text-anchor="middle">Wails</text>
+
+      <rect x="264" y="204" width="98" height="26" rx="13" fill="rgba(116,224,171,0.14)" stroke="rgba(116,224,171,0.38)"/>
+      <text x="313" y="221" fill="#9fead0" text-anchor="middle">SSH-режим</text>
+    </g>
+  </g>
+
+  <!-- ── доказательство: было → стало ─────────────────────────── -->
+  <g id="proof" transform="translate(0 244)">
+
+    <!-- левая карточка: сырой лог -->
+    <g id="raw-card">
+      <rect x="56" y="0" width="484" height="132" rx="14" fill="rgba(10,9,16,0.55)" stroke="rgba(255,255,255,0.08)"/>
+      <circle cx="78" cy="22" r="4" fill="#4a4568"/>
+      <circle cx="92" cy="22" r="4" fill="#4a4568"/>
+      <circle cx="106" cy="22" r="4" fill="#4a4568"/>
+      <text x="126" y="26" font-family="ui-monospace, monospace" font-size="12" fill="#5f5a80">heroku.log — как есть</text>
+
+      <g font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="12.5" fill="#544f70">
+        <text x="76" y="50">[DEBUG] urllib3.connectionpool: Starting new HTTPS connection</text>
+        <text x="76" y="68">[DEBUG] git.cmd: Popen(['git','cat-file','--batch-check'])</text>
+        <text x="76" y="86">[DEBUG] heroku.utils.cache: hit key=media:88176af0</text>
+        <text x="76" y="104">[DEBUG] urllib3.connectionpool: https://api.telegram.org:443 "POST"</text>
+        <text x="76" y="122">[DEBUG] git.cmd: Popen(['git','rev-parse','HEAD'])</text>
+      </g>
+    </g>
+
+    <!-- стрелка-коннектор -->
+    <g id="connector" font-family="ui-monospace, monospace">
+      <text x="592" y="60" font-size="11.5" fill="#786f9a" text-anchor="middle" letter-spacing="0.5">ФИЛЬТР</text>
+      <text x="592" y="76" font-size="11.5" fill="#786f9a" text-anchor="middle" letter-spacing="0.5">+ ×N</text>
+      <path d="M550 66 L636 66" stroke="#9c8bff" stroke-width="2" fill="none"/>
+      <path d="M626 58 L638 66 L626 74" stroke="#9c8bff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- правая карточка: hrk-console -->
+    <g id="clean-card">
+      <rect x="660" y="0" width="484" height="132" rx="14" fill="rgba(23,17,41,0.92)" stroke="rgba(156,139,255,0.35)"/>
+      <circle cx="682" cy="22" r="4" fill="#74e0ab"/>
+      <text x="694" y="26" font-family="ui-monospace, monospace" font-size="12" fill="#9d97bd">hrk-console — тот же момент</text>
+
+      <g font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="12.5">
+        <text x="680" y="50" fill="#786f9a">12:04:01</text>
+        <rect x="748" y="40" width="30" height="15" rx="4" fill="rgba(156,139,255,0.22)"/>
+        <text x="763" y="51" fill="#c9befa" text-anchor="middle" font-size="10.5">INF</text>
+        <circle cx="790" cy="47" r="4" fill="#7fa8ff"/>
+        <text x="800" y="50" fill="#b3aed0">telethon сообщение отправлено</text>
+
+        <text x="680" y="72" fill="#786f9a">12:04:02</text>
+        <rect x="748" y="62" width="30" height="15" rx="4" fill="rgba(255,207,122,0.2)"/>
+        <text x="763" y="73" fill="#ffcf7a" text-anchor="middle" font-size="10.5">WRN</text>
+        <circle cx="790" cy="69" r="4" fill="#ffab7a"/>
+        <text x="800" y="72" fill="#b3aed0">urllib3 retry #2</text>
+        <rect x="1058" y="61" width="40" height="16" rx="8" fill="rgba(255,255,255,0.08)"/>
+        <text x="1078" y="73" fill="#9d97bd" text-anchor="middle" font-size="10">×47</text>
+
+        <text x="680" y="94" fill="#786f9a">12:04:03</text>
+        <rect x="748" y="84" width="30" height="15" rx="4" fill="rgba(255,143,168,0.2)"/>
+        <text x="763" y="95" fill="#ff8fa8" text-anchor="middle" font-size="10.5">ERR</text>
+        <circle cx="790" cy="91" r="4" fill="#7fa8ff"/>
+        <text x="800" y="94" fill="#b3aed0">telethon FloodWaitError 30s</text>
+
+        <text x="680" y="116" fill="#786f9a">12:04:05</text>
+        <rect x="748" y="106" width="30" height="15" rx="4" fill="rgba(156,139,255,0.22)"/>
+        <text x="763" y="117" fill="#c9befa" text-anchor="middle" font-size="10.5">INF</text>
+        <circle cx="790" cy="113" r="4" fill="#5fd3a8"/>
+        <text x="800" y="116" fill="#b3aed0">heroku модуль загружен</text>
+      </g>
+    </g>
+  </g>
+</svg>

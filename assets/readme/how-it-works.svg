@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="230" viewBox="0 0 1200 230"
+     role="img" aria-labelledby="hiw-title hiw-desc">
+  <title id="hiw-title">Как это устроено</title>
+  <desc id="hiw-desc">Бот пишет heroku.log, ничего не зная о консоли. logfeed читает файл, парсит, схлопывает повторы и фильтрует шум. TUI и GUI — две витрины над одним и тем же потоком. GUI может смотреть на heroku.log на другой машине по SSH.</desc>
+
+  <defs>
+    <linearGradient id="hiwBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171129"/>
+      <stop offset="100%" stop-color="#0a0910"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#786f9a"/>
+    </marker>
+    <marker id="arrowDash" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9c8bff"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="230" rx="24" fill="url(#hiwBg)"/>
+
+  <g font-family="ui-monospace, 'JetBrains Mono', monospace">
+
+    <!-- бот -->
+    <rect x="40" y="80" width="150" height="58" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/>
+    <text x="115" y="104" font-size="12" fill="#786f9a" text-anchor="middle">python3 -m</text>
+    <text x="115" y="122" font-size="14" fill="#e6e1f5" text-anchor="middle" font-weight="600">heroku</text>
+
+    <path d="M190 109 L232 109" stroke="#786f9a" stroke-width="1.6" marker-end="url(#arrow)"/>
+    <text x="211" y="98" font-size="10.5" fill="#5f5a80" text-anchor="middle">пишет</text>
+
+    <!-- лог-файл -->
+    <rect x="236" y="80" width="150" height="58" rx="12" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)"/>
+    <text x="311" y="104" font-size="12" fill="#786f9a" text-anchor="middle">файл</text>
+    <text x="311" y="122" font-size="14" fill="#e6e1f5" text-anchor="middle" font-weight="600">heroku.log</text>
+
+    <path d="M386 109 L428 109" stroke="#786f9a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+    <!-- logfeed -->
+    <rect x="432" y="74" width="176" height="70" rx="12" fill="rgba(156,139,255,0.12)" stroke="rgba(156,139,255,0.4)"/>
+    <text x="520" y="98" font-size="14" fill="#c9befa" text-anchor="middle" font-weight="700">logfeed</text>
+    <text x="520" y="118" font-size="11" fill="#a79bd6" text-anchor="middle">парсинг · дедуп ×N</text>
+    <text x="520" y="133" font-size="11" fill="#a79bd6" text-anchor="middle">фильтр шума</text>
+
+    <!-- развилка TUI/GUI -->
+    <path d="M608 92 C 660 92, 640 34, 700 34" stroke="#786f9a" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M608 126 C 660 126, 640 178, 700 178" stroke="#786f9a" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <rect x="704" y="6" width="140" height="56" rx="12" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)"/>
+    <text x="774" y="30" font-size="12" fill="#786f9a" text-anchor="middle">терминал</text>
+    <text x="774" y="48" font-size="14" fill="#e6e1f5" text-anchor="middle" font-weight="600">TUI</text>
+
+    <rect x="704" y="150" width="140" height="56" rx="12" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)"/>
+    <text x="774" y="174" font-size="12" fill="#786f9a" text-anchor="middle">окно</text>
+    <text x="774" y="192" font-size="14" fill="#e6e1f5" text-anchor="middle" font-weight="600">GUI</text>
+
+    <!-- удалённый режим -->
+    <path d="M844 178 L 990 178" stroke="#9c8bff" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrowDash)"/>
+    <text x="917" y="167" font-size="10.5" fill="#9c8bff" text-anchor="middle">по SSH</text>
+
+    <rect x="994" y="150" width="166" height="56" rx="12" fill="rgba(156,139,255,0.1)" stroke="rgba(156,139,255,0.35)" stroke-dasharray="4 3"/>
+    <text x="1077" y="174" font-size="12" fill="#a79bd6" text-anchor="middle">бот на другой</text>
+    <text x="1077" y="192" font-size="13" fill="#c9befa" text-anchor="middle" font-weight="600">машине</text>
+
+    <text x="40" y="30" font-size="12.5" letter-spacing="2" fill="#786f9a" font-weight="600">КАК ЭТО УСТРОЕНО</text>
+    <text x="40" y="200" font-size="12" fill="#5f5a80">Бот ничего не знает о консоли — TUI и GUI лишь читают его лог и управляют процессом извне.</text>
+  </g>
+</svg>
