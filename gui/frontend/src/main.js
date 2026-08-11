@@ -853,11 +853,14 @@ function renderRemoteTarget(remote) {
         connLabel.textContent = remote.host;
         connMeta.textContent = remote.user ? remote.user + ' · подключаюсь…' : 'подключаюсь…';
         connBlock.dataset.state = 'connecting';
+        slConn.dataset.state = 'connecting';
+        slConnLabel.textContent = remote.host;
         btnRemoteDisconnect.style.display = '';
         btnRemoteLabel.textContent = 'Изменить подключение';
         return;
     }
     connBlock.dataset.state = 'local';
+    slConn.dataset.state = 'local';
     btnRemoteDisconnect.style.display = 'none';
     btnRemoteLabel.textContent = 'Удалённый бот';
     // «Локально» на Windows означало бы бота, которого там нет и быть не
@@ -867,9 +870,11 @@ function renderRemoteTarget(remote) {
     if (platform === 'windows') {
         connLabel.textContent = 'не настроено';
         connMeta.textContent = 'укажите машину, где стоит бот';
+        slConnLabel.textContent = 'бот не настроен';
     } else {
         connLabel.textContent = 'локально';
         connMeta.textContent = 'бот на этом компьютере';
+        slConnLabel.textContent = 'локально';
     }
 }
 
