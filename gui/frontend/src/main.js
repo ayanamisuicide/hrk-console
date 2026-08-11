@@ -5,7 +5,10 @@ import {
     StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
     PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
 } from '../wailsjs/go/main/App';
-import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
+import {
+    EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL,
+    WindowMinimise, WindowToggleMaximise, Quit,
+} from '../wailsjs/runtime/runtime';
 
 const LEVEL_DEBUG = 0, LEVEL_INFO = 1, LEVEL_WARNING = 2, LEVEL_ERROR = 3, LEVEL_CRITICAL = 4;
 const BADGES = ['DBG', 'INF', 'WRN', 'ERR', 'CRT'];
@@ -30,6 +33,11 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
   <div class="topbar">
+    <div class="traffic">
+      <button class="traffic-dot c" id="btn-close" title="Закрыть"><span>×</span></button>
+      <button class="traffic-dot m" id="btn-minimise" title="Свернуть"><span>−</span></button>
+      <button class="traffic-dot z" id="btn-maximise" title="Развернуть"><span>+</span></button>
+    </div>
     <button class="drawer-toggle" id="btn-sidebar" title="Показать/скрыть панель (s)">
       <span></span><span></span><span></span>
     </button>
@@ -65,6 +73,7 @@ document.querySelector('#app').innerHTML = `
   <div class="body">
     <div class="sidebar">
       <div class="sidebar-inner">
+      <div class="group">
       <h3>Проблемы</h3>
       <div class="problem-counts">
         <span class="warn">⚠ <span id="count-warn">0</span></span>
@@ -72,16 +81,22 @@ document.querySelector('#app').innerHTML = `
       </div>
       <div id="threshold-badge" class="threshold-badge" style="display:none"></div>
       <div id="filter-badge" class="filter-badge" style="display:none"></div>
+      </div>
 
+      <div class="group">
       <h3>Поток</h3>
       <div class="sparkline" id="sparkline"></div>
 
       <h3>История <span class="h3-total" id="history-total"></span></h3>
       <div class="history-chart" id="history-chart"></div>
+      </div>
 
+      <div class="group">
       <h3>Модули <span class="h3-total" id="module-total"></span></h3>
       <div class="module-list" id="module-list"></div>
+      </div>
 
+      <div class="group">
       <h3>Процесс</h3>
       <div class="proc-block" id="proc-block">—</div>
       <div class="proc-controls">
@@ -91,8 +106,9 @@ document.querySelector('#app').innerHTML = `
       </div>
       <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
       <div class="watchdog-note" id="watchdog-note"></div>
+      </div>
 
-      <div class="conn-section" id="conn-section" style="display:none">
+      <div class="conn-section group" id="conn-section" style="display:none">
         <h3>Подключение</h3>
         <div class="conn-block" id="conn-block" data-state="local">
           <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
@@ -184,6 +200,9 @@ const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
 const body = document.querySelector('.body');
 const btnSidebar = el('btn-sidebar');
+const btnClose = el('btn-close');
+const btnMinimise = el('btn-minimise');
+const btnMaximise = el('btn-maximise');
 const preflightOverlay = el('preflight-overlay');
 const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
@@ -1318,6 +1337,15 @@ function toggleSidebar(force) {
     SetShowSidebar(show);
 }
 btnSidebar.addEventListener('click', () => toggleSidebar());
+
+// Трафик-лайты — единственный способ управлять окном теперь, когда оно
+// Frameless (см. gui/main.go): системной рамки с своими кнопками больше
+// нет. Тот же порядок и те же цвета, что у настоящих macOS-кнопок, но это
+// декоративное соответствие — приложение по-прежнему собирается только под
+// Linux и Windows, а не macOS; это просто выбранный стиль собственной шапки.
+btnClose.addEventListener('click', () => Quit());
+btnMinimise.addEventListener('click', () => WindowMinimise());
+btnMaximise.addEventListener('click', () => WindowToggleMaximise());
 
 function toggleHelp(force) {
     const show = force === undefined ? !helpOverlay.classList.contains('visible') : force;
