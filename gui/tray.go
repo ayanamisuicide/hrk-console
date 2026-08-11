@@ -104,7 +104,7 @@ func (s *sniItem) SecondaryActivate(x, y int32) *dbus.Error {
 // ContextMenu — по спецификации вызывается, если у хоста не получилось
 // самому показать объект Menu. Ничего сверх этого не делаем: обработка
 // правого клика — дело меню (traymenu.go), а не этого метода.
-func (s *sniItem) ContextMenu(x, y int32) *dbus.Error { return nil }
+func (s *sniItem) ContextMenu(x, y int32) *dbus.Error                 { return nil }
 func (s *sniItem) Scroll(delta int32, orientation string) *dbus.Error { return nil }
 
 // registerStatusNotifierItem — вся логика подготовки и регистрации,
