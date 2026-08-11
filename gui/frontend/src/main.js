@@ -38,17 +38,11 @@ document.querySelector('#app').innerHTML = `
       <button class="traffic-dot m" id="btn-minimise" title="Свернуть"><span>−</span></button>
       <button class="traffic-dot z" id="btn-maximise" title="Развернуть"><span>+</span></button>
     </div>
-    <button class="drawer-toggle" id="btn-sidebar" title="Показать/скрыть панель (s)">
-      <span></span><span></span><span></span>
-    </button>
     <div class="brand-group">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
       <button class="update-badge" id="update-badge" data-state="idle" title="Проверить обновления">⟲ обновить</button>
     </div>
-    <span class="status-pill down" id="status-pill">
-      <span class="status-dot"></span><span id="status-text">…</span>
-    </span>
     <div class="spacer"></div>
     <div class="controls">
       <button id="btn-ru" title="Переводить известные шаблонные сообщения на русский (словарь, не живой перевод)">RU</button>
@@ -59,6 +53,25 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
   </div>
+
+  <!-- ── статус-строка: единственное, что видно всегда, без карточек ──── -->
+  <div class="statusline">
+    <span class="sl-seg status-pill down" id="status-pill">
+      <span class="status-dot"></span><span id="status-text">…</span>
+    </span>
+    <span class="sl-seg sl-warn"><span id="sl-warn">0</span></span>
+    <span class="sl-seg sl-err"><span id="sl-err">0</span></span>
+    <span class="sl-seg sl-mods" id="sl-mods"></span>
+    <span id="threshold-badge" class="sl-seg sl-chip" style="display:none"></span>
+    <span id="filter-badge" class="sl-seg sl-chip accent" style="display:none"></span>
+    <div class="sl-spacer"></div>
+    <span class="sl-seg sl-conn" id="sl-conn" style="display:none">
+      <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
+      <span id="sl-conn-label"></span>
+    </span>
+    <button class="sl-seg sl-panel-btn" id="btn-sidebar" title="Панель — статы, модули, подключение (s)">⋯</button>
+  </div>
+
   <div class="update-toast" id="update-toast" style="display:none">
     <span class="ut-icon">↑</span>
     <span class="ut-text">Доступна версия <b id="ut-version"></b></span>
@@ -70,17 +83,28 @@ document.querySelector('#app').innerHTML = `
     <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
     <span class="si-for" id="si-for"></span>
   </div>
+
   <div class="body">
-    <div class="sidebar">
-      <div class="sidebar-inner">
+    <div class="log-pane">
+      <div class="log-scroll" id="log-scroll"></div>
+      <div class="log-footer">
+        <button id="btn-start" class="primary">Start</button>
+        <button id="btn-restart">Restart</button>
+        <button id="btn-stop" class="danger">Stop</button>
+        <input type="text" id="filter-input" placeholder="подстрока для поиска… (re:шаблон — регулярное выражение)" autocomplete="off" />
+      </div>
+    </div>
+  </div>
+
+  <!-- ── панель по требованию: не постоянная колонка, а оверлей (s / ⋯) ── -->
+  <div class="panel-overlay" id="sidebar">
+    <div class="panel-card">
       <div class="group">
       <h3><span class="g-icon warn">!</span>Проблемы</h3>
       <div class="problem-counts">
         <span class="warn">⚠ <span id="count-warn">0</span></span>
         <span class="err">✗ <span id="count-err">0</span></span>
       </div>
-      <div id="threshold-badge" class="threshold-badge" style="display:none"></div>
-      <div id="filter-badge" class="filter-badge" style="display:none"></div>
       </div>
 
       <div class="group">
@@ -99,11 +123,6 @@ document.querySelector('#app').innerHTML = `
       <div class="group">
       <h3><span class="g-icon good">▶</span>Процесс</h3>
       <div class="proc-block" id="proc-block">—</div>
-      <div class="proc-controls">
-        <button id="btn-start" class="primary">Start</button>
-        <button id="btn-restart">Restart</button>
-        <button id="btn-stop" class="danger">Stop</button>
-      </div>
       <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
       <div class="watchdog-note" id="watchdog-note"></div>
       </div>
@@ -119,13 +138,6 @@ document.querySelector('#app').innerHTML = `
       </div>
 
       <div class="gui-version" id="gui-version"></div>
-      </div>
-    </div>
-    <div class="log-pane">
-      <div class="log-scroll" id="log-scroll"></div>
-      <div class="log-footer">
-        <input type="text" id="filter-input" placeholder="подстрока для поиска… (re:шаблон — регулярное выражение)" autocomplete="off" />
-      </div>
     </div>
   </div>
   <div class="help-overlay" id="help-overlay">
@@ -201,6 +213,12 @@ const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
 const body = document.querySelector('.body');
 const btnSidebar = el('btn-sidebar');
+const sidebarOverlay = el('sidebar');
+const slWarn = el('sl-warn');
+const slErr = el('sl-err');
+const slMods = el('sl-mods');
+const slConn = el('sl-conn');
+const slConnLabel = el('sl-conn-label');
 const btnClose = el('btn-close');
 const btnMinimise = el('btn-minimise');
 const btnMaximise = el('btn-maximise');
@@ -791,7 +809,12 @@ PreflightChecks().then(renderPreflightChecks);
 let platform = 'linux';
 
 function showConnSection(remote) {
-    connSection.style.display = (platform === 'windows' || (remote && remote.host)) ? '' : 'none';
+    const show = platform === 'windows' || (remote && remote.host);
+    connSection.style.display = show ? '' : 'none';
+    // Тот же вопрос, что решает connSection ("вообще имеет смысл говорить
+    // о подключении на этой платформе"), но для компактного индикатора в
+    // статус-строке, который виден и без открытой панели.
+    slConn.style.display = show ? '' : 'none';
 }
 
 // Куда подключены — отдельно от того, в каком состоянии подключение:
@@ -830,6 +853,8 @@ function renderConnState(st) {
     connLabel.textContent = CONN_LABEL[st.remoteState] || st.remoteState;
     connMeta.textContent = (uiState.remote && uiState.remote.host ? uiState.remote.host + ' · ' : '') +
         (st.remoteStateNote || '');
+    slConn.dataset.state = st.remoteState;
+    slConnLabel.textContent = (uiState.remote && uiState.remote.host) || CONN_LABEL[st.remoteState] || st.remoteState;
 }
 
 function openRemoteOverlay(remote) {
@@ -985,6 +1010,11 @@ function showBanner(text, alert) {
 function renderCounts() {
     countWarn.textContent = warnCount;
     countErr.textContent = errCount;
+    // Дубли в статус-строке — она видна всегда, панель с count-warn/
+    // count-err выше открывается только по требованию; ⚠/✗ должны
+    // читаться и без открытой панели.
+    slWarn.textContent = '⚠ ' + warnCount;
+    slErr.textContent = '✗ ' + errCount;
 
     if (uiState.minLevel === LEVEL_WARNING) {
         thresholdBadge.style.display = '';
@@ -1017,6 +1047,10 @@ function renderModules() {
         .sort((a, b) => b.count - a.count);
     const peak = stats.length ? stats[0].count : 1;
     moduleTotal.textContent = stats.length ? '· ' + stats.length : '';
+    // Топ-3 в статус-строке — тот же смысл, что раньше нёс весь список в
+    // постоянной колонке (кто вообще шумит), только без постоянно занятого
+    // места: полный список по-прежнему доступен по клику на панель.
+    slMods.textContent = stats.slice(0, 3).map((m) => m.name).join(' · ');
     moduleList.innerHTML = '';
     const active = filterInput.value;
     for (const m of stats) {
@@ -1357,19 +1391,24 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Панель — выдвижной ящик, не display:none: .body.sidebar-hidden двигает
-// одновременно ширину .sidebar и gap самого .body (см. style.css), лог
-// расширяется в освободившееся место тем же плавным движением, а не рывком
-// после того, как панель уже исчезла. Гамбургер в шапке — тот же переход,
-// что и горячая клавиша s, просто ещё один способ его вызвать.
+// Панель — оверлей по требованию, не постоянная колонка: лог всегда на
+// всю ширину, .panel-overlay всплывает поверх него (тот же механизм, что
+// у help-overlay/remote-overlay — .visible на fixed-элементе), а не
+// раздвигает layout своей шириной. showSidebar в состоянии (общем с TUI)
+// теперь значит "оверлей открыт", а не "колонка видна", но само поле и
+// SetShowSidebar на бэкенде не меняются — это по-прежнему один и тот же
+// вопрос "показывать статы сейчас или нет".
 function toggleSidebar(force) {
-    const show = force === undefined ? body.classList.contains('sidebar-hidden') : force;
-    body.classList.toggle('sidebar-hidden', !show);
-    btnSidebar.classList.toggle('open', !show);
+    const show = force === undefined ? !sidebarOverlay.classList.contains('visible') : force;
+    sidebarOverlay.classList.toggle('visible', show);
+    btnSidebar.classList.toggle('open', show);
     uiState.showSidebar = show;
     SetShowSidebar(show);
 }
 btnSidebar.addEventListener('click', () => toggleSidebar());
+sidebarOverlay.addEventListener('click', (e) => {
+    if (e.target === sidebarOverlay) toggleSidebar(false);
+});
 
 // Трафик-лайты — единственный способ управлять окном теперь, когда оно
 // Frameless (см. gui/main.go): системной рамки с своими кнопками больше
@@ -1394,17 +1433,12 @@ btnRu.classList.toggle('toggled', ruEnabled);
 
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
-    if (!uiState.showSidebar) {
-        // Без .sidebar-no-anim панель на старте окна проиграла бы полный
-        // переход "открыта → закрыта" (сначала успевает нарисоваться
-        // открытой, Bootstrap — асинхронный IPC-вызов) вместо того, чтобы
-        // просто быть закрытой сразу, как раньше делал display:none.
-        body.classList.add('sidebar-no-anim');
-        body.classList.add('sidebar-hidden');
-        btnSidebar.classList.add('open');
-        void body.offsetWidth; // форсируем layout, прежде чем снять запрет на анимацию
-        body.classList.remove('sidebar-no-anim');
-    }
+    // Оверлей по умолчанию и так закрыт (базовое состояние .panel-overlay
+    // в CSS, без .visible) — в отличие от прежней раздвижной колонки, тут
+    // не бывает вспышки "нарисовалась открытой и тут же скрылась", открыть
+    // явно нужно только если пользователь сам оставил её открытой в
+    // прошлый раз.
+    if (uiState.showSidebar) toggleSidebar(true);
     btnDebug.classList.toggle('toggled', uiState.showDebug);
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'

@@ -92,13 +92,13 @@ html, body {
    версии), а где-то стоит недёшево на постоянно перерисовываемых больших
    областях (список модулей и лог скроллятся). Blur — необязательное
    украшение сверху, без него всё по-прежнему читаемо. */
-.topbar, .sidebar, .log-pane, .help-card, .preflight-card, .remote-card {
+.topbar, .panel-card, .log-pane, .help-card, .preflight-card, .remote-card {
   background: var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: 18px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 24px 48px rgba(0, 0, 0, .35);
 }
-.sidebar, .log-pane { backdrop-filter: blur(24px) saturate(1.4); }
+.panel-card, .log-pane { backdrop-filter: blur(24px) saturate(1.4); }
 
 /* ─── шапка ─────────────────────────────────────────────────────────── */
 
@@ -315,48 +315,90 @@ button.toggled {
   font-weight: 700;
 }
 
-/* ─── тело: панель + лог, две отдельные стеклянные карточки ──────────── */
-
+/* ─── тело: теперь только лог, во всю ширину ──────────────────────────
+   Раньше здесь была постоянная колонка .sidebar рядом с логом — сама эта
+   идея (лог делит экран с блоком статов навсегда, независимо от того,
+   нужен он в эту секунду или нет) и была тем, что не работало. Статы и
+   управление доступны по требованию через .panel-overlay ниже; тело —
+   просто контейнер лога. */
 .body {
-  flex: 1; display: flex; gap: 12px; min-height: 0;
-  transition: gap .34s cubic-bezier(.3, .74, .3, 1);
+  flex: 1; display: flex; min-height: 0;
 }
 
-/* ─── панель как выдвижной ящик ────────────────────────────────────────
-   .sidebar — сама «дверь»: анимируются её width/padding/opacity, она же
-   overflow:hidden, поэтому исчезающее содержимое обрезается, а не
-   переносится по словам на сжимающейся ширине. .sidebar-inner держит
-   фиксированную ширину и весь исходный флекс-макет (модули по-прежнему
-   растягиваются на свободное место, футер — снизу) — так текст внутри не
-   сплющивается на середине анимации, просто уезжает вместе с обрезающим
-   его краем и гаснет за счёт opacity раньше, чем становится заметно узким.
-   .body.sidebar-hidden управляет обеими сразу — переход бесшовный, лог
-   расширяется в освободившееся место тем же движением, а не рывком после. */
-.sidebar {
-  width: 264px;
-  flex: none;
-  overflow: hidden;
-  opacity: 1;
-  transition: width .34s cubic-bezier(.3, .74, .3, 1), opacity .22s ease;
-}
-.body.sidebar-hidden .sidebar { width: 0; opacity: 0; }
-.body.sidebar-hidden { gap: 0; }
-
-/* Гасит переход на один кадр при старте окна с уже свёрнутой панелью —
-   иначе она успевала бы на мгновение нарисоваться открытой и тут же
-   проиграть полную анимацию закрытия (см. Bootstrap().then в main.js). */
-.body.sidebar-no-anim,
-.body.sidebar-no-anim .sidebar { transition: none !important; }
-
-.sidebar-inner {
-  width: 264px;
-  height: 100%;
-  flex: none;
-  padding: 16px 14px;
-  overflow-y: auto;
+/* ─── статус-строка — единственное, что видно всегда ────────────────────
+   Не карточка, не колонка — тонкая строка сегментов под шапкой: живость
+   бота, счётчики проблем, три самых шумных модуля, состояние подключения.
+   Ровно тот минимум, который нужен боковым зрением, не отвлекаясь от
+   самого лога; всё остальное (полный список модулей, история, настройка
+   подключения) — за кнопкой ⋯ или клавишей s. */
+.statusline {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 8px 18px;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--glass-border);
+  overflow-x: auto;
 }
+.sl-seg {
+  display: flex; align-items: center; gap: 6px;
+  padding-right: 14px; margin-right: 14px;
+  border-right: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+.sl-seg:last-child { border-right: none; }
+.sl-warn { color: var(--warning); font-weight: 700; }
+.sl-err { color: var(--critical); font-weight: 700; }
+.sl-mods { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.sl-chip {
+  padding: 2px 9px; border-radius: 999px; margin-right: 10px;
+  background: rgba(156, 139, 255, .14); color: var(--accent); font-size: 10.5px;
+  border-right: none;
+}
+.sl-chip.accent { word-break: break-all; }
+.sl-conn { gap: 7px; }
+.sl-conn[data-state="online"] .conn-dot { background: var(--good); }
+.sl-conn[data-state="connecting"] .conn-dot { background: var(--warning); animation: pulse 1s ease-in-out infinite; }
+.sl-conn[data-state="offline"] .conn-dot { background: var(--critical); }
+.sl-spacer { flex: 1; }
+.sl-panel-btn {
+  flex: none; width: 24px; height: 24px; padding: 0;
+  border-radius: 7px; border: 1px solid var(--glass-border); background: rgba(255, 255, 255, .04);
+  color: var(--text-muted); font-size: 13px; line-height: 1;
+  transition: background .15s ease, color .15s ease, transform .4s var(--spring);
+}
+.sl-panel-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, .1); }
+.sl-panel-btn.open { color: var(--accent); border-color: rgba(156, 139, 255, .4); background: rgba(156, 139, 255, .14); }
+
+/* ─── панель — оверлей по требованию, не постоянная колонка ─────────────
+   Тот же язык, что у help-overlay/remote-overlay (fixed, .visible,
+   scale+fade), а не раздвижная колонка: лог не пересчитывает свою ширину,
+   когда панель открывается, потому что она больше не часть его layout —
+   просто всплывает поверх, справа, и гаснет туда же. */
+.panel-overlay {
+  position: fixed; inset: 0; z-index: 12;
+  display: flex; justify-content: flex-end; align-items: stretch;
+  background: rgba(5, 5, 10, 0);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .18s ease, background .18s ease, visibility 0s linear .18s;
+}
+.panel-overlay.visible {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  background: rgba(5, 5, 10, .38);
+  transition: opacity .18s var(--spring), background .18s ease;
+}
+.panel-card {
+  width: min(300px, 86vw);
+  padding: 16px 15px;
+  margin: 12px 12px 12px 0;
+  overflow-y: auto;
+  transform: translateX(16px);
+  opacity: 0;
+  transition: transform .3s var(--settle), opacity .2s ease;
+}
+.panel-overlay.visible .panel-card { transform: translateX(0); opacity: 1; transition: transform .38s var(--spring), opacity .2s ease; }
 
 /* ─── .group — inset-grouped карточка, как секции в System Settings ───────
    Раньше секции панели (Проблемы/Поток/Модули/Процесс/Подключение) были
@@ -374,7 +416,7 @@ button.toggled {
 }
 .group:last-of-type { margin-bottom: 0; }
 
-.sidebar-inner h3 {
+.panel-card h3 {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -385,8 +427,6 @@ button.toggled {
   font-weight: 700;
   text-transform: uppercase;
 }
-.group + .group h3:first-child,
-.group h3:first-child { margin-top: 0; }
 
 /* g-icon — цветной значок секции, тот же приём, что у иконок слева от
    строк в System Settings (Wi-Fi, Bluetooth и т.д.): не просто текстовый
@@ -406,27 +446,6 @@ button.toggled {
 .g-icon.good { background: linear-gradient(180deg, #a6f0c6, var(--good)); color: #06301c; }
 .g-icon.accent { background: linear-gradient(180deg, var(--accent), var(--accent-strong)); }
 .g-icon.mod { background: linear-gradient(180deg, #8fc2ff, #4f8fe0); }
-
-/* Гамбургер в шапке — постоянно видимый способ вызвать ящик обратно, а не
-   только скрытая горячая клавиша (s), про которую нужно было знать заранее.
-   Три полоски складываются в крестик открытого состояния — тот же приём,
-   что у большинства мобильных меню, читается без подписи где угодно. */
-.drawer-toggle {
-  flex: none;
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  gap: 4px;
-  width: 30px; height: 30px; padding: 0;
-  -webkit-app-region: no-drag;
-}
-.drawer-toggle span {
-  width: 15px; height: 2px; border-radius: 2px;
-  background: var(--text-secondary);
-  transition: transform .25s cubic-bezier(.3, .7, .3, 1.2), opacity .2s ease, width .2s ease;
-}
-.drawer-toggle:hover span { background: var(--text-primary); }
-.drawer-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
-.drawer-toggle.open span:nth-child(2) { opacity: 0; width: 0; }
-.drawer-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
 .problem-counts { display: flex; gap: 16px; font-size: 16px; font-weight: 700; }
 .problem-counts .warn { color: var(--warning); }
