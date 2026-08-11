@@ -41,6 +41,16 @@ var DevListURL = "https://api.github.com/repos/ayanamisuicide/hrk-console/releas
 // или старее.
 var CleanVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
+// DevVersionRe — "dev-<sha>", формат тега и версии dev-канала (см.
+// .github/workflows/dev-release.yml). Отдельно от CleanVersionRe: это НЕ
+// безымянная "нечего сравнивать" сборка вроде просто "dev" или git describe
+// с хвостом коммитов — у неё есть чёткая идентичность, и когда пользователь
+// явно переключился на канал stable, сидя на такой сборке, честный ответ
+// "доступнее свежее" (сам факт, что тег не vX.Y.Z, это и значит), а не
+// молчание, которое CheckChannel/Check держат для случая, когда сравнивать
+// действительно не с чем.
+var DevVersionRe = regexp.MustCompile(`^dev-[0-9a-f]+$`)
+
 // Release/Asset — часть ответа GitHub API "последний релиз", которая
 // нужна: тег, страница релиза и ассеты (среди них ищем архив нужного
 // бинарника).
@@ -182,14 +192,36 @@ func Check(current string) CheckResult {
 // тег релиза, — собранный из коммита dev-aeaba90 бинарник и релиз с тегом
 // dev-aeaba90 совпадают буквально, без всякого парсинга версий.
 func CheckChannel(channel, current string) CheckResult {
-	if channel != "dev" {
+	if channel == "dev" {
+		rel, err := fetchLatestDev()
+		if err != nil {
+			return CheckResult{Current: current, Message: err.Error()}
+		}
+		if rel.TagName == current {
+			return CheckResult{OK: true, Current: current, Latest: rel.TagName}
+		}
+		return CheckResult{OK: true, Available: true, Current: current, Latest: rel.TagName, URL: rel.HTMLURL}
+	}
+
+	// Канал stable. Полностью безымянную сборку (просто "dev", git describe
+	// с хвостом коммитов) Check() честно отказывается сравнивать — это
+	// поведение остаётся как есть, TUI и hkc update от него зависят
+	// (см. TestCheckSilentOnDevBuild). Но сборка dev-канала — не такая:
+	// у неё есть настоящий тег, и раз она не vX.Y.Z, то определённо не
+	// совпадает ни с одним стабильным релизом — откат на stable должен
+	// суметь это увидеть, а не молчать вместе с действительно безымянными
+	// сборками.
+	if !CleanVersionRe.MatchString(current) && !DevVersionRe.MatchString(current) {
 		return Check(current)
 	}
-	rel, err := fetchLatestDev()
+	rel, err := FetchLatest()
 	if err != nil {
 		return CheckResult{Current: current, Message: err.Error()}
 	}
-	if rel.TagName == current {
+	if !CleanVersionRe.MatchString(rel.TagName) {
+		return CheckResult{Current: current, Message: "релиз на GitHub в неожиданном формате версии"}
+	}
+	if CleanVersionRe.MatchString(current) && !VersionLess(current, rel.TagName) {
 		return CheckResult{OK: true, Current: current, Latest: rel.TagName}
 	}
 	return CheckResult{OK: true, Available: true, Current: current, Latest: rel.TagName, URL: rel.HTMLURL}

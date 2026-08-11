@@ -158,6 +158,38 @@ func TestCheckReportsAvailableAndUpToDate(t *testing.T) {
 	}
 }
 
+// Баг: переключение с dev-канала обратно на stable, сидя на честной
+// dev-тег сборке (dev-<sha>), не должно молчать так же, как безымянная
+// "dev"-сборка — иначе откат на stable невозможен вообще, кнопка
+// "обновить" никогда не появляется.
+func TestCheckChannelDevBuildSeesStableUpdate(t *testing.T) {
+	origURL := CheckURL
+	defer func() { CheckURL = origURL }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v1.13.0","html_url":"https://example/release"}`))
+	}))
+	defer srv.Close()
+	CheckURL = srv.URL
+
+	res := CheckChannel("", "dev-aeaba90")
+	if !res.OK || !res.Available || res.Latest != "v1.13.0" {
+		t.Errorf("CheckChannel(\"\", \"dev-aeaba90\") = %+v, ожидался available=true latest=v1.13.0", res)
+	}
+}
+
+// Безымянная сборка (буквально "dev", без тега вовсе) на stable-канале
+// по-прежнему молчит содержательно, а не врёт про доступное обновление —
+// DevVersionRe не должен ловить то, что ловил CleanVersionRe как "нечего
+// сравнивать".
+func TestCheckChannelUnnamedDevBuildStillSilent(t *testing.T) {
+	res := CheckChannel("", "dev")
+	if res.OK {
+		t.Errorf("CheckChannel(\"\", \"dev\") = %+v, ожидался OK=false — сравнивать не с чем", res)
+	}
+}
+
 func TestCheckReportsNetworkError(t *testing.T) {
 	origURL := CheckURL
 	defer func() { CheckURL = origURL }()
