@@ -14,10 +14,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -59,6 +62,13 @@ type Release struct {
 	HTMLURL    string  `json:"html_url"`
 	Assets     []Asset `json:"assets"`
 	Prerelease bool    `json:"prerelease"`
+	// PublishedAt — единственный признак, по которому две сборки из РАЗНЫХ
+	// каналов вообще сравнимы. Внутри канала сравнивают версии (VersionLess
+	// для stable, равенство тегов для dev), но между каналами это
+	// невозможно в принципе: в "dev-f0b43bd" номера нет, есть хеш коммита,
+	// а у хеша нет порядка. Сказать "что из этого вышло позже" может только
+	// время публикации.
+	PublishedAt time.Time `json:"published_at"`
 }
 
 type Asset struct {
@@ -227,13 +237,137 @@ func CheckChannel(channel, current string) CheckResult {
 	return CheckResult{OK: true, Available: true, Current: current, Latest: rel.TagName, URL: rel.HTMLURL}
 }
 
+// ─── опрос обоих каналов сразу ───────────────────────────────────────────
+
+// ChannelState — что лежит в одном канале, без вердикта «новее/старее».
+// Вердикт внутри канала даёт CheckChannel; здесь сознательно только факты
+// (тег и когда он опубликован), потому что предъявлять их предстоит рядом,
+// а между каналами сравнивать нечего (см. Release.PublishedAt). IsCurrent
+// отвечает на единственный вопрос, ответ на который честен всегда: не на
+// этой ли сборке пользователь сидит прямо сейчас.
+type ChannelState struct {
+	Channel     string    `json:"channel"` // "" — stable, "dev" — dev
+	OK          bool      `json:"ok"`      // запрос отработал
+	Tag         string    `json:"tag"`
+	URL         string    `json:"url"`
+	PublishedAt time.Time `json:"publishedAt"`
+	IsCurrent   bool      `json:"isCurrent"`
+	Message     string    `json:"message"` // чем кончилось, если !OK
+}
+
+// CheckBoth опрашивает stable и dev разом и отдаёт оба состояния как есть.
+//
+// Два запроса идут параллельно: они независимы, а таймаут у каждого 10с —
+// последовательно худший случай складывался бы в двадцать, и экран, который
+// это показывает, столько ждать не должен. Осечка одного канала не гасит
+// второй: у каждого свой OK и своё Message.
+func CheckBoth(current string) (stable, dev ChannelState) {
+	stable.Channel = ""
+	dev.Channel = "dev"
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		rel, err := FetchLatest()
+		if err != nil {
+			stable.Message = err.Error()
+			return
+		}
+		stable.OK = true
+		stable.Tag, stable.URL, stable.PublishedAt = rel.TagName, rel.HTMLURL, rel.PublishedAt
+		stable.IsCurrent = rel.TagName == current
+	}()
+
+	go func() {
+		defer wg.Done()
+		rel, err := fetchLatestDev()
+		if err != nil {
+			dev.Message = err.Error()
+			return
+		}
+		dev.OK = true
+		dev.Tag, dev.URL, dev.PublishedAt = rel.TagName, rel.HTMLURL, rel.PublishedAt
+		dev.IsCurrent = rel.TagName == current
+	}()
+
+	wg.Wait()
+	return stable, dev
+}
+
+// ─── отчёт о ходе обновления ─────────────────────────────────────────────
+
+// Stage — шаг обновления. Не выдуманная последовательность «для красоты»:
+// это ровно то, что applyRelease и так делает по порядку, просто до сих пор
+// молча. Единственный шаг, у которого есть осмысленное «сколько», —
+// StageDownload: у остальных нет ни объёма, ни длительности, которую стоило
+// бы показывать процентами.
+type Stage string
+
+const (
+	StageQuery    Stage = "query"    // спрашиваем GitHub про релиз
+	StageFind     Stage = "find"     // ищем в релизе нужный архив
+	StageDownload Stage = "download" // качаем архив
+	StageUnpack   Stage = "unpack"   // gzip + tar, достаём бинарник
+	StageSwap     Stage = "swap"     // подмена на диске (или откладывание на Windows)
+	StageDone     Stage = "done"
+)
+
+// Progress — одно сообщение о ходе. Done отделяет «шаг начался» от «шаг
+// закончился»: без этого получатель не мог бы отличить идущее скачивание от
+// завершившегося, кроме как по совпадению Bytes и Total, которого может и
+// не случиться (Total = 0, если сервер не прислал Content-Length).
+type Progress struct {
+	Stage Stage  `json:"stage"`
+	Done  bool   `json:"done"`
+	Bytes int64  `json:"bytes"` // только StageDownload
+	Total int64  `json:"total"` // 0 — размер неизвестен
+	Note  string `json:"note"`  // тег, имя архива, путь — что уместно шагу
+}
+
+// ProgressFunc вызывается синхронно из горутины, которая делает само
+// обновление. Может быть nil — тогда всё работает ровно как раньше.
+type ProgressFunc func(Progress)
+
+func (f ProgressFunc) emit(p Progress) {
+	if f != nil {
+		f(p)
+	}
+}
+
+// countingReader считает прочитанное и дёргает колбэк, но не чаще раза в
+// progressTick. Без ограничения по времени колбэк звался бы на каждый Read
+// (десятки тысяч раз на пятимегабайтном архиве), и на той стороне это
+// превратилось бы в такой же поток событий в webview, каким когда-то был
+// построчный вывод лога.
+type countingReader struct {
+	r      io.Reader
+	total  int64
+	n      int64
+	on     ProgressFunc
+	lastAt time.Time
+}
+
+const progressTick = 100 * time.Millisecond
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if now := time.Now(); now.Sub(c.lastAt) >= progressTick {
+		c.lastAt = now
+		c.on.emit(Progress{Stage: StageDownload, Bytes: c.n, Total: c.total})
+	}
+	return n, err
+}
+
 // downloadBinary скачивает архив релиза и достаёт из него единственный
 // файл — сам бинарник: release.yml кладёт в архив только его, без вложенных
 // путей (tar -czf ... -C bin hkc / -C build/bin hrk-console-gui), так что
 // первый же обычный файл в архиве и есть искомое, искать по имени незачем.
 // Возвращает путь к временному файлу с правом на исполнение — вызывающий
 // обязан его удалить.
-func downloadBinary(url string) (string, error) {
+func downloadBinary(url string, onProgress ProgressFunc) (string, error) {
 	client := &http.Client{Timeout: 2 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -244,7 +378,15 @@ func downloadBinary(url string) (string, error) {
 		return "", fmt.Errorf("скачивание вернуло %d", resp.StatusCode)
 	}
 
-	gz, err := gzip.NewReader(resp.Body)
+	// Счётчик стоит ДО gzip: считать надо то, что реально едет по сети
+	// (сжатый поток, чей объём и обещан в Content-Length), а не то, во что
+	// оно разворачивается, — иначе «скачано» перевалило бы за «всего».
+	body := io.Reader(resp.Body)
+	if onProgress != nil {
+		body = &countingReader{r: resp.Body, total: resp.ContentLength, on: onProgress, lastAt: time.Now()}
+	}
+
+	gz, err := gzip.NewReader(body)
 	if err != nil {
 		return "", err
 	}
@@ -276,6 +418,18 @@ func downloadBinary(url string) (string, error) {
 		}
 		break
 	}
+	// Скачивание и распаковка идут одним потоком: tar тянет из gzip, gzip —
+	// из сети, и «скачано» перестаёт расти ровно тогда, когда распаковано
+	// последнее. Поэтому оба шага закрываются здесь, после io.Copy, а не
+	// поодиночке где-то выше — иначе «скачано» отрапортовало бы о готовности,
+	// пока байты ещё едут.
+	if c, ok := body.(*countingReader); ok {
+		onProgress.emit(Progress{Stage: StageDownload, Done: true, Bytes: c.n, Total: c.total})
+	} else {
+		onProgress.emit(Progress{Stage: StageDownload, Done: true})
+	}
+	onProgress.emit(Progress{Stage: StageUnpack, Done: true, Note: filepath.Base(out.Name())})
+
 	if err := out.Chmod(0o755); err != nil {
 		os.Remove(out.Name())
 		return "", err
@@ -305,25 +459,35 @@ func copyFile(src, dst string) error {
 // запущенный процесс продолжает работать со старым (теперь отвязанным от
 // пути) файлом, пока не перезапустится сам.
 func Apply(assetPrefix, assetSuffix string) (appliedVersion string, err error) {
-	rel, err := FetchLatest()
-	if err != nil {
-		return "", err
-	}
-	return applyRelease(rel, assetPrefix, assetSuffix)
+	return ApplyChannelProgress("", assetPrefix, assetSuffix, nil)
 }
 
 // ApplyChannel — то же, что Apply, но качает из dev-канала вместо
 // стабильного, когда channel == "dev". Сама подмена на диске — applyRelease,
 // общая для обоих каналов: релиз найден, дальше не важно, откуда он.
 func ApplyChannel(channel, assetPrefix, assetSuffix string) (appliedVersion string, err error) {
-	if channel != "dev" {
-		return Apply(assetPrefix, assetSuffix)
+	return ApplyChannelProgress(channel, assetPrefix, assetSuffix, nil)
+}
+
+// ApplyChannelProgress — то же самое, но с отчётом о ходе. Отдельная
+// функция, а не новый аргумент у ApplyChannel, ровно потому, что отчёт
+// нужен одному вызывающему из трёх: GUI рисует по нему окно обновления,
+// а `hkc update` и TUI обходятся текстовой строкой в конце. Ломать ради
+// этого их сигнатуры было бы платой за чужую нужду; onProgress == nil
+// возвращает прежнее поведение до последнего вызова.
+func ApplyChannelProgress(channel, assetPrefix, assetSuffix string, onProgress ProgressFunc) (appliedVersion string, err error) {
+	onProgress.emit(Progress{Stage: StageQuery})
+	var rel *Release
+	if channel == "dev" {
+		rel, err = fetchLatestDev()
+	} else {
+		rel, err = FetchLatest()
 	}
-	rel, err := fetchLatestDev()
 	if err != nil {
 		return "", err
 	}
-	return applyRelease(rel, assetPrefix, assetSuffix)
+	onProgress.emit(Progress{Stage: StageQuery, Done: true, Note: rel.TagName})
+	return applyRelease(rel, assetPrefix, assetSuffix, onProgress)
 }
 
 // applyRelease скачивает assetPrefix*assetSuffix из уже найденного релиза
@@ -335,13 +499,16 @@ func ApplyChannel(channel, assetPrefix, assetSuffix string) (appliedVersion stri
 // промежуточного "наполовину записанного бинарника" быть не может. Уже
 // запущенный процесс продолжает работать со старым (теперь отвязанным от
 // пути) файлом, пока не перезапустится сам.
-func applyRelease(rel *Release, assetPrefix, assetSuffix string) (appliedVersion string, err error) {
+func applyRelease(rel *Release, assetPrefix, assetSuffix string, onProgress ProgressFunc) (appliedVersion string, err error) {
+	onProgress.emit(Progress{Stage: StageFind})
 	assetURL := FindAsset(rel, assetPrefix, assetSuffix)
 	if assetURL == "" {
 		return "", fmt.Errorf("в релизе нет подходящей сборки (%s*%s)", assetPrefix, assetSuffix)
 	}
+	onProgress.emit(Progress{Stage: StageFind, Done: true, Note: path.Base(assetURL)})
 
-	tmpBinary, err := downloadBinary(assetURL)
+	onProgress.emit(Progress{Stage: StageDownload})
+	tmpBinary, err := downloadBinary(assetURL, onProgress)
 	if err != nil {
 		return "", err
 	}
@@ -352,6 +519,7 @@ func applyRelease(rel *Release, assetPrefix, assetSuffix string) (appliedVersion
 		return "", err
 	}
 
+	onProgress.emit(Progress{Stage: StageSwap})
 	if runtime.GOOS == "windows" {
 		// Windows не даёт перезаписать (даже переименовать поверх) файл,
 		// который прямо сейчас выполняется как этот процесс, — файл образа
@@ -363,6 +531,11 @@ func applyRelease(rel *Release, assetPrefix, assetSuffix string) (appliedVersion
 		if err := copyFile(tmpBinary, StagedPath(exe)); err != nil {
 			return "", err
 		}
+		// Note отличает отложенную подмену от состоявшейся: на Windows файл
+		// ляжет на место только после выхода процесса, и окну есть смысл
+		// сказать об этом прямо, а не рапортовать "подменено".
+		onProgress.emit(Progress{Stage: StageSwap, Done: true, Note: "отложено до перезапуска"})
+		onProgress.emit(Progress{Stage: StageDone, Done: true, Note: rel.TagName})
 		return rel.TagName, nil
 	}
 
@@ -374,6 +547,8 @@ func applyRelease(rel *Release, assetPrefix, assetSuffix string) (appliedVersion
 		os.Remove(staged)
 		return "", err
 	}
+	onProgress.emit(Progress{Stage: StageSwap, Done: true, Note: exe})
+	onProgress.emit(Progress{Stage: StageDone, Done: true, Note: rel.TagName})
 	return rel.TagName, nil
 }
 

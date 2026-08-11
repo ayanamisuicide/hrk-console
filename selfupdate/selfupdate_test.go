@@ -90,7 +90,7 @@ func TestDownloadBinaryExtractsExecutable(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	path, err := downloadBinary(srv.URL)
+	path, err := downloadBinary(srv.URL, nil)
 	if err != nil {
 		t.Fatalf("downloadBinary: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDownloadBinaryFailsOnHTTPError(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
-	if _, err := downloadBinary(srv.URL); err == nil {
+	if _, err := downloadBinary(srv.URL, nil); err == nil {
 		t.Error("ожидалась ошибка на HTTP 404")
 	}
 }
@@ -201,5 +201,143 @@ func TestCheckReportsNetworkError(t *testing.T) {
 	}
 	if res.Message == "" {
 		t.Error("Check при сетевой ошибке должен объяснить, что пошло не так")
+	}
+}
+
+// tarGzWith собирает настоящий tar.gz с одним файлом внутри — тот же приём,
+// что и в TestDownloadBinaryExtractsExecutable, вынесенный ради тестов
+// отчёта о ходе, которым нужен архив покрупнее.
+func tarGzWith(t *testing.T, content []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "hkc", Mode: 0o755, Size: int64(len(content))}); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("подготовка архива: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// Отчёт о ходе обязан закрывать оба потоковых шага (скачивание и распаковка)
+// и не закрывать скачивание раньше времени: tar тянет из gzip, а тот из
+// сети, поэтому "скачано" перестаёт расти только после io.Copy. Регрессия,
+// которую это ловит, — эмит StageDownload/Done сразу после gzip.NewReader,
+// когда байты ещё едут.
+func TestDownloadBinaryReportsProgress(t *testing.T) {
+	archive := tarGzWith(t, bytes.Repeat([]byte("x"), 512*1024))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(archive)
+	}))
+	defer srv.Close()
+
+	var got []Progress
+	path, err := downloadBinary(srv.URL, func(p Progress) { got = append(got, p) })
+	if err != nil {
+		t.Fatalf("downloadBinary: %v", err)
+	}
+	defer os.Remove(path)
+
+	var downloadDone, unpackDone bool
+	var maxBytes int64
+	for _, p := range got {
+		if p.Stage == StageDownload {
+			if p.Bytes > maxBytes {
+				maxBytes = p.Bytes
+			}
+			if p.Done {
+				downloadDone = true
+				if unpackDone {
+					t.Error("скачивание закрылось после распаковки — порядок шагов перепутан")
+				}
+			}
+		}
+		if p.Stage == StageUnpack && p.Done {
+			unpackDone = true
+			if !downloadDone {
+				t.Error("распаковка закрылась раньше скачивания")
+			}
+		}
+	}
+	if !downloadDone {
+		t.Error("шаг скачивания не был закрыт")
+	}
+	if !unpackDone {
+		t.Error("шаг распаковки не был закрыт")
+	}
+	if maxBytes != int64(len(archive)) {
+		t.Errorf("насчитано %d байт, в архиве %d", maxBytes, len(archive))
+	}
+}
+
+// nil-колбэк обязан оставлять прежнее поведение нетронутым: Apply/
+// ApplyChannel зовут ApplyChannelProgress именно так, и TUI с `hkc update`
+// зависят от того, что ничего не изменилось.
+func TestDownloadBinaryWithoutProgressStillWorks(t *testing.T) {
+	want := []byte("fake-binary-content")
+	archive := tarGzWith(t, want)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(archive)
+	}))
+	defer srv.Close()
+
+	path, err := downloadBinary(srv.URL, nil)
+	if err != nil {
+		t.Fatalf("downloadBinary: %v", err)
+	}
+	defer os.Remove(path)
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("содержимое %q, ожидалось %q", got, want)
+	}
+}
+
+// CheckBoth опрашивает каналы независимо: осечка одного не должна гасить
+// второй — иначе недоступность одного адреса делала бы экран обновлений
+// пустым вместо того, чтобы показать то, что всё-таки удалось узнать.
+func TestCheckBothKeepsChannelsIndependent(t *testing.T) {
+	stableSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"tag_name":"v1.14.0","html_url":"https://example/stable","published_at":"2026-08-11T06:49:52Z"}`))
+	}))
+	defer stableSrv.Close()
+	devSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer devSrv.Close()
+
+	oldCheck, oldList := CheckURL, DevListURL
+	CheckURL, DevListURL = stableSrv.URL, devSrv.URL
+	defer func() { CheckURL, DevListURL = oldCheck, oldList }()
+
+	stable, dev := CheckBoth("v1.14.0")
+
+	if !stable.OK {
+		t.Fatalf("stable должен был отработать, получено: %q", stable.Message)
+	}
+	if stable.Tag != "v1.14.0" {
+		t.Errorf("stable.Tag = %q, ожидался v1.14.0", stable.Tag)
+	}
+	if !stable.IsCurrent {
+		t.Error("stable.IsCurrent должен быть true — текущая версия совпадает с тегом")
+	}
+	if stable.PublishedAt.IsZero() {
+		t.Error("published_at не разобран — без него каналы нечем сравнивать между собой")
+	}
+	if dev.OK {
+		t.Error("dev не должен был отработать — сервер отвечает 500")
+	}
+	if dev.Message == "" {
+		t.Error("dev.Message пуст — причина осечки потерялась")
 	}
 }

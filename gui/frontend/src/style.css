@@ -716,6 +716,136 @@ mark.hl {
 }
 .preflight-continue:hover { background: rgba(232, 105, 127, .12); color: var(--critical); }
 
+/* ─── экран обновлений и ход обновления ─────────────────────────────────
+   Тот же язык, что у экрана проверок (та же карточка, та же шапка) — это
+   продолжение одной и той же процедуры запуска, а не отдельное приложение.
+   Здесь единственное место во всём окне, где анимация идёт постоянно, и
+   она заслужена: обновление — процесс с направлением и концом, ровно как
+   спиннер проверок. Всё, что крутилось в пустоту при бездействии, убрано
+   ещё в 1.14.0, и это ему не противоречит. */
+.gate-overlay {
+  position: fixed; inset: 0; z-index: 22;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5, 5, 8, .72);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .18s ease, visibility 0s linear .18s;
+}
+.gate-overlay.visible {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity .18s ease;
+}
+.gate-card {
+  width: min(480px, 90vw);
+  padding: 24px 28px 20px;
+  background: var(--bg-float);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+  transform: translateY(8px);
+  transition: transform .2s var(--gate-ease, cubic-bezier(.2, .8, .3, 1.2));
+}
+.gate-overlay.visible .gate-card { transform: none; }
+
+.gate-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.gate-row {
+  display: grid;
+  grid-template-columns: 58px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.gate-chan {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 0; color: var(--text-muted);
+}
+.gate-chan.dev { color: var(--warning); }
+.gate-tag { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); }
+.gate-when { font-size: 11px; color: var(--text-muted); }
+.gate-when.bad { color: var(--critical); }
+.gate-act .is-current { font-size: 11px; color: var(--good); }
+.gate-act button { padding: 4px 12px; font-size: 11px; }
+
+button.gate-primary {
+  color: #14101f;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button.gate-primary:hover { background: #9d90f7; border-color: #9d90f7; color: #14101f; }
+
+.gate-skip {
+  display: block; width: 100%;
+  padding: 6px 14px; font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ─── шаги обновления ─────────────────────────────────────────────────── */
+
+.up-steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.up-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12px;
+}
+.up-label { color: var(--text-muted); transition: color .2s ease; }
+.up-note {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Точка шага: пустой контур — не начинали, вращающаяся дуга — идёт прямо
+   сейчас, заливка — сделано. Тот же словарь, что у .pf-dot в проверках. */
+.up-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--text-muted); opacity: .35;
+  transition: opacity .2s ease, border-color .2s ease, background-color .2s ease;
+}
+.up-row[data-state="running"] .up-dot {
+  opacity: 1;
+  border-color: rgba(139, 124, 245, .25);
+  border-top-color: var(--accent);
+  animation: pf-spin .7s linear infinite;
+}
+.up-row[data-state="running"] .up-label { color: var(--text-primary); }
+.up-row[data-state="done"] .up-dot { opacity: 1; border-color: var(--good); background: var(--good); }
+.up-row[data-state="done"] .up-label { color: var(--text-secondary); }
+.up-row[data-state="failed"] .up-dot { opacity: 1; border-color: var(--critical); background: var(--critical); animation: none; }
+.up-row[data-state="failed"] .up-label { color: var(--critical); }
+
+/* Полоса скачивания — единственный шаг с осмысленным «сколько». Занимает
+   всю ширину под своей строкой, а не втискивается в неё: цифры рядом с
+   названием шага, полоса под ними. */
+.up-bar {
+  grid-column: 1 / -1;
+  height: 2px;
+  margin-top: 7px;
+  background: rgba(255, 255, 255, .08);
+  overflow: hidden;
+  display: none;
+}
+.up-row[data-stage="download"][data-state="running"] .up-bar,
+.up-row[data-stage="download"][data-state="done"] .up-bar { display: block; }
+.up-bar-fill {
+  display: block; height: 100%; width: 0%;
+  background: var(--accent);
+  transition: width .2s linear;
+}
+/* Скачивание — единственное место, где ширина полосы движется сама по
+   потоку данных; линейный переход, а не пружина: рывок в конце изображал
+   бы ускорение, которого в сети не было. */
+
+.up-foot { min-height: 16px; margin-top: 12px; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.up-foot.ok { color: var(--good); }
+.up-foot.bad { color: var(--critical); overflow-wrap: anywhere; }
+
+#up-restart { display: block; width: 100%; margin-top: 12px; padding: 7px 14px; }
+
 /* полоса прокрутки — тонкая, не спорит с содержимым */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }

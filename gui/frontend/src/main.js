@@ -2,8 +2,9 @@ import './style.css';
 
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog,
-    StartBot, StopBot, RestartBot, ClearLog, ApplyUpdate, RestartApp, CheckForUpdate,
+    StartBot, StopBot, RestartBot, ClearLog, RestartApp, CheckForUpdate,
     SetUpdateChannel, PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
+    CheckChannels, ApplyUpdateFrom,
 } from '../wailsjs/go/main/App';
 import {
     EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL,
@@ -30,6 +31,36 @@ document.querySelector('#app').innerHTML = `
         <div class="preflight-status" id="preflight-status">запускаю проверки…</div>
       </div>
       <button class="preflight-continue" id="preflight-continue" style="display:none">продолжить всё равно</button>
+    </div>
+  </div>
+
+  <!-- ── экран обновлений: сразу после проверок, до самого окна ──────────
+       Показывается только если есть что предложить (ChannelsResult.Offer).
+       Два канала рядом, каждый со своей датой публикации — сравнить их по
+       номеру нельзя (в dev-теге хеш коммита, у хеша нет порядка), поэтому
+       здесь только факты, а выбор за человеком. -->
+  <div class="gate-overlay" id="update-gate">
+    <div class="gate-card">
+      <div class="preflight-head">
+        <span class="preflight-brand">ОБНОВЛЕНИЯ</span>
+        <span class="preflight-sub" id="gate-current"></span>
+      </div>
+      <div class="gate-list" id="gate-list"></div>
+      <button class="gate-skip" id="gate-skip">продолжить без обновления</button>
+    </div>
+  </div>
+
+  <!-- ── ход обновления: шаги, которые selfupdate реально делает ───────── -->
+  <div class="gate-overlay" id="update-progress">
+    <div class="gate-card">
+      <div class="preflight-head">
+        <span class="preflight-brand">ОБНОВЛЕНИЕ</span>
+        <span class="preflight-sub" id="up-target"></span>
+      </div>
+      <div class="up-steps" id="up-steps"></div>
+      <div class="up-foot" id="up-foot"></div>
+      <button class="preflight-continue" id="up-close" style="display:none">закрыть</button>
+      <button class="gate-primary" id="up-restart" style="display:none">перезапустить сейчас</button>
     </div>
   </div>
   <div class="topbar">
@@ -188,6 +219,16 @@ const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
+const updateGate = el('update-gate');
+const gateList = el('gate-list');
+const gateCurrent = el('gate-current');
+const gateSkip = el('gate-skip');
+const updateProgress = el('update-progress');
+const upTarget = el('up-target');
+const upSteps = el('up-steps');
+const upFoot = el('up-foot');
+const upClose = el('up-close');
+const upRestart = el('up-restart');
 const streamIssueReason = el('si-reason');
 const streamIssueFor = el('si-for');
 const remoteOverlay = el('remote-overlay');
@@ -551,16 +592,16 @@ function hideUpdateToast() {
 // подменить на диске → предложить перезапустить), запускать который может
 // любой из двух — тост просто более заметный способ добраться до того же
 // самого действия.
+// startUpdate — путь «бейдж в шапке / тост». Ведёт в то же самое окно с
+// шагами, что и экран обновлений при старте: одно действие должно выглядеть
+// одинаково, откуда бы его ни запустили, и «⟳ обновляю…» одной строкой в
+// бейдже было ровно тем непрозрачным ожиданием, ради которого окно и
+// заводилось.
 async function startUpdate() {
     hideUpdateToast();
     setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
-    const res = await ApplyUpdate();
-    if (res.ok) {
-        setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
-    } else {
-        setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
-        showBanner(`✗  обновление: ${res.message}`, true);
-    }
+    const channel = channelBadge.dataset.channel === 'dev' ? 'dev' : '';
+    await startUpdateFrom(channel, updateInfo ? updateInfo.version : '');
 }
 
 btnUtUpdate.addEventListener('click', startUpdate);
@@ -681,11 +722,221 @@ function finishPreflight() {
     }
 }
 
+// dismissPreflight гасит экран проверок и передаёт эстафету экрану
+// обновлений — не наоборот: проверки окружения про бота, обновления про
+// саму консоль, мешать их в один список значило бы отвечать двумя разными
+// вопросами в одной строке.
 function dismissPreflight() {
     preflightOverlay.classList.add('dismissed');
+    openUpdateGate();
 }
 
 preflightContinue.addEventListener('click', dismissPreflight);
+
+// ─── экран обновлений ────────────────────────────────────────────────────
+//
+// Опрос обоих каналов идёт параллельно на бэкенде (selfupdate.CheckBoth) и
+// НЕ задерживает запуск: экран проверок уже погашен, окно с логом под ним
+// живое, а этот оверлей всплывает поверх, только если действительно есть
+// что предложить. Сеть молчит — не всплывает вовсе, и никто ничего не ждёт.
+const CHANNEL_TITLE = { '': 'stable', dev: 'dev' };
+
+// humanAgo — «когда вышло» словами. Точная дата тут не нужна: вопрос, на
+// который отвечает строка, — «свежее ли это того, что у меня», а не «какого
+// числа собрано».
+function humanAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (!Number.isFinite(then)) return '';
+    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+    if (mins < 1) return 'только что';
+    if (mins < 60) return mins + ' мин назад';
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + ' ч назад';
+    return Math.round(hours / 24) + ' дн назад';
+}
+
+function humanBytes(n) {
+    if (!n || n < 0) return '';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' КБ';
+    return (n / 1048576).toFixed(1) + ' МБ';
+}
+
+async function openUpdateGate() {
+    let res;
+    try {
+        res = await CheckChannels();
+    } catch {
+        return; // не смогли спросить — молча живём дальше, как и checkUpdateOnce
+    }
+    if (!res || !res.offer) return;
+
+    gateCurrent.textContent = 'сейчас запущено: ' + (res.current || 'dev');
+    gateList.innerHTML = '';
+    for (const st of [res.stable, res.dev]) {
+        if (!st) continue;
+        const row = document.createElement('div');
+        row.className = 'gate-row';
+
+        const name = document.createElement('span');
+        name.className = 'gate-chan' + (st.channel === 'dev' ? ' dev' : '');
+        name.textContent = CHANNEL_TITLE[st.channel] ?? st.channel;
+        row.appendChild(name);
+
+        const tag = document.createElement('span');
+        tag.className = 'gate-tag';
+        tag.textContent = st.ok ? st.tag : '—';
+        row.appendChild(tag);
+
+        const when = document.createElement('span');
+        when.className = 'gate-when';
+        // Канал не ответил — показываем причину, а не прячем строку: пустое
+        // место читалось бы как «в этом канале ничего нет», что неправда.
+        when.textContent = st.ok ? humanAgo(st.publishedAt) : (st.message || 'не удалось спросить');
+        if (!st.ok) when.classList.add('bad');
+        row.appendChild(when);
+
+        const act = document.createElement('span');
+        act.className = 'gate-act';
+        if (st.ok && st.isCurrent) {
+            act.textContent = 'сейчас у вас';
+            act.classList.add('is-current');
+        } else if (st.ok) {
+            const btn = document.createElement('button');
+            // Переход на другой канал — это ещё и смена канала навсегда
+            // (ApplyUpdateFrom её сохраняет), поэтому подпись честно говорит
+            // «перейти», а не «обновить», когда канал не тот, где сидим.
+            btn.textContent = st.channel === res.channel ? 'Обновить' : 'Перейти';
+            btn.className = st.channel === res.channel ? 'gate-primary' : '';
+            btn.addEventListener('click', () => startUpdateFrom(st.channel, st.tag));
+            act.appendChild(btn);
+        }
+        row.appendChild(act);
+
+        gateList.appendChild(row);
+    }
+    updateGate.classList.add('visible');
+}
+
+gateSkip.addEventListener('click', () => updateGate.classList.remove('visible'));
+
+// ─── ход обновления ──────────────────────────────────────────────────────
+//
+// Шаги ровно те, что selfupdate реально проходит (см. selfupdate.Stage), а
+// не выдуманные ради заполнения экрана. Скачивание и распаковка — ОДНА
+// строка сознательно: tar тянет из gzip, gzip из сети, они происходят
+// одновременно, и отдельная строка «распаковка» открылась бы и закрылась в
+// один и тот же кадр, изображая шаг, которого во времени не существует.
+const UP_STEPS = [
+    { stage: 'query', label: 'запрос к GitHub' },
+    { stage: 'find', label: 'поиск сборки в релизе' },
+    { stage: 'download', label: 'скачивание и распаковка' },
+    { stage: 'swap', label: 'подмена на диске' },
+];
+
+let upRows = new Map();
+
+function renderUpSteps() {
+    upSteps.innerHTML = '';
+    upRows = new Map();
+    for (const s of UP_STEPS) {
+        const row = document.createElement('div');
+        row.className = 'up-row';
+        row.dataset.state = 'pending';
+        // data-stage нужен не JS (тот держит Map), а CSS: полоса прогресса
+        // положена только скачиванию, у остальных шагов нет ни объёма, ни
+        // длительности — без этого признака пустая серая линия висела бы
+        // под каждым шагом, изображая прогресс, которого нет.
+        row.dataset.stage = s.stage;
+        row.innerHTML =
+            '<span class="up-dot"></span>' +
+            '<span class="up-label"></span>' +
+            '<span class="up-note"></span>' +
+            '<span class="up-bar"><span class="up-bar-fill"></span></span>';
+        row.querySelector('.up-label').textContent = s.label;
+        upSteps.appendChild(row);
+        upRows.set(s.stage, row);
+    }
+}
+
+async function startUpdateFrom(channel, tag) {
+    updateGate.classList.remove('visible');
+    upTarget.textContent = 'до ' + (tag || '?') + (channel === 'dev' ? ' · канал dev' : '');
+    renderUpSteps();
+    upFoot.textContent = '';
+    upFoot.className = 'up-foot';
+    upClose.style.display = 'none';
+    upRestart.style.display = 'none';
+    updateProgress.classList.add('visible');
+
+    const res = await ApplyUpdateFrom(channel);
+    if (res.ok) {
+        upFoot.textContent = 'обновлено до ' + res.message;
+        upFoot.className = 'up-foot ok';
+        upRestart.style.display = '';
+        setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message} — клик перезапустит окно`);
+    }
+    // Ошибка приезжает событием 'update-failed' ниже — оно же гасит
+    // крутящийся шаг, чего один только возврат сделать не может.
+}
+
+EventsOn('update-step', (p) => {
+    // Распаковка закрывается вместе со скачиванием — своей строки у неё нет
+    // (см. UP_STEPS), поэтому событие про неё просто некуда класть.
+    if (p.stage === 'unpack') return;
+    if (p.stage === 'done') return;
+
+    const row = upRows.get(p.stage);
+    if (!row) return;
+
+    row.dataset.state = p.done ? 'done' : 'running';
+    const note = row.querySelector('.up-note');
+    const bar = row.querySelector('.up-bar');
+    const fill = row.querySelector('.up-bar-fill');
+
+    if (p.stage === 'download') {
+        // Полоса только когда сервер назвал размер: рисовать проценты от
+        // неизвестного целого — врать. Без Content-Length остаётся честное
+        // «сколько уже приехало», без доли.
+        if (p.total > 0) {
+            bar.style.display = '';
+            fill.style.width = Math.min(100, Math.round((p.bytes / p.total) * 100)) + '%';
+            note.textContent = humanBytes(p.bytes) + ' / ' + humanBytes(p.total);
+        } else {
+            bar.style.display = 'none';
+            note.textContent = humanBytes(p.bytes);
+        }
+        if (p.done && p.total > 0) fill.style.width = '100%';
+    } else if (p.note) {
+        note.textContent = p.note;
+    }
+
+    if (p.done) {
+        const i = UP_STEPS.findIndex((s) => s.stage === p.stage);
+        const next = UP_STEPS[i + 1];
+        if (next) upRows.get(next.stage).dataset.state = 'running';
+    }
+});
+
+EventsOn('update-failed', (msg) => {
+    for (const row of upRows.values()) {
+        if (row.dataset.state === 'running') row.dataset.state = 'failed';
+    }
+    upFoot.textContent = 'не удалось: ' + msg;
+    upFoot.className = 'up-foot bad';
+    upClose.style.display = '';
+    // Бейдж в шапке возвращается в «есть новее»: обновление не состоялось,
+    // и оставить его в «⟳ обновляю…» значило бы врать после закрытия окна.
+    if (updateInfo) {
+        setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${msg} — клик попробует снова`);
+    } else {
+        setUpdateBadge('error', '⚠ ошибка', `Не удалось обновить: ${msg} — клик проверит снова`);
+    }
+    showBanner(`✗  обновление: ${msg}`, true);
+});
+
+upClose.addEventListener('click', () => updateProgress.classList.remove('visible'));
+upRestart.addEventListener('click', () => RestartApp());
 
 function renderPreflightChecks(names) {
     if (!names || names.length === 0) {
