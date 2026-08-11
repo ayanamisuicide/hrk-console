@@ -3,7 +3,7 @@ import './style.css';
 import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog, SetShowSidebar,
     StartBot, StopBot, RestartBot, ClearLog, ExportLog, ApplyUpdate, RestartApp, CheckForUpdate,
-    PreflightChecks,
+    PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
 } from '../wailsjs/go/main/App';
 import { EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
@@ -30,6 +30,9 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
   <div class="topbar">
+    <button class="drawer-toggle" id="btn-sidebar" title="Показать/скрыть панель (s)">
+      <span></span><span></span><span></span>
+    </button>
     <div class="brand-group">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
@@ -48,9 +51,20 @@ document.querySelector('#app').innerHTML = `
       <button id="btn-help" title="Горячие клавиши">?</button>
     </div>
   </div>
-  <div class="stream-issue" id="stream-issue" style="display:none"></div>
+  <div class="update-toast" id="update-toast" style="display:none">
+    <span class="ut-icon">↑</span>
+    <span class="ut-text">Доступна версия <b id="ut-version"></b></span>
+    <button id="ut-update" class="primary">Обновить</button>
+    <button id="ut-dismiss" class="ut-dismiss" title="Не сейчас">×</button>
+  </div>
+  <div class="stream-issue" id="stream-issue" style="display:none">
+    <span class="si-icon">⚠</span>
+    <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
+    <span class="si-for" id="si-for"></span>
+  </div>
   <div class="body">
     <div class="sidebar">
+      <div class="sidebar-inner">
       <h3>Проблемы</h3>
       <div class="problem-counts">
         <span class="warn">⚠ <span id="count-warn">0</span></span>
@@ -77,7 +91,19 @@ document.querySelector('#app').innerHTML = `
       </div>
       <button id="btn-watchdog" class="proc-watchdog-btn">auto-restart</button>
       <div class="watchdog-note" id="watchdog-note"></div>
+
+      <div class="conn-section" id="conn-section" style="display:none">
+        <h3>Подключение</h3>
+        <div class="conn-block" id="conn-block" data-state="local">
+          <span class="conn-dot-wrap"><span class="conn-dot"></span></span>
+          <span class="conn-label" id="conn-label">локально</span>
+          <span class="conn-meta" id="conn-meta">бот на этом компьютере</span>
+        </div>
+        <button id="btn-remote" class="remote-open-btn"><span id="btn-remote-label">Удалённый бот</span><span class="btn-chevron">›</span></button>
+      </div>
+
       <div class="gui-version" id="gui-version"></div>
+      </div>
     </div>
     <div class="log-pane">
       <div class="log-scroll" id="log-scroll"></div>
@@ -102,6 +128,23 @@ document.querySelector('#app').innerHTML = `
         <tr><td><kbd>Esc</kbd></td><td>закрыть справку, снять фильтр</td></tr>
       </table>
       <p class="help-foot">Те же клавиши, что в консольной версии <code>hkc</code>.</p>
+    </div>
+  </div>
+  <div class="remote-overlay" id="remote-overlay">
+    <div class="remote-card">
+      <h2>Удалённый бот</h2>
+      <p class="remote-hint">Бот управляется на другой машине по SSH — окно только показывает и командует, ничего из бота на этом компьютере не хранится.</p>
+      <label>Хост или IP<input type="text" id="remote-host" placeholder="192.168.31.128" autocomplete="off"></label>
+      <label>Пользователь<input type="text" id="remote-user" placeholder="ayanami" autocomplete="off"></label>
+      <label>Приватный ключ<input type="text" id="remote-key" placeholder="C:\Users\...\.ssh\id_ed25519" autocomplete="off"></label>
+      <label>Каталог бота на той машине<input type="text" id="remote-dir" placeholder="Heroku" autocomplete="off"></label>
+      <div class="remote-note" id="remote-note"></div>
+      <div class="remote-actions">
+        <button id="btn-remote-test">Проверить соединение</button>
+        <button id="btn-remote-connect" class="primary">Подключиться</button>
+        <button id="btn-remote-disconnect" class="danger" style="display:none">Вернуться к локальному боту</button>
+        <button id="btn-remote-cancel">Отмена</button>
+      </div>
     </div>
   </div>
 `;
@@ -134,13 +177,36 @@ const btnClear = el('btn-clear');
 const btnExport = el('btn-export');
 const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
+const updateToast = el('update-toast');
+const utVersion = el('ut-version');
+const btnUtUpdate = el('ut-update');
+const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
-const sidebar = document.querySelector('.sidebar');
+const body = document.querySelector('.body');
+const btnSidebar = el('btn-sidebar');
 const preflightOverlay = el('preflight-overlay');
 const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
+const connSection = el('conn-section');
+const connBlock = el('conn-block');
+const connLabel = el('conn-label');
+const connMeta = el('conn-meta');
+const streamIssueReason = el('si-reason');
+const streamIssueFor = el('si-for');
+const btnRemote = el('btn-remote');
+const btnRemoteLabel = el('btn-remote-label');
+const remoteOverlay = el('remote-overlay');
+const remoteHostInput = el('remote-host');
+const remoteUserInput = el('remote-user');
+const remoteKeyInput = el('remote-key');
+const remoteDirInput = el('remote-dir');
+const remoteNote = el('remote-note');
+const btnRemoteTest = el('btn-remote-test');
+const btnRemoteConnect = el('btn-remote-connect');
+const btnRemoteDisconnect = el('btn-remote-disconnect');
+const btnRemoteCancel = el('btn-remote-cancel');
 
 // setProjectVersion — номер самого проекта (hrk-console), а не бота: тот
 // виден отдельно в status-pill ("live · Heroku X.X.X · ..."). Имя и номер —
@@ -514,9 +580,18 @@ function applyUpdateResult(res, manual) {
         updateInfo = { version: res.latest, url: res.url };
         setUpdateBadge('available', '↑ ' + res.latest,
             `Доступна версия ${res.latest} — клик обновит на месте, ПКМ откроет релиз в браузере`);
+        // Тост — только по итогам АВТО-проверки при старте окна, не ручной:
+        // пользователь, только что сам нажавший "проверить", уже смотрит на
+        // бейдж и не нуждается в отдельном приглашении поверх того же
+        // ответа. И только если ещё не отклонял именно эту версию в этом
+        // запуске — иначе он мигал бы заново на каждый случайный ре-рендер.
+        if (!manual && dismissedUpdateVersion !== res.latest) {
+            showUpdateToast(res.latest);
+        }
         return;
     }
     updateInfo = null;
+    hideUpdateToast();
     if (res.ok) {
         setUpdateBadge('uptodate', '✓ актуально',
             `Уже последняя версия (${res.current}) — клик проверит ещё раз`);
@@ -524,6 +599,46 @@ function applyUpdateResult(res, manual) {
         setUpdateBadge('error', '⚠ ошибка проверки', `Не удалось проверить: ${res.message} — клик попробует снова`);
     }
 }
+
+// dismissedUpdateVersion — версия, которую явно отклонили крестиком: тост
+// для неё больше не всплывает сам, бейдж в шапке остаётся тихим
+// напоминанием и обновляет всё равно можно кликом по нему в любой момент.
+let dismissedUpdateVersion = null;
+
+function showUpdateToast(version) {
+    utVersion.textContent = version;
+    updateToast.style.display = '';
+    updateToast.classList.remove('ut-enter');
+    void updateToast.offsetWidth; // перезапуск анимации, если тост уже был показан
+    updateToast.classList.add('ut-enter');
+}
+
+function hideUpdateToast() {
+    updateToast.style.display = 'none';
+}
+
+// startUpdate — общее действие для клика по бейджу в состоянии "available"
+// и для кнопки "Обновить" в тосте: один и тот же переход (скачать →
+// подменить на диске → предложить перезапустить), запускать который может
+// любой из двух — тост просто более заметный способ добраться до того же
+// самого действия.
+async function startUpdate() {
+    hideUpdateToast();
+    setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
+    const res = await ApplyUpdate();
+    if (res.ok) {
+        setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
+    } else {
+        setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
+        showBanner(`✗  обновление: ${res.message}`, true);
+    }
+}
+
+btnUtUpdate.addEventListener('click', startUpdate);
+btnUtDismiss.addEventListener('click', () => {
+    dismissedUpdateVersion = updateInfo ? updateInfo.version : null;
+    hideUpdateToast();
+});
 
 updateBadge.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -541,18 +656,12 @@ updateBadge.addEventListener('click', async () => {
     }
 
     if (state === 'available') {
-        setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
-        const res = await ApplyUpdate();
-        if (res.ok) {
-            setUpdateBadge('done', '✓ перезапустить', `Обновлено до ${res.message || updateInfo.version} — клик перезапустит окно`);
-        } else {
-            setUpdateBadge('available', '↑ ' + updateInfo.version, `Не удалось обновить: ${res.message} — клик попробует снова`);
-            showBanner(`✗  обновление: ${res.message}`, true);
-        }
+        await startUpdate();
         return;
     }
 
     // idle / uptodate / error — все три ведут к ручной проверке.
+    hideUpdateToast();
     setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
     applyUpdateResult(await CheckForUpdate(), true);
 });
@@ -644,20 +753,171 @@ function renderPreflightChecks(names) {
 
 PreflightChecks().then(renderPreflightChecks);
 
+// ─── удалённое подключение ───────────────────────────────────────────────
+//
+// remote в uiState (Bootstrap/status) — те же четыре поля, что и
+// state.Remote на бэкенде; host пустой значит "локально". Подключение и
+// отключение оба идут через честный перезапуск приложения (ConnectRemote/
+// DisconnectRemote вызывают RestartApp на бэкенде) — переключение
+// источника бота на лету было бы источником гонок между старыми и новыми
+// горутинами, а перезапуск окна занимает меньше секунды и уже есть готовым
+// после самообновления.
+// Блок «Подключение» показывается не всегда. На машине, где бот и так
+// установлен рядом (Linux), удалённый режим — не то, ради чего открывают
+// окно: строка «локально» и кнопка под ней занимали место в панели, ничего
+// при этом не сообщая. Он существует ради Windows, где локального бота
+// быть не может. Исключение — если удалённый хост всё-таки настроен: тогда
+// блок нужен везде, иначе настройку негде было бы увидеть и отменить.
+let platform = 'linux';
+
+function showConnSection(remote) {
+    connSection.style.display = (platform === 'windows' || (remote && remote.host)) ? '' : 'none';
+}
+
+// Куда подключены — отдельно от того, в каком состоянии подключение:
+// адрес меняется только по воле пользователя, состояние — само по себе,
+// каждую секунду (см. Status.RemoteState).
+function renderRemoteTarget(remote) {
+    if (remote && remote.host) {
+        connLabel.textContent = remote.host;
+        connMeta.textContent = remote.user ? remote.user + ' · подключаюсь…' : 'подключаюсь…';
+        connBlock.dataset.state = 'connecting';
+        btnRemoteDisconnect.style.display = '';
+        btnRemoteLabel.textContent = 'Изменить подключение';
+        return;
+    }
+    connBlock.dataset.state = 'local';
+    btnRemoteDisconnect.style.display = 'none';
+    btnRemoteLabel.textContent = 'Удалённый бот';
+    // «Локально» на Windows означало бы бота, которого там нет и быть не
+    // может: сам Heroku запускается только на Linux. Пока машина не
+    // указана, окну попросту нечем управлять, и сказать об этом честно
+    // полезнее, чем показать успокаивающее «локально».
+    if (platform === 'windows') {
+        connLabel.textContent = 'не настроено';
+        connMeta.textContent = 'укажите машину, где стоит бот';
+    } else {
+        connLabel.textContent = 'локально';
+        connMeta.textContent = 'бот на этом компьютере';
+    }
+}
+
+const CONN_LABEL = { connecting: 'подключаюсь…', online: 'на связи', offline: 'нет связи' };
+
+function renderConnState(st) {
+    if (!st.remoteState) return; // локальный бот — блок про адрес, а не про соединение
+    connBlock.dataset.state = st.remoteState;
+    connLabel.textContent = CONN_LABEL[st.remoteState] || st.remoteState;
+    connMeta.textContent = (uiState.remote && uiState.remote.host ? uiState.remote.host + ' · ' : '') +
+        (st.remoteStateNote || '');
+}
+
+function openRemoteOverlay(remote) {
+    remoteHostInput.value = (remote && remote.host) || '';
+    remoteUserInput.value = (remote && remote.user) || '';
+    remoteKeyInput.value = (remote && remote.keyPath) || '';
+    remoteDirInput.value = (remote && remote.dir) || 'Heroku';
+    remoteNote.textContent = '';
+    remoteNote.className = 'remote-note';
+    btnRemoteTest.disabled = false;
+    btnRemoteConnect.disabled = false;
+    remoteOverlay.classList.add('visible');
+}
+
+function closeRemoteOverlay() {
+    remoteOverlay.classList.remove('visible');
+}
+
+btnRemote.addEventListener('click', () => openRemoteOverlay(uiState.remote));
+btnRemoteCancel.addEventListener('click', closeRemoteOverlay);
+remoteOverlay.addEventListener('click', (e) => {
+    if (e.target === remoteOverlay) closeRemoteOverlay();
+});
+
+// readRemoteForm — общее чтение+валидация для "проверить" и "подключиться":
+// обе кнопки хотят один и тот же конфиг, дублировать проверку незачем.
+function readRemoteForm() {
+    const cfg = {
+        host: remoteHostInput.value.trim(),
+        user: remoteUserInput.value.trim(),
+        keyPath: remoteKeyInput.value.trim(),
+        dir: remoteDirInput.value.trim() || 'Heroku',
+    };
+    if (!cfg.host || !cfg.user || !cfg.keyPath) {
+        remoteNote.textContent = 'заполните хост, пользователя и путь к ключу';
+        remoteNote.className = 'remote-note';
+        return null;
+    }
+    return cfg;
+}
+
+btnRemoteTest.addEventListener('click', async () => {
+    const cfg = readRemoteForm();
+    if (!cfg) return;
+    btnRemoteTest.disabled = true;
+    remoteNote.textContent = 'проверяю…';
+    remoteNote.className = 'remote-note';
+    const res = await TestRemoteConnection(cfg);
+    btnRemoteTest.disabled = false;
+    remoteNote.textContent = res.message;
+    remoteNote.className = 'remote-note' + (res.ok ? ' ok' : ' bad');
+});
+
+btnRemoteConnect.addEventListener('click', async () => {
+    const cfg = readRemoteForm();
+    if (!cfg) return;
+    btnRemoteConnect.disabled = true;
+    remoteNote.textContent = 'подключаюсь и перезапускаю окно…';
+    remoteNote.className = 'remote-note';
+    const res = await ConnectRemote(cfg);
+    if (!res.ok) {
+        btnRemoteConnect.disabled = false;
+        remoteNote.textContent = 'не удалось: ' + res.message;
+        remoteNote.className = 'remote-note bad';
+    }
+    // При успехе окно вот-вот перезапустится само (RestartApp на бэкенде) —
+    // отдельно закрывать оверлей не нужно.
+});
+
+btnRemoteDisconnect.addEventListener('click', async () => {
+    btnRemoteDisconnect.disabled = true;
+    remoteNote.textContent = 'возвращаюсь к локальному боту…';
+    const res = await DisconnectRemote();
+    if (!res.ok) {
+        btnRemoteDisconnect.disabled = false;
+        remoteNote.textContent = 'не удалось: ' + res.message;
+    }
+});
+
 // ─── шапка / статус ──────────────────────────────────────────────────────
+
+// streamIssueShown — statusLoop зовёт renderStatus раз в секунду, пока
+// проблема с логом не решится; без этого флага полоса переигрывала бы
+// анимацию появления на каждый тик, а не один раз в момент, когда она
+// реально появилась.
+let streamIssueShown = false;
 
 function renderStatus(st) {
     el('hkc-version').textContent = 'hkc ' + (st.hkcVersion || 'dev');
     setProjectVersion(st.hkcVersion || 'dev');
 
+    renderConnState(st);
+
     statusPill.classList.remove('live', 'down', 'warn');
     if (st.streamIssue) {
         statusPill.classList.add('warn');
         statusText.textContent = '⚠ лог не читается';
-        streamIssueBox.style.display = '';
-        streamIssueBox.textContent = st.streamIssue;
+        if (!streamIssueShown) {
+            streamIssueBox.style.display = '';
+            streamIssueBox.classList.add('si-enter');
+            streamIssueShown = true;
+        }
+        streamIssueReason.textContent = st.streamIssue;
+        streamIssueFor.textContent = st.streamIssueFor || '';
     } else {
         streamIssueBox.style.display = 'none';
+        streamIssueBox.classList.remove('si-enter');
+        streamIssueShown = false;
         if (st.alive) {
             statusPill.classList.add('live');
             statusText.textContent = `live · ${st.botVersion || '?'} · ${st.uptime}`;
@@ -1045,12 +1305,19 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Панель — выдвижной ящик, не display:none: .body.sidebar-hidden двигает
+// одновременно ширину .sidebar и gap самого .body (см. style.css), лог
+// расширяется в освободившееся место тем же плавным движением, а не рывком
+// после того, как панель уже исчезла. Гамбургер в шапке — тот же переход,
+// что и горячая клавиша s, просто ещё один способ его вызвать.
 function toggleSidebar(force) {
-    const show = force === undefined ? sidebar.style.display === 'none' : force;
-    sidebar.style.display = show ? '' : 'none';
+    const show = force === undefined ? body.classList.contains('sidebar-hidden') : force;
+    body.classList.toggle('sidebar-hidden', !show);
+    btnSidebar.classList.toggle('open', !show);
     uiState.showSidebar = show;
     SetShowSidebar(show);
 }
+btnSidebar.addEventListener('click', () => toggleSidebar());
 
 function toggleHelp(force) {
     const show = force === undefined ? !helpOverlay.classList.contains('visible') : force;
@@ -1066,11 +1333,24 @@ btnRu.classList.toggle('toggled', ruEnabled);
 
 Bootstrap().then((boot) => {
     uiState = boot.uiState;
-    if (!uiState.showSidebar) sidebar.style.display = 'none';
+    if (!uiState.showSidebar) {
+        // Без .sidebar-no-anim панель на старте окна проиграла бы полный
+        // переход "открыта → закрыта" (сначала успевает нарисоваться
+        // открытой, Bootstrap — асинхронный IPC-вызов) вместо того, чтобы
+        // просто быть закрытой сразу, как раньше делал display:none.
+        body.classList.add('sidebar-no-anim');
+        body.classList.add('sidebar-hidden');
+        btnSidebar.classList.add('open');
+        void body.offsetWidth; // форсируем layout, прежде чем снять запрет на анимацию
+        body.classList.remove('sidebar-no-anim');
+    }
     btnDebug.classList.toggle('toggled', uiState.showDebug);
     btnWatchdog.classList.toggle('toggled', uiState.watchdog);
     btnLevel.textContent = uiState.minLevel === LEVEL_WARNING ? 'порог: warning+'
         : uiState.minLevel === LEVEL_ERROR ? 'порог: error+' : 'порог: всё';
+    platform = boot.platform || platform;
+    showConnSection(uiState.remote);
+    renderRemoteTarget(uiState.remote);
     renderStatus(boot.status);
     renderAll(boot.records);
 });

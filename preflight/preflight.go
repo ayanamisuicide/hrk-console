@@ -70,7 +70,7 @@ func All(herokuDir, logFile string) []Check {
 					// смотреть просто пока нечего.
 					return "ещё нет, появится при старте бота", Skipped
 				}
-				return humanSize(info.Size()), Passed
+				return HumanSize(info.Size()), Passed
 			},
 		},
 		{
@@ -281,7 +281,10 @@ func itoa(n int) string {
 	return string(b)
 }
 
-func humanSize(n int64) string {
+// HumanSize форматирует размер файла ("2 МБ", "340 КБ", "12 Б"). Экспортирован
+// — remotebot использует его же для той же проверки файла лога, только по
+// SSH, а не через os.Stat.
+func HumanSize(n int64) string {
 	switch {
 	case n >= 1<<20:
 		return itoa(int(n>>20)) + " МБ"

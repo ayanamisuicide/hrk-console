@@ -86,3 +86,40 @@ jobs:
           files: |
             hkc-*-linux-amd64.tar.gz
             hrk-console-gui-*-linux-amd64.tar.gz
+
+  # Windows-сборка GUI — отдельный job (нужен windows-latest runner, свой
+  # тулчейн WebView2), добавляет файл в уже созданный первым job'ом релиз.
+  # Без needs: release два job'а могли бы одновременно попытаться создать
+  # объект релиза по одному и тому же тегу.
+  release-windows-gui:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      # Тот же архив (.tar.gz), что и у Linux-сборок, не .zip — selfupdate
+      # сам распаковывает tar.gz из Go (archive/tar+compress/gzip), одним
+      # и тем же кодом на любой ОС; заводить второй формат ради Windows
+      # смысла не было.
+      - name: сборка GUI (Windows)
+        working-directory: gui
+        shell: bash
+        run: |
+          "$(go env GOPATH)/bin/wails" build -platform windows/amd64 -ldflags "-X main.version=${GITHUB_REF_NAME}"
+          tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-windows-amd64.tar.gz -C build/bin hrk-console-gui.exe
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: hrk-console-gui-*-windows-amd64.tar.gz

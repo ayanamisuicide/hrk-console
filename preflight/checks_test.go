@@ -136,8 +136,8 @@ func TestHumanSize(t *testing.T) {
 		1 << 20: "1 МБ", 10 << 20: "10 МБ",
 	}
 	for n, want := range cases {
-		if got := humanSize(n); got != want {
-			t.Errorf("humanSize(%d): got %q, want %q", n, got, want)
+		if got := HumanSize(n); got != want {
+			t.Errorf("HumanSize(%d): got %q, want %q", n, got, want)
 		}
 	}
 }

@@ -13,10 +13,23 @@ import (
 // поведения — сам лог, фильтр и позиция прокрутки каждый раз актуальны
 // заново и сохранению не подлежат.
 type State struct {
-	ShowDebug   bool `json:"showDebug"`
-	ShowSidebar bool `json:"showSidebar"`
-	MinLevel    int  `json:"minLevel"`
-	Watchdog    bool `json:"watchdog"`
+	ShowDebug   bool   `json:"showDebug"`
+	ShowSidebar bool   `json:"showSidebar"`
+	MinLevel    int    `json:"minLevel"`
+	Watchdog    bool   `json:"watchdog"`
+	Remote      Remote `json:"remote"`
+}
+
+// Remote — настройки подключения к боту на другой машине по SSH (см. пакет
+// remotebot). Актуально только для GUI: TUI запускается уже на той же
+// машине, где живёт бот, ему нечего конфигурировать. Host пустой — значит
+// GUI управляет ботом локально, как раньше; это и есть поведение по
+// умолчанию для уже сохранённых state.json без этого поля.
+type Remote struct {
+	Host    string `json:"host"`
+	User    string `json:"user"`
+	KeyPath string `json:"keyPath"`
+	Dir     string `json:"dir"`
 }
 
 // Default — с чем консоль запускается, если сохранённого состояния нет или

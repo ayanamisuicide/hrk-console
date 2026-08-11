@@ -16,7 +16,7 @@ func TestParseDepOutput(t *testing.T) {
 		"",
 	}, "\n")
 
-	got := parseDepOutput(out)
+	got := ParseDepOutput(out)
 	want := []string{"httpx", "pillow", "whoosh", "aiogram"}
 	if len(got) != len(want) {
 		t.Fatalf("получено %v, ожидалось %v", got, want)
@@ -31,7 +31,7 @@ func TestParseDepOutput(t *testing.T) {
 // Один и тот же пакет может прийти и импортом, и заголовком requires —
 // ставить его дважды незачем.
 func TestParseDepOutputDeduplicates(t *testing.T) {
-	got := parseDepOutput("import httpx\npip httpx\nimport httpx\n")
+	got := ParseDepOutput("import httpx\npip httpx\nimport httpx\n")
 	if len(got) != 1 || got[0] != "httpx" {
 		t.Errorf("дубликаты не схлопнулись: %v", got)
 	}
@@ -39,7 +39,7 @@ func TestParseDepOutputDeduplicates(t *testing.T) {
 
 // Пустой вывод — всё на месте, ставить нечего.
 func TestParseDepOutputEmpty(t *testing.T) {
-	if got := parseDepOutput("\n  \n"); len(got) != 0 {
+	if got := ParseDepOutput("\n  \n"); len(got) != 0 {
 		t.Errorf("на пустом выводе ожидался пустой список, got %v", got)
 	}
 }

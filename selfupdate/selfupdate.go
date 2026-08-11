@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ type Release struct {
 }
 
 type Asset struct {
-	Name                string `json:"name"`
+	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
@@ -230,6 +231,21 @@ func Apply(assetPrefix, assetSuffix string) (appliedVersion string, err error) {
 	if err != nil {
 		return "", err
 	}
+
+	if runtime.GOOS == "windows" {
+		// Windows не даёт перезаписать (даже переименовать поверх) файл,
+		// который прямо сейчас выполняется как этот процесс, — файл образа
+		// заблокирован загрузчиком. Оставляем новую версию рядом
+		// (exe+".new") — подмену и перезапуск делает вызывающая сторона уже
+		// после того, как этот процесс завершится (см. PendingUpdate/
+		// gui/app.go RestartApp): на Linux то же самое допустимо прямо
+		// сейчас, os.Rename поверх открытого файла там безопасен и атомарен.
+		if err := copyFile(tmpBinary, StagedPath(exe)); err != nil {
+			return "", err
+		}
+		return rel.TagName, nil
+	}
+
 	staged := exe + ".update"
 	if err := copyFile(tmpBinary, staged); err != nil {
 		return "", err
@@ -239,4 +255,19 @@ func Apply(assetPrefix, assetSuffix string) (appliedVersion string, err error) {
 		return "", err
 	}
 	return rel.TagName, nil
+}
+
+// StagedPath — куда Apply на Windows кладёт скачанную версию, ожидающую
+// подмены. Экспортирована, чтобы вызывающая сторона (RestartApp) могла
+// проверить, есть ли обновление, ожидающее применения, не дублируя это имя
+// у себя.
+func StagedPath(exe string) string { return exe + ".new" }
+
+// PendingUpdate возвращает путь к ожидающей подмене версии, если Apply на
+// Windows её туда положил, и пусто, если ничего не ждёт.
+func PendingUpdate(exe string) string {
+	if _, err := os.Stat(StagedPath(exe)); err != nil {
+		return ""
+	}
+	return StagedPath(exe)
 }

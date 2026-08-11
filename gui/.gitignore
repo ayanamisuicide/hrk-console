@@ -2,3 +2,8 @@ build/bin
 frontend/dist
 frontend/node_modules
 frontend/wailsjs
+
+# `go build ./...` без -o кладёт бинарник прямо сюда (имя — по модулю);
+# случается при ручной проверке кросс-компиляции (GOOS=windows и т.п.).
+/hrk-console-gui
+/hrk-console-gui.exe

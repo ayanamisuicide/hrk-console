@@ -83,7 +83,7 @@ html, body {
    версии), а где-то стоит недёшево на постоянно перерисовываемых больших
    областях (список модулей и лог скроллятся). Blur — необязательное
    украшение сверху, без него всё по-прежнему читаемо. */
-.topbar, .sidebar, .log-pane, .help-card, .preflight-card {
+.topbar, .sidebar, .log-pane, .help-card, .preflight-card, .remote-card {
   background: var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: 18px;
@@ -147,16 +147,50 @@ html, body {
 }
 .update-badge[data-state="uptodate"]:hover { background: rgba(116, 224, 171, .22); }
 
+/* "available" не должен просто молча ждать клика — лёгкое дыхание
+   свечения приглашает нажать примерно так же, как непрочитанный значок:
+   заметно боковым зрением, не отвлекает, пока туда не смотришь напрямую. */
 .update-badge[data-state="available"] {
   color: var(--accent);
   background: rgba(156, 139, 255, .14);
   border-color: rgba(156, 139, 255, .32);
-  animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1);
+  animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1),
+             badge-glow 2.6s ease-in-out .3s infinite;
 }
 .update-badge[data-state="available"]:hover { background: rgba(156, 139, 255, .22); }
 
-.update-badge[data-state="updating"] { color: var(--accent); background: rgba(156, 139, 255, .14); border-color: rgba(156, 139, 255, .3); animation: pulse 1.2s ease-in-out infinite; cursor: default; }
-.update-badge[data-state="done"] { color: var(--warning); background: rgba(255, 207, 122, .16); border-color: rgba(255, 207, 122, .35); }
+/* "updating" — бегущий блик слева направо читается как «что-то реально
+   происходит» гораздо честнее, чем равномерное мигание всей кнопки: там
+   загрузка и подмена файла, процесс с направлением, а не просто ожидание. */
+.update-badge[data-state="updating"] {
+  color: var(--accent);
+  background: linear-gradient(90deg,
+    rgba(156, 139, 255, .1) 20%, rgba(156, 139, 255, .32) 50%, rgba(156, 139, 255, .1) 80%);
+  background-size: 220% 100%;
+  border-color: rgba(156, 139, 255, .3);
+  animation: badge-shimmer 1.3s linear infinite;
+  cursor: default;
+}
+.update-badge[data-state="done"] {
+  color: var(--warning);
+  background: rgba(255, 207, 122, .16);
+  border-color: rgba(255, 207, 122, .35);
+  animation: badge-pop .32s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+@keyframes badge-glow {
+  0%, 100% { box-shadow: 0 0 0 rgba(156, 139, 255, 0); }
+  50% { box-shadow: 0 0 9px rgba(156, 139, 255, .4); }
+}
+@keyframes badge-shimmer {
+  0% { background-position: 140% 0; }
+  100% { background-position: -40% 0; }
+}
+@keyframes badge-pop {
+  0% { transform: scale(.75); opacity: 0; }
+  65% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
 
 .update-badge[data-state="error"] {
   color: var(--critical);
@@ -175,9 +209,13 @@ html, body {
   border: 1px solid var(--glass-border);
   font-size: 12px;
   color: var(--text-secondary);
+  transition: border-color .3s ease;
 }
+.status-pill.live { border-color: rgba(116, 224, 171, .28); }
+.status-pill.warn { border-color: rgba(255, 207, 122, .3); }
+.status-pill.down { border-color: var(--glass-border); }
 
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; transition: background .3s ease; }
 .status-pill.live .status-dot { background: var(--good); animation: live-glow 2.6s ease-in-out infinite; }
 .status-pill.down .status-dot { background: var(--critical); }
 .status-pill.warn .status-dot { background: var(--warning); animation: pulse 1.4s ease-in-out infinite; }
@@ -228,10 +266,40 @@ button.toggled {
 
 /* ─── тело: панель + лог, две отдельные стеклянные карточки ──────────── */
 
-.body { flex: 1; display: flex; gap: 12px; min-height: 0; }
+.body {
+  flex: 1; display: flex; gap: 12px; min-height: 0;
+  transition: gap .34s cubic-bezier(.3, .74, .3, 1);
+}
 
+/* ─── панель как выдвижной ящик ────────────────────────────────────────
+   .sidebar — сама «дверь»: анимируются её width/padding/opacity, она же
+   overflow:hidden, поэтому исчезающее содержимое обрезается, а не
+   переносится по словам на сжимающейся ширине. .sidebar-inner держит
+   фиксированную ширину и весь исходный флекс-макет (модули по-прежнему
+   растягиваются на свободное место, футер — снизу) — так текст внутри не
+   сплющивается на середине анимации, просто уезжает вместе с обрезающим
+   его краем и гаснет за счёт opacity раньше, чем становится заметно узким.
+   .body.sidebar-hidden управляет обеими сразу — переход бесшовный, лог
+   расширяется в освободившееся место тем же движением, а не рывком после. */
 .sidebar {
   width: 264px;
+  flex: none;
+  overflow: hidden;
+  opacity: 1;
+  transition: width .34s cubic-bezier(.3, .74, .3, 1), opacity .22s ease;
+}
+.body.sidebar-hidden .sidebar { width: 0; opacity: 0; }
+.body.sidebar-hidden { gap: 0; }
+
+/* Гасит переход на один кадр при старте окна с уже свёрнутой панелью —
+   иначе она успевала бы на мгновение нарисоваться открытой и тут же
+   проиграть полную анимацию закрытия (см. Bootstrap().then в main.js). */
+.body.sidebar-no-anim,
+.body.sidebar-no-anim .sidebar { transition: none !important; }
+
+.sidebar-inner {
+  width: 264px;
+  height: 100%;
   flex: none;
   padding: 16px 14px;
   overflow-y: auto;
@@ -239,7 +307,7 @@ button.toggled {
   flex-direction: column;
 }
 
-.sidebar h3 {
+.sidebar-inner h3 {
   font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--text-muted);
@@ -247,7 +315,28 @@ button.toggled {
   font-weight: 700;
   text-transform: uppercase;
 }
-.sidebar h3:first-child { margin-top: 0; }
+.sidebar-inner h3:first-child { margin-top: 0; }
+
+/* Гамбургер в шапке — постоянно видимый способ вызвать ящик обратно, а не
+   только скрытая горячая клавиша (s), про которую нужно было знать заранее.
+   Три полоски складываются в крестик открытого состояния — тот же приём,
+   что у большинства мобильных меню, читается без подписи где угодно. */
+.drawer-toggle {
+  flex: none;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 4px;
+  width: 30px; height: 30px; padding: 0;
+  -webkit-app-region: no-drag;
+}
+.drawer-toggle span {
+  width: 15px; height: 2px; border-radius: 2px;
+  background: var(--text-secondary);
+  transition: transform .25s cubic-bezier(.3, .7, .3, 1.2), opacity .2s ease, width .2s ease;
+}
+.drawer-toggle:hover span { background: var(--text-primary); }
+.drawer-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.drawer-toggle.open span:nth-child(2) { opacity: 0; width: 0; }
+.drawer-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
 .problem-counts { display: flex; gap: 16px; font-size: 16px; font-weight: 700; }
 .problem-counts .warn { color: var(--warning); }
@@ -274,12 +363,12 @@ button.toggled {
   word-break: break-all;
 }
 
+.h3-total { letter-spacing: normal; text-transform: none; color: var(--text-secondary); font-weight: 600; }
+
 /* Список модулей — полный (не топ-7), сама область гибкая и скроллится
    независимо: длинный список не должен выталкивать «Процесс» со
    Start/Stop за пределы окна. min-height: 0 — иначе flex-элемент не
    сжимается меньше содержимого и скролл внутри него не включается вовсе. */
-.h3-total { letter-spacing: normal; text-transform: none; color: var(--text-secondary); font-weight: 600; }
-
 .module-list {
   flex: 1 1 auto;
   min-height: 54px;
@@ -468,7 +557,13 @@ button.toggled {
 .preflight-continue:hover { background: rgba(255, 143, 168, .2); }
 
 .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
-.sparkline .bar { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: 0.8; }
+.sparkline .bar {
+  flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: 0.8;
+  /* Тикер зовёт перерисовку раз в секунду, не за кадром, — переход
+     дешёвый, а столбик, дорастающий до места, а не перескакивающий туда,
+     читается как живой пульс потока, а не разово подставленное значение. */
+  transition: height .5s cubic-bezier(.2, .7, .3, 1), background-color .25s ease;
+}
 .sparkline .bar.hot { background: var(--warning); }
 
 /* История — тот же спарклайн-язык (тонкие столбики, растущие снизу), но
@@ -480,6 +575,7 @@ button.toggled {
 .history-bar {
   flex: 1; min-height: 2px; border-radius: 1px 1px 0 0;
   background: rgba(255, 255, 255, .09);
+  transition: height .4s ease, background-color .3s ease, opacity .3s ease;
 }
 .history-bar.warn { background: var(--warning); opacity: .8; }
 .history-bar.err { background: var(--critical); opacity: .9; }
@@ -507,9 +603,143 @@ button.toggled {
 .watchdog-note.on { color: var(--warning); }
 .watchdog-note.restarting { color: var(--critical); animation: pulse 1s ease-in-out infinite; }
 
+/* Подключение — та же карточка, что и «Процесс» выше: два блока про одно
+   и то же (жив ли бот, есть ли до него связь) не должны выглядеть разными
+   по языку элементами. Цвет несёт состояние, точка слева — тот же сигнал
+   для тех, кто цвет не различает. */
+.conn-block {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  transition: border-color .3s ease, box-shadow .3s ease;
+}
+
+/* Точка — не просто индикатор цвета, а буквально сигнал: «на связи» шлёт
+   те же расходящиеся кольца, что радар или AirDrop, — та же метафора, что
+   и у самого слова «подключение». Статичная точка тут читалась ровно как
+   ужасно смотрелась пользователю: одноцветный кружок ничем не отличается
+   от иконки на упаковке, а связь по SSH — процесс, который идёт прямо
+   сейчас, а не факт, зафиксированный раз и навсегда. */
+.conn-dot-wrap { position: relative; width: 7px; height: 7px; align-self: center; }
+.conn-dot {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background .3s ease;
+}
+.conn-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); transition: color .3s ease; }
+.conn-meta {
+  grid-column: 2;
+  margin-top: 4px;
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.conn-block[data-state="online"] { border-color: rgba(116, 224, 171, .25); }
+.conn-block[data-state="online"] .conn-dot { background: var(--good); animation: live-glow 2.6s ease-in-out infinite; }
+.conn-block[data-state="online"] .conn-dot-wrap::after {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--good);
+  animation: conn-ping 2.2s cubic-bezier(.2, .65, .3, 1) infinite;
+}
+.conn-block[data-state="online"] .conn-label { color: var(--good); }
+
+.conn-block[data-state="connecting"] { border-color: rgba(255, 207, 122, .25); }
+.conn-block[data-state="connecting"] .conn-dot { background: var(--warning); animation: pulse 1s ease-in-out infinite; }
+.conn-block[data-state="connecting"] .conn-label { color: var(--warning); }
+
+.conn-block[data-state="offline"] { border-color: rgba(255, 143, 168, .25); }
+.conn-block[data-state="offline"] .conn-dot { background: var(--critical); }
+.conn-block[data-state="offline"] .conn-dot-wrap::after {
+  content: '';
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--critical);
+  opacity: .3;
+}
+.conn-block[data-state="offline"] .conn-label { color: var(--critical); }
+
+@keyframes conn-ping {
+  0% { transform: scale(1); opacity: .6; }
+  100% { transform: scale(3.6); opacity: 0; }
+}
+
+/* Раньше подпись оканчивалась на "…" (соглашение "открывает диалог", то
+   же, что у "Сохранить как…" в системных приложениях) — но в маленькой
+   кнопке на тёмном фоне это читалось не как приглашение открыть окно, а
+   как будто текст обрубился и чего-то не хватает. Шеврон справа говорит
+   то же самое прямее — "здесь есть ещё" — и не похож на визуальный баг.
+   Сдвигается на ховере в сторону клика, а не просто меняет цвет: кнопка
+   ведёт взгляд туда же, куда ведёт сама. */
+.remote-open-btn {
+  width: 100%; font-size: 11px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.remote-open-btn .btn-chevron {
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: transform .15s cubic-bezier(.2, .8, .3, 1.3), color .15s ease;
+}
+.remote-open-btn:hover .btn-chevron { transform: translateX(3px); color: var(--accent); }
+
+.remote-overlay {
+  position: fixed; inset: 0; z-index: 15;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5, 5, 10, 0.6);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .16s ease, visibility 0s linear .16s;
+}
+.remote-overlay.visible {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity .16s ease;
+}
+.remote-card {
+  width: min(360px, 88vw);
+  padding: 22px 26px;
+  transform: scale(.94) translateY(10px);
+  transition: transform .2s cubic-bezier(.2, .8, .3, 1.3);
+}
+.remote-overlay.visible .remote-card { transform: scale(1) translateY(0); }
+.remote-card h2 { margin: 0 0 8px; font-size: 14px; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; }
+.remote-hint { margin: 0 0 16px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.remote-card label {
+  display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;
+}
+.remote-card input[type="text"] {
+  display: block; width: 100%; margin-top: 5px;
+  font: inherit; font-family: var(--font-mono); font-size: 12px;
+  background: var(--glass-strong); border: 1px solid var(--glass-border); border-radius: 10px;
+  padding: 7px 10px; color: var(--text-primary);
+}
+.remote-card input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.remote-note { min-height: 14px; margin: 2px 0 12px; font-size: 11px; color: var(--warning); }
+.remote-note.ok { color: var(--good); }
+.remote-note.bad { color: var(--critical); }
+.remote-actions { display: flex; flex-direction: column; gap: 8px; }
+.remote-actions button { width: 100%; border-radius: 12px; }
+
+/* margin-top: auto почти никогда не срабатывает — .module-list уже
+   flex: 1 1 auto и сам забирает всё свободное место в колонке (нарочно,
+   чтобы длинный список модулей не выталкивал «Процесс» за пределы окна),
+   так что до футера auto-отступу extra места не остаётся, и он резолвится
+   в 0. padding-top на самом .gui-version тут не помогает вообще: padding
+   раздвигает содержимое ОТ границы (border-top), а не саму границу от
+   элемента над ней — с margin-top: auto граница вплотную упиралась в
+   кнопку над собой, а зазор появлялся только ПОСЛЕ линии, перед текстом.
+   Именно поэтому линия выглядела вросшей в кнопку, а не отступом padding
+   как таковым. Настоящий отступ — фиксированный margin-top на самом
+   футере, не полагающийся на auto вовсе. */
 .gui-version {
-  margin-top: auto;
-  padding-top: 12px;
+  margin-top: 20px;
+  padding-top: 14px;
   border-top: 1px solid var(--glass-border);
   display: flex;
   align-items: baseline;
@@ -644,11 +874,87 @@ mark.hl {
 .log-footer input[type="text"]::placeholder { color: var(--text-muted); }
 .log-footer input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
+/* Тост «доступна версия» — единственное место, где предложение обновиться
+   реально заметно. Раньше об этом сообщал только бейдж в шапке: он тихо
+   менял цвет на фиолетовый среди десятка других таких же кнопок, и заметить
+   это можно было только специально туда посмотрев. Тост всплывает сам при
+   старте окна (не на ручной клик — там пользователь и так смотрит на
+   бейдж), крестик отпускает его молча до следующего перезапуска. */
+.update-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 9px 10px 9px 16px;
+  border-radius: 14px;
+  background: var(--glass);
+  border: 1px solid rgba(156, 139, 255, .3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 12px 28px rgba(0, 0, 0, .32);
+}
+.update-toast.ut-enter { animation: preflight-in .3s cubic-bezier(.2, .8, .3, 1.15); }
+.update-toast .ut-icon {
+  flex: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+.update-toast .ut-text { flex: 1; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+.update-toast .ut-text b { color: var(--accent); font-family: var(--font-mono); }
+.update-toast button.primary { flex: none; font-size: 11px; padding: 6px 14px; }
+.update-toast .ut-dismiss {
+  flex: none;
+  width: 26px; height: 26px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-size: 15px; line-height: 1; color: var(--text-muted);
+}
+.update-toast .ut-dismiss:hover { color: var(--text-primary); background: rgba(255, 255, 255, .1); }
+
+/* Полоса «лог не читается». Раньше это была плоская розовая лента во всю
+   ширину без полей и скруглений — единственный элемент окна, выпадающий из
+   его языка, и оттого выглядевший поломкой вёрстки, а не сообщением.
+   Теперь это карточка того же языка, что и панели вокруг, с явной
+   иерархией: причина — крупно, «как давно» — тускло справа, и строкой ниже
+   то, что на самом деле хочет знать читающий, — что бот при этом
+   по-прежнему управляется. */
 .stream-issue {
-  padding: 6px 18px;
-  font-size: 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  flex: none;
+  padding: 11px 15px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid rgba(255, 143, 168, .3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 10px 24px rgba(0, 0, 0, .3);
+}
+/* .si-enter — только на кадре появления (см. streamIssueShown в main.js),
+   не на каждый тик статуса, пока проблема ещё длится. */
+.stream-issue.si-enter { animation: banner-in .25s cubic-bezier(.2, .8, .3, 1.1); }
+.stream-issue .si-icon {
+  flex: none;
   color: var(--critical);
-  background: rgba(255, 143, 168, .1);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.stream-issue .si-text { flex: 1; min-width: 0; }
+.stream-issue .si-reason {
+  display: block;
+  font-size: 12px; font-weight: 600; color: var(--critical);
+  overflow-wrap: anywhere;
+}
+.stream-issue .si-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px; color: var(--text-muted);
+}
+.stream-issue .si-for {
+  flex: none;
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--glass-strong);
 }
 
 /* полоса прокрутки — тонкая, светлая на тёмном стекле, не спорит с содержимым */

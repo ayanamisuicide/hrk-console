@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"heroku-console/botproc"
 	"heroku-console/logfeed"
 	"heroku-console/preflight"
+	"heroku-console/remotebot"
 	"heroku-console/selfupdate"
 	"heroku-console/state"
 )
@@ -32,15 +34,26 @@ const ringCapacity = 5000
 const watchdogCooldown = 5 * time.Second
 
 // Status — то, что видно в шапке и панели: живость бота, версии, вотчдог.
+//
+// StreamIssue и StreamIssueFor разделены, а не склеены в одну строку:
+// причина и «как давно» — разные по важности вещи, и рисуются они по-разному.
+//
+// RemoteState — состояние SSH-подключения, когда бот на другой машине:
+// "" (локальный бот), "connecting", "online", "offline". Живость самого
+// бота (Alive) к нему отношения не имеет: подключение может работать
+// прекрасно, а бот на той стороне быть не запущен.
 type Status struct {
-	Alive       bool   `json:"alive"`
-	PID         int    `json:"pid"`
-	Uptime      string `json:"uptime"`
-	BotVersion  string `json:"botVersion"`
-	HkcVersion  string `json:"hkcVersion"`
-	Watchdog    bool   `json:"watchdog"`
-	Restarting  bool   `json:"restarting"`
-	StreamIssue string `json:"streamIssue"`
+	Alive           bool   `json:"alive"`
+	PID             int    `json:"pid"`
+	Uptime          string `json:"uptime"`
+	BotVersion      string `json:"botVersion"`
+	HkcVersion      string `json:"hkcVersion"`
+	Watchdog        bool   `json:"watchdog"`
+	Restarting      bool   `json:"restarting"`
+	StreamIssue     string `json:"streamIssue"`
+	StreamIssueFor  string `json:"streamIssueFor"`
+	RemoteState     string `json:"remoteState"`
+	RemoteStateNote string `json:"remoteStateNote"`
 }
 
 // Rec — запись лога в виде, пригодном для JSON: то же самое, что
@@ -68,10 +81,16 @@ type TailEvent struct {
 
 // Bootstrap — всё, что нужно фронтенду для первого рендера: статус,
 // сохранённые настройки экрана и уже отфильтрованная история.
+//
+// Platform — runtime.GOOS. Блок «Подключение» существует ради Windows, где
+// бота локально нет и быть не может; на машине, где бот и так стоит рядом,
+// он только занимает место в панели, и фронтенд прячет его — но знать, где
+// он запущен, может только бэкенд.
 type Bootstrap struct {
-	Status  Status      `json:"status"`
-	UIState state.State `json:"uiState"`
-	Records []Rec       `json:"records"`
+	Status   Status      `json:"status"`
+	UIState  state.State `json:"uiState"`
+	Records  []Rec       `json:"records"`
+	Platform string      `json:"platform"`
 }
 
 type ActionResult struct {
@@ -110,6 +129,19 @@ type App struct {
 	ctx context.Context
 	bot *botproc.Manager
 
+	// remote — не nil, когда бот управляется по SSH на другой машине (см.
+	// пакет remotebot и state.Remote), а не через локальный a.bot. follower
+	// и remoteFollower взаимоисключающи по той же причине: ровно один из
+	// двух источников лога активен за раз, второй остаётся nil.
+	remote         *remotebot.Client
+	remoteFollower *remotebot.FollowHandle
+
+	// remoteState/remoteStateNote — что показать в блоке «Подключение»
+	// (см. Status.RemoteState). Под a.mu, как и остальное, что читает
+	// statusLocked.
+	remoteState     string
+	remoteStateNote string
+
 	mu      sync.Mutex
 	ring    []string
 	parser  *logfeed.Parser
@@ -138,17 +170,38 @@ type App struct {
 	trayMu       sync.Mutex
 	windowHidden bool // под trayMu — переключается только из колбэка трея
 
-	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса
-	// в /proc, запуск и остановка бота, отправка события в окно — проходит
-	// через эти поля. Без них логику вотчдога (кто, когда и на каком
-	// основании решает перезапускать) нельзя проверить, не подняв
-	// настоящего бота в настоящем окне Wails; ровно поэтому ложное
-	// срабатывание из 1.6.1 и доехало до релиза.
-	pid     func() int
-	aliveAt func(pid int) bool
-	start   func() botproc.StartResult
-	stop    func() int
-	emit    func(event string, data ...interface{})
+	// remotePID/remotePIDAt — последний pid, который удалённая машина
+	// действительно назвала, и когда. Нужны только в удалённом режиме, см.
+	// stalePID.
+	remotePID   int
+	remotePIDAt time.Time
+
+	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса,
+	// запуск и остановка бота, его версия и аптайм, отправка события в
+	// окно — проходит через эти поля. Изначально (см. NewApp) смотрят на
+	// локальный botproc; startRemote переставляет их на remotebot.Client,
+	// если в настройках указан удалённый хост — дальше statusLoop, вотчдог
+	// и StartBot/StopBot/RestartBot работают одинаково в обоих случаях, не
+	// зная, локальный бот или нет. Без этой подмены логику вотчдога (кто,
+	// когда и на каком основании решает перезапускать) нельзя было бы
+	// проверить, не подняв настоящего бота в настоящем окне Wails; ровно
+	// поэтому ложное срабатывание из 1.6.1 и доехало до релиза.
+	pid        func() int
+	aliveAt    func(pid int) bool
+	start      func() startResult
+	stop       func() (int, error)
+	uptime     func(pid int) string
+	botVersion func() string
+	emit       func(event string, data ...interface{})
+}
+
+// startResult — тот же контракт, что у botproc.StartResult и
+// remotebot.StartResult, но свой: App не должен знать, из какого из двух
+// пакетов он на самом деле пришёл.
+type startResult struct {
+	PID             int
+	AlreadyStarting bool
+	Err             error
 }
 
 func NewApp() *App {
@@ -160,8 +213,13 @@ func NewApp() *App {
 	a := &App{bot: botproc.New(dir)}
 	a.pid = botproc.PID
 	a.aliveAt = botproc.AliveAt
-	a.start = a.bot.Start
-	a.stop = a.bot.Stop
+	a.start = func() startResult {
+		r := a.bot.Start()
+		return startResult{PID: r.PID, AlreadyStarting: r.AlreadyStarting, Err: r.Err}
+	}
+	a.stop = func() (int, error) { return a.bot.Stop(), nil }
+	a.uptime = botproc.Uptime
+	a.botVersion = a.bot.Version
 	// ctx читается в момент вызова, а не сейчас: на этапе NewApp окна ещё
 	// нет, его подставит startup.
 	a.emit = func(event string, data ...interface{}) {
@@ -199,28 +257,55 @@ func (a *App) tickPID() int {
 	return pid
 }
 
+// remoteStaleWindow — сколько последний достоверный pid считается ещё
+// пригодным, когда удалённая машина перестала отвечать. Секунды заминки
+// пережить надо, минуты — уже нет: иначе окно бесконечно показывало бы
+// «live» давно оборванного соединения.
+const remoteStaleWindow = 15 * time.Second
+
+func (a *App) rememberPID(pid int) {
+	a.watchMu.Lock()
+	a.remotePID, a.remotePIDAt = pid, time.Now()
+	a.watchMu.Unlock()
+}
+
+func (a *App) stalePID() int {
+	a.watchMu.Lock()
+	defer a.watchMu.Unlock()
+	if a.remotePID == 0 || time.Since(a.remotePIDAt) > remoteStaleWindow {
+		return 0
+	}
+	return a.remotePID
+}
+
+func (a *App) setRemoteState(st, note string) {
+	a.mu.Lock()
+	a.remoteState, a.remoteStateNote = st, note
+	a.mu.Unlock()
+}
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.ui = state.Load()
 	a.parser = logfeed.NewParser()
-	a.loadHistory()
-	go a.followLog()
+
+	if a.healPendingUpdate() {
+		return
+	}
+
+	if a.ui.Remote.Host != "" {
+		a.setRemoteState("connecting", "подключаюсь…")
+		go a.startRemote()
+	} else {
+		a.loadHistory()
+		go a.followLog()
+		go a.runPreflight()
+	}
 	go a.statusLoop()
 	go a.checkUpdateOnce()
-	go a.runPreflight()
 
 	a.tray = &Tray{}
 	go a.tray.Start(a.toggleWindow, func() { wailsrt.Quit(a.ctx) })
-}
-
-// shutdown закрывает соединение трея с D-Bus, если он поднялся. Отдельный
-// хук (options.App.OnShutdown), а не просто оставить процессу самому
-// прибраться при выходе: незакрытое соединение — не критично (ОС закроет
-// сокет вместе с процессом), но явный Close честнее, чем полагаться на это.
-func (a *App) shutdown(ctx context.Context) {
-	if a.tray != nil {
-		a.tray.Close()
-	}
 }
 
 // toggleWindow — единственное действие иконки в трее (клик или пункт меню
@@ -236,6 +321,163 @@ func (a *App) toggleWindow() {
 		wailsrt.WindowShow(a.ctx)
 	} else {
 		wailsrt.WindowHide(a.ctx)
+	}
+}
+
+// startRemote поднимает бота на другой машине по SSH вместо локального
+// botproc — переставляет точки подмены (pid/aliveAt/start/stop/uptime/
+// botVersion) на remotebot.Client, дальше statusLoop и вотчдог работают
+// не зная разницы. Осечка при подключении (неверный хост, ключ не
+// подходит) оставляет точки подмены как есть — они по-прежнему смотрят на
+// локальный a.bot, что на машине без /proc и без каталога бота просто
+// молча ничего не находит (PID()==0, Version()==""), а не падает: то же
+// самое "тихая осечка не должна ронять окно", что и у остальных
+// best-effort частей GUI. Notice в логе — единственный способ узнать
+// почему.
+func (a *App) startRemote() {
+	r := a.ui.Remote
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		a.emit("notice", "не удалось определить каталог настроек: "+err.Error())
+		a.setRemoteState("offline", err.Error())
+		a.failRemotePreflight(err)
+		return
+	}
+	c, err := remotebot.Dial(remotebot.Config{
+		Host:           r.Host,
+		User:           r.User,
+		KeyPath:        r.KeyPath,
+		HerokuDir:      r.Dir,
+		KnownHostsPath: filepath.Join(cfgDir, "hkc", "known_hosts"),
+	})
+	if err != nil {
+		a.emit("notice", "не удалось подключиться к "+r.Host+": "+err.Error())
+		a.setRemoteState("offline", err.Error())
+		a.failRemotePreflight(err)
+		return
+	}
+	a.remote = c
+	a.setRemoteState("online", "SSH · "+r.Dir)
+
+	// Сорвавшаяся SSH-команда — это «не смог спросить», а не «бота нет».
+	// Разница видна невооружённым глазом: на локальной машине /proc не
+	// подводит, а через сеть ответ теряется регулярно, и без этого различия
+	// pid в окне мигал 1234 → 0 → 1234 на каждой заминке, а вотчдог
+	// принимался «спасать» живого бота. Держим последний достоверный ответ
+	// remoteStaleWindow — дальше уже честнее признать, что мы не знаем.
+	//
+	// Заодно это и единственный регулярный пульс соединения: опрос pid идёт
+	// каждую секунду, отдельно пинговать хост было бы тем же запросом ещё
+	// раз.
+	online := func(pid int) int {
+		a.setRemoteState("online", "SSH · "+r.Dir)
+		a.rememberPID(pid)
+		return pid
+	}
+	offline := func(err error) int {
+		a.setRemoteState("offline", err.Error())
+		return a.stalePID()
+	}
+	a.pid = func() int {
+		pid, err := c.PID()
+		if err != nil {
+			return offline(err)
+		}
+		return online(pid)
+	}
+	a.aliveAt = func(pid int) bool {
+		pids, err := c.PIDs()
+		if err != nil {
+			return offline(err) == pid
+		}
+		for _, p := range pids {
+			if p == pid {
+				online(pid)
+				return true
+			}
+		}
+		a.setRemoteState("online", "SSH · "+r.Dir)
+		return false
+	}
+	a.start = func() startResult {
+		r := c.Start()
+		return startResult{PID: r.PID, AlreadyStarting: r.AlreadyStarting, Err: r.Err}
+	}
+	a.stop = c.Stop
+	a.uptime = func(pid int) string {
+		s, err := c.Uptime(pid)
+		if err != nil {
+			return "—"
+		}
+		return s
+	}
+	a.botVersion = func() string {
+		v, _ := c.Version()
+		return v
+	}
+
+	go a.runChecklist(c.Preflight())
+	a.loadRemoteHistory()
+	go a.followRemoteLog()
+}
+
+// failRemotePreflight отмечает все проверки как заведомо неудавшиеся —
+// подключиться не вышло даже для того, чтобы их выполнить (плохие
+// настройки, сеть). Экран проверок не должен виснуть с крутящимися
+// индикаторами до бесконечности только потому, что нет самого способа их
+// прогнать: пользователь должен увидеть ровно ту же причину, что уже ушла
+// в notice, прямо там, куда и так смотрит.
+func (a *App) failRemotePreflight(err error) {
+	checks := (&remotebot.Client{}).Preflight()
+	for i, c := range checks {
+		a.emit("preflight-check", PreflightEvent{
+			Index: i, Total: len(checks), Name: c.Name,
+			Status: "failed", Detail: "нет подключения: " + err.Error(),
+		})
+	}
+}
+
+// loadRemoteHistory — то же, что loadHistory делает локально, только
+// историю приносит одна SSH-команда (remotebot.Client.TailLines), а не
+// чтение файла с диска.
+func (a *App) loadRemoteHistory() {
+	lines, err := a.remote.TailLines(ringCapacity)
+	if err != nil {
+		a.emit("notice", "не удалось прочитать лог на удалённой машине: "+err.Error())
+		return
+	}
+	a.mu.Lock()
+	a.ring = append(a.ring[:0], lines...)
+	a.rebuildLocked()
+	a.mu.Unlock()
+}
+
+// followRemoteLog — удалённый аналог followLog: тот же feedLine на каждую
+// новую строку, разница только в источнике (remotebot.Client.Follow вместо
+// logfeed.Follow).
+func (a *App) followRemoteLog() {
+	h, err := a.remote.Follow()
+	if err != nil {
+		a.emit("notice", "не удалось начать слежение за логом: "+err.Error())
+		return
+	}
+	a.remoteFollower = h
+	for raw := range h.Lines {
+		a.feedLine(raw)
+	}
+}
+
+// shutdown закрывает соединение трея с D-Bus и соединение с удалённым ботом,
+// если они поднимались. Отдельный хук (options.App.OnShutdown), а не просто
+// оставить процессу самому прибраться при выходе: незакрытые соединения — не
+// критично (ОС закроет сокеты вместе с процессом), но явный Close честнее,
+// чем полагаться на это.
+func (a *App) shutdown(ctx context.Context) {
+	if a.tray != nil {
+		a.tray.Close()
+	}
+	if a.remote != nil {
+		a.remote.Close()
 	}
 }
 
@@ -268,8 +510,16 @@ type PreflightEvent struct {
 // Идёт в фоне параллельно с loadHistory/followLog/statusLoop, а не до них —
 // сами проверки лишь показывают состояние окружения, они не blocking-условие
 // для того, чтобы начать читать уже существующий heroku.log.
-func (a *App) runPreflight() {
-	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+// runChecklist гоняет уже готовый список проверок последовательно, не
+// параллельно — прогон должен читаться как цепочка шагов, а не список,
+// обновившийся целиком разом, тот же контракт, что и в
+// internal/tui/preflight.go. Шлёт результат каждой отдельным событием, а не
+// одним ответом в конце: и "модульные тесты" локально, и SSH-команды
+// удалённо могут идти секундами, окно не должно молчать всё это время.
+// Общая для локального (preflight.All) и удалённого (remotebot.Client.
+// Preflight) списков — сам прогон и отправка событий не знают разницы
+// между ними.
+func (a *App) runChecklist(checks []preflight.Check) {
 	for i, c := range checks {
 		start := time.Now()
 		detail, status := c.Run()
@@ -284,13 +534,30 @@ func (a *App) runPreflight() {
 	}
 }
 
+func (a *App) runPreflight() {
+	a.runChecklist(preflight.All(a.bot.HerokuDir, a.bot.LogFile))
+}
+
 // PreflightChecks — только имена проверок, без запуска. Фронтенду нужно
 // нарисовать полный список строк ДО того, как первая проверка успеет
 // отработать (события 'preflight-check' начинают идти сразу при старте
 // окна) — иначе экран открывался бы пустым и достраивался бы по одной
 // строке снизу, а не показывал сразу, сколько шагов всего и какие.
+//
+// В удалённом режиме список строится через (&remotebot.Client{}).Preflight()
+// — пустым, ещё не подключённым клиентом: сами имена проверок не зависят
+// от того, есть ли уже живое SSH-соединение, а вот дождаться его здесь
+// было бы неправильно — a.ui.Remote выставляется синхронно в начале
+// startup(), а a.remote только после успешного подключения (startRemote —
+// фоновая горутина), и ожидание одного из другого раньше иногда вешало
+// экран проверок навсегда, если фронтенд успевал спросить раньше.
 func (a *App) PreflightChecks() []string {
-	checks := preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+	var checks []preflight.Check
+	if a.ui.Remote.Host != "" {
+		checks = (&remotebot.Client{}).Preflight()
+	} else {
+		checks = preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+	}
 	names := make([]string, len(checks))
 	for i, c := range checks {
 		names[i] = c.Name
@@ -311,14 +578,20 @@ func preflightStatusString(s preflight.Status) string {
 	}
 }
 
-// guiAssetPrefix/guiAssetSuffix — имя архива с GUI-бинарником в релизе,
-// как его кладёт release.yml: tar -czf hrk-console-gui-$TAG-linux-amd64.tar.gz.
-// hkc в том же релизе носит своё имя (hkc-*) — selfupdate.Apply различает
-// их по этим prefix/suffix, иначе скачал бы не то.
-const (
-	guiAssetPrefix = "hrk-console-gui-"
-	guiAssetSuffix = "-linux-amd64.tar.gz"
-)
+// guiAssetPrefix/guiAssetSuffix — имя архива с GUI-бинарником в релизе, как
+// его кладёт release.yml: hrk-console-gui-$TAG-linux-amd64.tar.gz на Linux,
+// hrk-console-gui-$TAG-windows-amd64.tar.gz на Windows (два разных job'а в
+// release.yml, одна и та же схема имени). hkc в том же релизе носит своё
+// имя (hkc-*) — selfupdate.Apply различает их по этим prefix/suffix, иначе
+// скачал бы не то.
+const guiAssetPrefix = "hrk-console-gui-"
+
+func guiAssetSuffix() string {
+	if runtime.GOOS == "windows" {
+		return "-windows-amd64.tar.gz"
+	}
+	return "-linux-amd64.tar.gz"
+}
 
 // checkUpdateOnce — разовая проверка последнего релиза на GitHub при
 // старте окна. Шлёт фронтенду результат через CheckForUpdate, но только на
@@ -354,11 +627,47 @@ func (a *App) CheckForUpdate() UpdateCheckResult {
 // молчаливый автозапуск для такого не подходит, в отличие от простой
 // проверки в checkUpdateOnce. Перезапуск (RestartApp) — отдельный шаг.
 func (a *App) ApplyUpdate() ActionResult {
-	applied, err := selfupdate.Apply(guiAssetPrefix, guiAssetSuffix)
+	applied, err := selfupdate.Apply(guiAssetPrefix, guiAssetSuffix())
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}
 	}
 	return ActionResult{OK: true, Message: applied}
+}
+
+// healPendingUpdate подхватывает обновление, которое ApplyUpdate когда-то
+// скачал (см. RestartApp), но подмена так и не завершилась, — например,
+// предыдущий явный клик «перезапустить» запустил своп-скрипт, а тот не
+// уложился в отведённые попытки (антивирус подержал свежескачанный exe
+// дольше обычного). Без этой проверки «.new» так и лежал бы рядом с
+// прежним exe навсегда, а пользователю приходилось бы вручную стирать
+// старый файл и переименовывать новый. Тот же своп-скрипт просто
+// запускается заново при каждом обычном старте окна, без единого клика —
+// startup() зовёт это самым первым делом, до всего остального: если
+// обновление ждёт применения, окну всё равно предстоит тут же закрыться.
+func (a *App) healPendingUpdate() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	staged := selfupdate.PendingUpdate(exe)
+	if staged == "" {
+		return false
+	}
+	if err := restartWithSwap(exe, staged); err != nil {
+		return false
+	}
+	a.quitSoon()
+	return true
+}
+
+// quitSoon — небольшая задержка перед Quit, чтобы фронтенд успел получить
+// ответ на вызвавший её запрос и показать что-то осмысленное, прежде чем
+// окно исчезнет.
+func (a *App) quitSoon() {
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		wailsrt.Quit(a.ctx)
+	}()
 }
 
 // RestartApp поднимает новый процесс того же бинарника (уже подменённого
@@ -370,28 +679,28 @@ func (a *App) RestartApp() ActionResult {
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}
 	}
-	cmd := exec.Command(exe)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return ActionResult{OK: false, Message: err.Error()}
-	}
-	// Небольшая задержка — чтобы фронтенд успел получить этот ответ и
-	// показать что-то осмысленное, прежде чем окно исчезнет.
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		wailsrt.Quit(a.ctx)
-	}()
-	return ActionResult{OK: true}
-}
 
-// notifyDesktop — best-effort desktop-уведомление через notify-send (часть
-// libnotify-bin, обычно уже стоит на Linux-рабочих столах): чтобы падение
-// бота было видно, даже когда окно GUI свёрнуто или не в фокусе. Нет
-// бинарника или недоступны DISPLAY/DBUS — тихо ничего не делает, само
-// уведомление не настолько важно, чтобы падать или шуметь в лог.
-func notifyDesktop(title, body string) {
-	_ = exec.Command("notify-send", "-a", "Heroku", title, body).Run()
+	// На Windows ApplyUpdate не смог подменить себя сразу (файл заблокирован,
+	// пока этот процесс из него выполняется) и оставил новую версию рядом —
+	// restartWithSwap ждёт, пока этот процесс действительно завершится,
+	// прежде чем подменять файл. На Linux staged всегда пусто: там подмена
+	// уже произошла в момент ApplyUpdate, и RestartApp — просто обычный
+	// перезапуск.
+	if staged := selfupdate.PendingUpdate(exe); staged != "" {
+		if err := restartWithSwap(exe, staged); err != nil {
+			return ActionResult{OK: false, Message: err.Error()}
+		}
+	} else {
+		cmd := exec.Command(exe)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return ActionResult{OK: false, Message: err.Error()}
+		}
+	}
+
+	a.quitSoon()
+	return ActionResult{OK: true}
 }
 
 // loadHistory поднимает хвост уже написанного лога при старте окна — без
@@ -509,12 +818,17 @@ func (a *App) emitStatus(pid int) {
 func (a *App) statusLocked(pid int) Status {
 	uptime := "—"
 	if pid != 0 {
-		uptime = botproc.Uptime(pid)
+		uptime = a.uptime(pid)
 	}
-	streamIssue := ""
-	if a.follower != nil {
+	streamIssue, streamIssueFor := "", ""
+	switch {
+	case a.follower != nil:
 		if ok, reason, since := a.follower.Alive(); !ok {
-			streamIssue = reason + " · " + humanSince(time.Since(since))
+			streamIssue, streamIssueFor = reason, humanSince(time.Since(since))
+		}
+	case a.remoteFollower != nil:
+		if ok, reason, since := a.remoteFollower.Alive(); !ok {
+			streamIssue, streamIssueFor = reason, humanSince(time.Since(since))
 		}
 	}
 	a.watchMu.Lock()
@@ -522,9 +836,10 @@ func (a *App) statusLocked(pid int) Status {
 	a.watchMu.Unlock()
 	return Status{
 		Alive: pid != 0, PID: pid, Uptime: uptime,
-		BotVersion: a.bot.Version(), HkcVersion: version,
+		BotVersion: a.botVersion(), HkcVersion: version,
 		Watchdog: a.ui.Watchdog, Restarting: restarting,
-		StreamIssue: streamIssue,
+		StreamIssue: streamIssue, StreamIssueFor: streamIssueFor,
+		RemoteState: a.remoteState, RemoteStateNote: a.remoteStateNote,
 	}
 }
 
@@ -574,7 +889,68 @@ func (a *App) Bootstrap() Bootstrap {
 	pid := a.tickPID()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return Bootstrap{Status: a.statusLocked(pid), UIState: a.ui, Records: toRecs(a.visible)}
+	return Bootstrap{
+		Status: a.statusLocked(pid), UIState: a.ui,
+		Records: toRecs(a.visible), Platform: runtime.GOOS,
+	}
+}
+
+// ConnectRemote сохраняет настройки подключения к боту на другой машине и
+// перезапускает приложение (тем же RestartApp, что и после самообновления).
+// Переключение между локальным ботом и удалённым на лету — по сути другая
+// программа (другой источник /proc, другой файл лога, другое соединение) —
+// пересобирать половину App вместо честного перезапуска было бы источником
+// трудноуловимых гонок между старыми и новыми горутинами.
+func (a *App) ConnectRemote(cfg state.Remote) ActionResult {
+	a.mu.Lock()
+	a.ui.Remote = cfg
+	ui := a.ui
+	a.mu.Unlock()
+	state.Save(ui)
+	return a.RestartApp()
+}
+
+// DisconnectRemote возвращает к локальному боту тем же перезапуском.
+func (a *App) DisconnectRemote() ActionResult {
+	a.mu.Lock()
+	a.ui.Remote = state.Remote{}
+	ui := a.ui
+	a.mu.Unlock()
+	state.Save(ui)
+	return a.RestartApp()
+}
+
+// TestRemoteConnection — «проверить соединение» до того, как сохранить
+// настройки и перезапустить окно: тот же remotebot.Dial, что и настоящее
+// подключение (включая TOFU-проверку ключа хоста), но соединение сразу
+// закрывается и ничего не сохраняется. Без этого метода единственный
+// способ узнать, что хост/логин/ключ введены неверно, — сохранить,
+// перезапустить окно и увидеть notice постфактум.
+func (a *App) TestRemoteConnection(cfg state.Remote) ActionResult {
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	c, err := remotebot.Dial(remotebot.Config{
+		Host:           cfg.Host,
+		User:           cfg.User,
+		KeyPath:        cfg.KeyPath,
+		HerokuDir:      cfg.Dir,
+		KnownHostsPath: filepath.Join(cfgDir, "hkc", "known_hosts"),
+	})
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	defer c.Close()
+
+	pid, err := c.PID()
+	if err != nil {
+		return ActionResult{OK: false, Message: "подключился, но не смог прочитать /proc: " + err.Error()}
+	}
+	if pid == 0 {
+		return ActionResult{OK: true, Message: "подключение работает, но бот сейчас не запущен"}
+	}
+	return ActionResult{OK: true, Message: fmt.Sprintf("подключение работает, бот жив (pid %d)", pid)}
 }
 
 // ClearLog сбрасывает буфер и показанную историю — старые накопленные
@@ -666,7 +1042,11 @@ func (a *App) StartBot() ActionResult {
 }
 
 func (a *App) StopBot() ActionResult {
-	switch a.stop() {
+	code, err := a.stop()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	switch code {
 	case 0:
 		return ActionResult{OK: true, Message: "остановлен"}
 	case 2:
