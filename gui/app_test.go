@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -223,93 +221,7 @@ func TestStartBotArmsCooldownAgainstWatchdog(t *testing.T) {
 // TestFindAsset, TestDownloadBinary*). Здесь остаётся только то, что
 // специфично для GUI: как App пробрасывает результат наружу событиями.
 
-// checkUpdateOnce молчит на dev-сборке (её версия — "dev", не тег) — не
-// с чем сравнивать, а не "всегда есть обновление". CheckForUpdate вернул бы
-// !OK в этом случае, а checkUpdateOnce эмитит событие только на OK.
-func TestCheckUpdateOnceSilentOnDevBuild(t *testing.T) {
-	origVersion := version
-	defer func() { version = origVersion }()
-	version = "dev"
-
-	h := newHarness(t)
-	called := false
-	h.app.emit = func(event string, data ...interface{}) {
-		if event == "update-status" {
-			called = true
-		}
-	}
-	h.app.checkUpdateOnce() // не должен даже пытаться сходить в сеть
-	if called {
-		t.Error("dev-сборка не должна слать статус обновления")
-	}
-}
-
-func TestCheckUpdateOnceEmitsOnNewerRelease(t *testing.T) {
-	origURL := selfupdate.CheckURL
-	defer func() { selfupdate.CheckURL = origURL }()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example/release"}`))
-	}))
-	defer srv.Close()
-	selfupdate.CheckURL = srv.URL
-
-	origVersion := version
-	defer func() { version = origVersion }()
-	version = "v1.0.0"
-
-	h := newHarness(t)
-	var got []UpdateCheckResult
-	h.app.emit = func(event string, data ...interface{}) {
-		if event == "update-status" && len(data) == 1 {
-			if res, ok := data[0].(UpdateCheckResult); ok {
-				got = append(got, res)
-			}
-		}
-	}
-
-	h.app.checkUpdateOnce()
-
-	if len(got) != 1 || !got[0].Available || got[0].Latest != "v9.9.9" {
-		t.Errorf("update-status = %+v, ожидался один эвент с available=true latest=v9.9.9", got)
-	}
-}
-
-// checkUpdateOnce тоже эмитит событие, когда обновлений нет — фронтенд
-// должен получить возможность показать "актуально", а не молчание, из
-// которого не отличить "всё ок" от "проверка ещё не случилась".
-func TestCheckUpdateOnceEmitsWhenUpToDate(t *testing.T) {
-	origURL := selfupdate.CheckURL
-	defer func() { selfupdate.CheckURL = origURL }()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v1.0.0","html_url":"https://example/release"}`))
-	}))
-	defer srv.Close()
-	selfupdate.CheckURL = srv.URL
-
-	origVersion := version
-	defer func() { version = origVersion }()
-	version = "v1.0.0"
-
-	h := newHarness(t)
-	var got []UpdateCheckResult
-	h.app.emit = func(event string, data ...interface{}) {
-		if event == "update-status" && len(data) == 1 {
-			if res, ok := data[0].(UpdateCheckResult); ok {
-				got = append(got, res)
-			}
-		}
-	}
-
-	h.app.checkUpdateOnce()
-
-	if len(got) != 1 || !got[0].OK || got[0].Available {
-		t.Errorf("update-status = %+v, ожидался один эвент с ok=true available=false", got)
-	}
-}
-
-// CheckForUpdate не молчит на сетевой ошибке в отличие от checkUpdateOnce —
+// CheckForUpdate не молчит на сетевой ошибке —
 // ручной клик пользователя должен получить ответ, а не тишину.
 func TestCheckForUpdateReportsNetworkError(t *testing.T) {
 	origURL := selfupdate.CheckURL

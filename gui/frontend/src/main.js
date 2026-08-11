@@ -117,12 +117,6 @@ document.querySelector('#app').innerHTML = `
     <div class="mod-menu-empty" id="mod-menu-empty">пока ни одного модуля</div>
   </div>
 
-  <div class="update-toast" id="update-toast" style="display:none">
-    <span class="ut-icon">↑</span>
-    <span class="ut-text">Доступна версия <b id="ut-version"></b></span>
-    <button id="ut-update" class="primary">Обновить</button>
-    <button id="ut-dismiss" class="ut-dismiss" title="Не сейчас">×</button>
-  </div>
   <div class="stream-issue" id="stream-issue" style="display:none">
     <span class="si-icon">⚠</span>
     <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
@@ -200,10 +194,6 @@ const btnClear = el('btn-clear');
 const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
 const channelBadge = el('channel-badge');
-const updateToast = el('update-toast');
-const utVersion = el('ut-version');
-const btnUtUpdate = el('ut-update');
-const btnUtDismiss = el('ut-dismiss');
 const helpOverlay = el('help-overlay');
 const btnMods = el('btn-mods');
 const slWarn = el('sl-warn');
@@ -519,8 +509,8 @@ EventsOn('notice', (text) => {
 // всегда видно (data-state), а не "бейдж есть = что-то не так, бейджа нет =
 // разбирайся сам":
 //
-//   idle      → клик проверяет (или просто ждём первую авто-проверку при
-//               старте — см. 'update-status' ниже)
+//   idle      → клик проверяет (бейдж выставляется при старте из
+//               CheckChannels — см. openUpdateGate)
 //   checking  → идёт запрос, клик игнорируется
 //   uptodate  → "✓ актуально", клик проверяет заново
 //   available → "↑ vX.Y.Z", клик качает и подменяет себя на диске
@@ -539,30 +529,20 @@ function setUpdateBadge(state, text, title) {
     updateBadge.textContent = text;
     updateBadge.title = title;
 }
-
-// Авто-проверка при старте окна: бэкенд шлёт результат, только если запрос
-// реально отработал (см. checkUpdateOnce) — на сетевой осечке событие не
-// приходит вовсе, и бейдж просто остаётся в idle, приглашая проверить
-// вручную, а не рапортует об ошибке без явного запроса пользователя.
-EventsOn('update-status', (res) => applyUpdateResult(res, false));
-
+// applyUpdateResult раскладывает ответ ручной проверки по состояниям бейджа.
+// Отдельного «тоста» с предложением обновиться больше нет: при старте окна
+// то же самое, только подробнее и про оба канала сразу, показывает экран
+// обновлений (openUpdateGate), и держать два способа сообщить одну новость
+// значило бы вернуть ровно то дублирование, ради снятия которого убирали
+// панель в 1.14.0.
 function applyUpdateResult(res, manual) {
     if (res.available) {
         updateInfo = { version: res.latest, url: res.url };
         setUpdateBadge('available', '↑ ' + res.latest,
             `Доступна версия ${res.latest} — клик обновит на месте, ПКМ откроет релиз в браузере`);
-        // Тост — только по итогам АВТО-проверки при старте окна, не ручной:
-        // пользователь, только что сам нажавший "проверить", уже смотрит на
-        // бейдж и не нуждается в отдельном приглашении поверх того же
-        // ответа. И только если ещё не отклонял именно эту версию в этом
-        // запуске — иначе он мигал бы заново на каждый случайный ре-рендер.
-        if (!manual && dismissedUpdateVersion !== res.latest) {
-            showUpdateToast(res.latest);
-        }
         return;
     }
     updateInfo = null;
-    hideUpdateToast();
     if (res.ok) {
         setUpdateBadge('uptodate', '✓ актуально',
             `Уже последняя версия (${res.current}) — клик проверит ещё раз`);
@@ -571,45 +551,15 @@ function applyUpdateResult(res, manual) {
     }
 }
 
-// dismissedUpdateVersion — версия, которую явно отклонили крестиком: тост
-// для неё больше не всплывает сам, бейдж в шапке остаётся тихим
-// напоминанием и обновляет всё равно можно кликом по нему в любой момент.
-let dismissedUpdateVersion = null;
-
-function showUpdateToast(version) {
-    utVersion.textContent = version;
-    // Появление анимирует сам CSS: выход из display:none перезапускает
-    // анимацию элемента, отдельный класс-триггер для этого не нужен.
-    updateToast.style.display = '';
-}
-
-function hideUpdateToast() {
-    updateToast.style.display = 'none';
-}
-
-// startUpdate — общее действие для клика по бейджу в состоянии "available"
-// и для кнопки "Обновить" в тосте: один и тот же переход (скачать →
-// подменить на диске → предложить перезапустить), запускать который может
-// любой из двух — тост просто более заметный способ добраться до того же
-// самого действия.
-// startUpdate — путь «бейдж в шапке / тост». Ведёт в то же самое окно с
-// шагами, что и экран обновлений при старте: одно действие должно выглядеть
-// одинаково, откуда бы его ни запустили, и «⟳ обновляю…» одной строкой в
-// бейдже было ровно тем непрозрачным ожиданием, ради которого окно и
-// заводилось.
+// startUpdate — путь «бейдж в шапке». Ведёт в то же самое окно с шагами, что
+// и экран обновлений при старте: одно действие должно выглядеть одинаково,
+// откуда бы его ни запустили, и «⟳ обновляю…» одной строкой в бейдже было
+// ровно тем непрозрачным ожиданием, ради которого окно и заводилось.
 async function startUpdate() {
-    hideUpdateToast();
     setUpdateBadge('updating', '⟳ обновляю…', 'Скачиваю и подменяю приложение на диске');
     const channel = channelBadge.dataset.channel === 'dev' ? 'dev' : '';
     await startUpdateFrom(channel, updateInfo ? updateInfo.version : '');
 }
-
-btnUtUpdate.addEventListener('click', startUpdate);
-btnUtDismiss.addEventListener('click', () => {
-    dismissedUpdateVersion = updateInfo ? updateInfo.version : null;
-    hideUpdateToast();
-});
-
 updateBadge.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (updateInfo) BrowserOpenURL(updateInfo.url);
@@ -631,7 +581,6 @@ updateBadge.addEventListener('click', async () => {
     }
 
     // idle / uptodate / error — все три ведут к ручной проверке.
-    hideUpdateToast();
     setUpdateBadge('checking', '⟳ проверяю…', 'Проверяю GitHub на новый релиз');
     applyUpdateResult(await CheckForUpdate(), true);
 });
@@ -769,7 +718,21 @@ async function openUpdateGate() {
     } catch {
         return; // не смогли спросить — молча живём дальше, как и checkUpdateOnce
     }
-    if (!res || !res.offer) return;
+    if (!res) return;
+
+    // Бейдж в шапке выставляется из этого же ответа — отдельной проверки при
+    // старте окна больше нет (см. gui/app.go startup): она спрашивала GitHub
+    // о том, что здесь уже известно, и удваивала расход часового лимита API.
+    const own = res.channel === 'dev' ? res.dev : res.stable;
+    if (own && own.ok && !own.isCurrent) {
+        updateInfo = { version: own.tag, url: own.url };
+        setUpdateBadge('available', '↑ ' + own.tag,
+            `Доступна версия ${own.tag} — клик обновит на месте, ПКМ откроет релиз в браузере`);
+    } else if (own && own.ok) {
+        setUpdateBadge('uptodate', '✓ актуально', `Уже последняя версия (${res.current}) — клик проверит ещё раз`);
+    }
+
+    if (!res.offer) return;
 
     gateCurrent.textContent = 'сейчас запущено: ' + (res.current || 'dev');
     gateList.innerHTML = '';

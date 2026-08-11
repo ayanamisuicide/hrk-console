@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestVersionLess(t *testing.T) {
@@ -303,41 +306,140 @@ func TestDownloadBinaryWithoutProgressStillWorks(t *testing.T) {
 	}
 }
 
-// CheckBoth опрашивает каналы независимо: осечка одного не должна гасить
-// второй — иначе недоступность одного адреса делала бы экран обновлений
-// пустым вместо того, чтобы показать то, что всё-таки удалось узнать.
-func TestCheckBothKeepsChannelsIndependent(t *testing.T) {
-	stableSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"tag_name":"v1.14.0","html_url":"https://example/stable","published_at":"2026-08-11T06:49:52Z"}`))
-	}))
-	defer stableSrv.Close()
-	devSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// Запрос теперь один на оба канала, поэтому его осечка гасит оба — и оба
+// обязаны честно назвать причину. Раньше запросов было два, и тест проверял
+// их независимость; независимость ушла вместе со вторым запросом, ради
+// вдвое меньшего расхода часового лимита GitHub.
+func TestCheckBothReportsReasonInBothChannels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer devSrv.Close()
-
+	defer srv.Close()
 	oldCheck, oldList := CheckURL, DevListURL
-	CheckURL, DevListURL = stableSrv.URL, devSrv.URL
+	CheckURL, DevListURL = srv.URL, srv.URL
 	defer func() { CheckURL, DevListURL = oldCheck, oldList }()
 
-	stable, dev := CheckBoth("v1.14.0")
+	stable, dev := CheckBoth("v1.15.0")
 
-	if !stable.OK {
-		t.Fatalf("stable должен был отработать, получено: %q", stable.Message)
+	if stable.OK || dev.OK {
+		t.Error("оба канала должны быть !OK — запрос не удался")
 	}
-	if stable.Tag != "v1.14.0" {
-		t.Errorf("stable.Tag = %q, ожидался v1.14.0", stable.Tag)
+	if stable.Message == "" || dev.Message == "" {
+		t.Errorf("причина потерялась: stable=%q dev=%q", stable.Message, dev.Message)
+	}
+}
+
+// published_at обязан разбираться: без него каналы нечем сопоставить между
+// собой, а весь экран обновлений построен именно на нём.
+func TestCheckBothParsesPublishedAt(t *testing.T) {
+	defer serveReleases(t, releasesInGitHubOrder)()
+	oldCheck := CheckURL
+	CheckURL = DevListURL
+	defer func() { CheckURL = oldCheck }()
+
+	stable, dev := CheckBoth("v1.0.0")
+	if stable.PublishedAt.IsZero() || dev.PublishedAt.IsZero() {
+		t.Errorf("published_at не разобран: stable=%v dev=%v", stable.PublishedAt, dev.PublishedAt)
+	}
+	if stable.Tag != "v1.15.0" || dev.Tag != "dev-57dd2ab" {
+		t.Errorf("выбраны не самые свежие: stable=%q dev=%q", stable.Tag, dev.Tag)
+	}
+}
+
+// Порядок, в котором GitHub реально отдаёт /releases: сначала обычные
+// релизы по убыванию даты, затем prerelease — отсортированные ПО ИМЕНИ
+// ТЕГА, а не по времени. У dev-тегов имя это dev-<sha>, так что их порядок
+// в списке случаен. Здесь самый свежий dev (07:23) стоит последним, а
+// первым — полуторачасовой давности: прежний код брал первый попавшийся
+// prerelease и потому годами отдавал не ту сборку.
+const releasesInGitHubOrder = `[
+ {"tag_name":"v1.15.0","prerelease":false,"published_at":"2026-08-11T07:27:13Z"},
+ {"tag_name":"v1.14.0","prerelease":false,"published_at":"2026-08-11T06:49:52Z"},
+ {"tag_name":"dev-f2e9642","prerelease":true,"published_at":"2026-08-11T06:00:10Z"},
+ {"tag_name":"dev-f0b43bd","prerelease":true,"published_at":"2026-08-11T06:45:40Z"},
+ {"tag_name":"dev-9626045","prerelease":true,"published_at":"2026-08-11T05:52:27Z"},
+ {"tag_name":"dev-57dd2ab","prerelease":true,"published_at":"2026-08-11T07:23:04Z"}
+]`
+
+func serveReleases(t *testing.T, body string) func() {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}))
+	old := DevListURL
+	DevListURL = srv.URL
+	return func() { DevListURL = old; srv.Close() }
+}
+
+func TestFetchLatestDevPicksNewestNotFirst(t *testing.T) {
+	defer serveReleases(t, releasesInGitHubOrder)()
+
+	rel, err := fetchLatestDev()
+	if err != nil {
+		t.Fatalf("fetchLatestDev: %v", err)
+	}
+	if rel.TagName != "dev-57dd2ab" {
+		t.Errorf("выбрана сборка %q, а самая свежая по дате — dev-57dd2ab", rel.TagName)
+	}
+}
+
+// CheckBoth обязан выбирать по дате в обоих каналах и укладываться в ОДИН
+// запрос: два запроса вдвое быстрее выбирали неаутентифицированный лимит
+// GitHub (60/час на IP), после которого API отвечает 403 на всё подряд.
+func TestCheckBothPicksNewestAndUsesOneRequest(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Write([]byte(releasesInGitHubOrder))
+	}))
+	defer srv.Close()
+	oldCheck, oldList := CheckURL, DevListURL
+	CheckURL, DevListURL = srv.URL, srv.URL
+	defer func() { CheckURL, DevListURL = oldCheck, oldList }()
+
+	stable, dev := CheckBoth("v1.15.0")
+
+	if hits != 1 {
+		t.Errorf("запросов к GitHub: %d, должен быть ровно один", hits)
+	}
+	if stable.Tag != "v1.15.0" {
+		t.Errorf("stable.Tag = %q, ожидался v1.15.0", stable.Tag)
 	}
 	if !stable.IsCurrent {
-		t.Error("stable.IsCurrent должен быть true — текущая версия совпадает с тегом")
+		t.Error("stable.IsCurrent должен быть true — запущена ровно эта версия")
 	}
-	if stable.PublishedAt.IsZero() {
-		t.Error("published_at не разобран — без него каналы нечем сравнивать между собой")
+	if dev.Tag != "dev-57dd2ab" {
+		t.Errorf("dev.Tag = %q, ожидался dev-57dd2ab (самый свежий по дате)", dev.Tag)
 	}
-	if dev.OK {
-		t.Error("dev не должен был отработать — сервер отвечает 500")
+	if dev.IsCurrent {
+		t.Error("dev.IsCurrent должен быть false — запущена стабильная сборка")
 	}
-	if dev.Message == "" {
-		t.Error("dev.Message пуст — причина осечки потерялась")
+}
+
+// 403 от GitHub у неаутентифицированного клиента почти всегда значит
+// исчерпанный часовой лимит. Голый код в сообщении не говорит ни причины,
+// ни что делать, — заголовки говорят и то, и другое.
+func TestHTTPErrorExplainsRateLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "60")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(23*time.Minute).Unix(), 10))
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	old := DevListURL
+	DevListURL = srv.URL
+	defer func() { DevListURL = old }()
+
+	_, err := fetchReleases()
+	if err == nil {
+		t.Fatal("ожидалась ошибка")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "лимит") || !strings.Contains(msg, "60") {
+		t.Errorf("сообщение %q не объясняет исчерпанный лимит", msg)
+	}
+	if strings.Contains(msg, "403") {
+		t.Errorf("сообщение %q всё ещё сводится к голому коду ответа", msg)
 	}
 }

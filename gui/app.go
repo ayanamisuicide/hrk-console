@@ -98,8 +98,7 @@ type ActionResult struct {
 	Message string `json:"message"`
 }
 
-// UpdateInfo — событие "вышла версия новее той, что запущена", шлётся
-// фронтенду не чаще раза за окно (см. checkUpdateOnce).
+// UpdateInfo — "вышла версия новее той, что запущена".
 type UpdateInfo struct {
 	Version string `json:"version"`
 	URL     string `json:"url"`
@@ -306,7 +305,12 @@ func (a *App) startup(ctx context.Context) {
 		go a.runPreflight()
 	}
 	go a.statusLoop()
-	go a.checkUpdateOnce()
+	// Отдельной проверки обновлений при старте здесь больше нет: CheckChannels
+	// с фронтенда (экран обновлений после проверок окружения) и так узнаёт
+	// оба канала, и её ответа хватает, чтобы выставить бейдж в шапке. Два
+	// запроса ради одного и того же ответа выбирали неаутентифицированный
+	// лимит GitHub (60 в час на IP) за пару десятков перезапусков окна, после
+	// чего API отвечал 403 на всё подряд — включая само обновление.
 
 	a.tray = &Tray{}
 	go a.tray.Start(a.toggleWindow, func() { wailsrt.Quit(a.ctx) })
@@ -597,25 +601,9 @@ func guiAssetSuffix() string {
 	return "-linux-amd64.tar.gz"
 }
 
-// checkUpdateOnce — разовая проверка последнего релиза на GitHub при
-// старте окна. Шлёт фронтенду результат через CheckForUpdate, но только на
-// успешный ответ (галочка "актуально" или бейдж новой версии) — на осечке
-// (нет сети, GitHub не ответил, версия сборки не чистый тег) молчит: само
-// уведомление не настолько важно, чтобы шуметь при каждом старте окна из-за
-// временной недоступности сети. Ручная проверка (CheckForUpdate по клику)
-// осечку уже показывает — там пользователь явно спросил и ждёт ответа.
-func (a *App) checkUpdateOnce() {
-	res := a.CheckForUpdate()
-	if !res.OK {
-		return
-	}
-	a.emit("update-status", res)
-}
-
-// CheckForUpdate — вызывается и из checkUpdateOnce при старте окна, и по
-// клику на бейдж в шапке ("менюшка обновлений" — сам бейдж). Логика запроса
-// и сравнения версий общая с TUI на стабильном канале (selfupdate.Check);
-// канал "dev" — только у GUI, см. selfupdate.CheckChannel.
+// старте окна идёт через CheckChannels (экран обновлений), который и так
+// узнаёт оба канала. Логика запроса и сравнения версий общая с TUI на
+// стабильном канале (selfupdate.Check); канал "dev" — только у GUI.
 func (a *App) CheckForUpdate() UpdateCheckResult {
 	a.mu.Lock()
 	channel := a.ui.UpdateChannel
@@ -710,7 +698,7 @@ func (a *App) ApplyUpdateFrom(channel string) ActionResult {
 // в фоне — только по явному клику из фронтенда (см. update-status): подмена
 // собственного исполняемого файла необратима без переустановки, и
 // молчаливый автозапуск для такого не подходит, в отличие от простой
-// проверки в checkUpdateOnce. Перезапуск (RestartApp) — отдельный шаг.
+// проверки обновлений. Перезапуск (RestartApp) — отдельный шаг.
 func (a *App) ApplyUpdate() ActionResult {
 	a.mu.Lock()
 	channel := a.ui.UpdateChannel

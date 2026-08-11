@@ -20,7 +20,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -94,7 +93,7 @@ func FetchLatest() (*Release, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub ответил %d", resp.StatusCode)
+		return nil, httpError(resp)
 	}
 	var rel Release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -103,11 +102,12 @@ func FetchLatest() (*Release, error) {
 	return &rel, nil
 }
 
-// fetchLatestDev — самая свежая dev-сборка: первый (GitHub отдаёт список
-// новыми вперёд) релиз с prerelease=true. dev-release.yml помечает так
-// каждый свой выпуск, а release.yml (стабильные теги) — никогда, так что
-// смешать их в одном списке нечем.
-func fetchLatestDev() (*Release, error) {
+// fetchReleases — список релизов одним запросом. GitHub отдаёт его новыми
+// вперёд и включает туда И стабильные релизы, И prerelease, поэтому один
+// такой запрос отвечает сразу про оба канала (см. fetchBoth). Черновики
+// (draft) неаутентифицированному клиенту не видны вовсе, так что отдельно
+// отсеивать их не нужно.
+func fetchReleases() ([]Release, error) {
 	req, err := http.NewRequest(http.MethodGet, DevListURL, nil)
 	if err != nil {
 		return nil, err
@@ -120,18 +120,80 @@ func fetchLatestDev() (*Release, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub ответил %d", resp.StatusCode)
+		return nil, httpError(resp)
 	}
 	var rels []Release
 	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
 		return nil, err
 	}
+	return rels, nil
+}
+
+// latestOf выбирает самый свежий релиз нужного вида ПО ДАТЕ ПУБЛИКАЦИИ, а
+// не по позиции в списке.
+//
+// Это не перестраховка. GitHub отдаёт /releases НЕ в хронологическом
+// порядке: сначала идут обычные релизы (по убыванию даты), а следом
+// prerelease — отсортированные по имени тега, а не по времени. У dev-тегов
+// имя это dev-<sha>, то есть хеш коммита, так что их порядок в списке
+// фактически случаен. Прежний код брал первый попавшийся prerelease и
+// потому годами мог отдавать не самую свежую dev-сборку: в живом списке
+// самый новый dev-тег стоял одиннадцатым, а первым — сборка полуторачасовой
+// давности. Единственный надёжный признак — PublishedAt.
+func latestOf(rels []Release, prerelease bool) *Release {
+	var best *Release
 	for i := range rels {
-		if rels[i].Prerelease {
-			return &rels[i], nil
+		if rels[i].Prerelease != prerelease {
+			continue
+		}
+		if best == nil || rels[i].PublishedAt.After(best.PublishedAt) {
+			best = &rels[i]
 		}
 	}
+	return best
+}
+
+// fetchLatestDev — самая свежая dev-сборка. dev-release.yml помечает
+// prerelease=true каждый свой выпуск, а release.yml (стабильные теги) —
+// никогда, так что смешать их в одном списке нечем.
+func fetchLatestDev() (*Release, error) {
+	rels, err := fetchReleases()
+	if err != nil {
+		return nil, err
+	}
+	if rel := latestOf(rels, true); rel != nil {
+		return rel, nil
+	}
 	return nil, fmt.Errorf("dev-сборок среди релизов не нашлось")
+}
+
+// httpError превращает неуспешный ответ GitHub в объяснимую ошибку.
+//
+// Голое "GitHub ответил 403" — худший вид сообщения: код сам по себе ничего
+// не говорит, а у неаутентифицированного клиента 403 почти всегда значит
+// ровно одну вещь — выбран часовой лимит запросов (60 на IP), и подождать
+// нужно вполне определённое время, которое GitHub сам же и называет в
+// заголовке. Без этого пользователь видит "403" и не знает ни причины, ни
+// того, что делать.
+func httpError(resp *http.Response) error {
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+			limit := resp.Header.Get("X-RateLimit-Limit")
+			if limit == "" {
+				limit = "60"
+			}
+			if sec, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+				wait := time.Until(time.Unix(sec, 0)).Round(time.Minute)
+				if wait < time.Minute {
+					wait = time.Minute
+				}
+				return fmt.Errorf("исчерпан лимит запросов к GitHub (%s в час на IP) — снова можно через %d мин",
+					limit, int(wait.Minutes()))
+			}
+			return fmt.Errorf("исчерпан лимит запросов к GitHub (%s в час на IP) — нужно подождать", limit)
+		}
+	}
+	return fmt.Errorf("GitHub ответил %d", resp.StatusCode)
 }
 
 // FindAsset ищет в релизе архив по имени: prefix+...+suffix. У hkc и GUI в
@@ -257,42 +319,38 @@ type ChannelState struct {
 
 // CheckBoth опрашивает stable и dev разом и отдаёт оба состояния как есть.
 //
-// Два запроса идут параллельно: они независимы, а таймаут у каждого 10с —
-// последовательно худший случай складывался бы в двадцать, и экран, который
-// это показывает, столько ждать не должен. Осечка одного канала не гасит
-// второй: у каждого свой OK и своё Message.
+// ОДИН запрос на оба канала, не два. Список /releases и так содержит и
+// стабильные релизы, и prerelease — первый не-prerelease в нём и есть то
+// же, что отдаёт /releases/latest, а первый prerelease — последняя
+// dev-сборка. Два отдельных запроса (как было в первой версии 1.15.0)
+// удваивали расход неаутентифицированного лимита GitHub — 60 запросов в час
+// на IP, — и вместе с проверкой при старте окна выбирали его за пару
+// десятков перезапусков, после чего API отвечает 403 на всё подряд.
 func CheckBoth(current string) (stable, dev ChannelState) {
 	stable.Channel = ""
 	dev.Channel = "dev"
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	rels, err := fetchReleases()
+	if err != nil {
+		// Причина одна на оба канала — запрос-то был один; дублируем её в
+		// обе строки, чтобы экран не выглядел так, будто про stable что-то
+		// известно, а про dev нет.
+		stable.Message, dev.Message = err.Error(), err.Error()
+		return stable, dev
+	}
 
-	go func() {
-		defer wg.Done()
-		rel, err := FetchLatest()
-		if err != nil {
-			stable.Message = err.Error()
+	fill := func(st *ChannelState, rel *Release, absent string) {
+		if rel == nil {
+			st.Message = absent
 			return
 		}
-		stable.OK = true
-		stable.Tag, stable.URL, stable.PublishedAt = rel.TagName, rel.HTMLURL, rel.PublishedAt
-		stable.IsCurrent = rel.TagName == current
-	}()
-
-	go func() {
-		defer wg.Done()
-		rel, err := fetchLatestDev()
-		if err != nil {
-			dev.Message = err.Error()
-			return
-		}
-		dev.OK = true
-		dev.Tag, dev.URL, dev.PublishedAt = rel.TagName, rel.HTMLURL, rel.PublishedAt
-		dev.IsCurrent = rel.TagName == current
-	}()
-
-	wg.Wait()
+		st.OK = true
+		st.Tag, st.URL, st.PublishedAt = rel.TagName, rel.HTMLURL, rel.PublishedAt
+		st.IsCurrent = rel.TagName == current
+	}
+	// По дате публикации, а не по позиции в списке — см. latestOf.
+	fill(&stable, latestOf(rels, false), "стабильных релизов не нашлось")
+	fill(&dev, latestOf(rels, true), "dev-сборок среди релизов не нашлось")
 	return stable, dev
 }
 
