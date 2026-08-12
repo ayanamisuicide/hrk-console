@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -102,6 +100,12 @@ type UpdateScreen struct {
 	// минуя реальный applyCmd — renderSteps на нём просто ничего не рисует.
 	steps      map[selfupdate.Stage]*updateStep
 	progressCh chan selfupdate.Progress
+
+	// RestartRequested — пользователь подтвердил перезапуск на updateDone.
+	// Читается вызывающим после p.Run() (тот же приём, что Preflight.Failed/
+	// Aborted): перезапуск обязан случиться, когда терминал уже отдан
+	// обратно, а не изнутри Update.
+	RestartRequested bool
 
 	width, height int
 	frame         int
@@ -238,11 +242,13 @@ func (u *UpdateScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return u, tea.Quit
 		case updateDone:
-			if err := restartSelf(); err != nil {
-				u.phase = updateFailed
-				u.message = err.Error()
-				return u, nil
-			}
+			// Сам перезапуск делает не этот экран, а вызывающий (см.
+			// runUpdateScreen в cmd/hkc/main.go) — уже ПОСЛЕ того, как Bubble
+			// Tea вернёт терминал в обычный режим. Раньше здесь стоял
+			// немедленный restartSelf с os.Exit внутри: он проскакивал мимо
+			// tea.Quit, оставляя за собой alt-screen и raw-режим, и подменял
+			// процесс в момент, когда терминал ещё принадлежал Bubble Tea.
+			u.RestartRequested = true
 			return u, tea.Quit
 		default: // updateUpToDate, updateFailed
 			return u, tea.Quit
@@ -317,25 +323,6 @@ func humanBytes(n int64) string {
 		return fmt.Sprintf("%.0f КБ", float64(n)/1024)
 	}
 	return fmt.Sprintf("%.1f МБ", float64(n)/1048576)
-}
-
-// restartSelf поднимает новый процесс того же бинарника (уже подменённого
-// selfupdate.Apply) и завершает текущий — тот же приём, что у RestartApp в
-// GUI. Отдельный явный шаг, а не часть applyCmd: обновление на диске и
-// разрыв текущей сессии должны быть двумя разными решениями пользователя,
-// не одним неожиданным.
-func restartSelf() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(exe)
-	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	os.Exit(0)
-	return nil // недостижимо, но компилятору нужен возврат
 }
 
 func (u *UpdateScreen) View() string {

@@ -2,17 +2,35 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"heroku-console/setup"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// setupOnlyFlag — скрытый режим того же бинарника, не отдельная программа.
+// GUI не может сама починить окружение бота (python3, venv, ffmpeg): эти шаги
+// иногда требуют sudo, а у webview нет терминала, куда sudo мог бы вывести
+// запрос пароля — молчаливый вызов просто завис бы навсегда. Вместо этого
+// FixEnvironment (app.go) открывает НАСТОЯЩИЙ терминал (termwin,
+// тот же приём, что у "два окна" в TUI) с этим же бинарником и этим флагом:
+// setup.EnsureAll — та же самая функция, что уже год чинит окружение для
+// hkc, без единой новой строчки логики установки.
+const setupOnlyFlag = "--setup-only"
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == setupOnlyFlag {
+		runSetupOnly()
+		return
+	}
+
 	// Create an instance of the app structure
 	app := NewApp()
 
@@ -51,4 +69,12 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
+}
+
+// runSetupOnly — то, что выполняется внутри терминала, открытого
+// FixEnvironment (app.go). Обычный stdout/stdin, никакого Wails и никакого
+// окна: только он и даёт sudo (внутри setup.EnsureAll) куда вывести запрос
+// пароля и где его прочитать.
+func runSetupOnly() {
+	setup.EnsureAll(herokuDir())
 }

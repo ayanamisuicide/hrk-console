@@ -14,10 +14,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"heroku-console/botproc"
-	"heroku-console/internal/termwin"
 	"heroku-console/internal/tui"
 	"heroku-console/logfeed"
 	"heroku-console/setup"
+	"heroku-console/termwin"
 )
 
 // version подставляется линкером из Makefile (`-X main.version=...`),
@@ -215,6 +215,18 @@ func runUpdateScreen() {
 	p := tea.NewProgram(u, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ошибка экрана обновлений:", err)
+		return
+	}
+	// Перезапуск — здесь, а не внутри экрана: p.Run() уже вернул терминал в
+	// обычный режим (снял alt-screen и raw), и только теперь образ процесса
+	// можно менять. Изнутри Update это делалось через os.Exit, который
+	// проскакивал мимо восстановления терминала, а новый процесс к тому же
+	// оказывался фоновым и падал на "error entering raw mode" — см.
+	// internal/tui/restart_unix.go.
+	if u.RestartRequested {
+		if err := tui.RestartSelf(); err != nil {
+			fmt.Fprintln(os.Stderr, "не удалось перезапустить hkc:", err)
+		}
 	}
 }
 

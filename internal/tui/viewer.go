@@ -57,13 +57,6 @@ type Viewer struct {
 	warn, err         int
 	prevWarn, prevErr int
 
-	// activity — сколько записей пришло в каждую из последних секунд;
-	// рисуется sparkline'ом в шапке. Хвост фиксированной длины: сдвигается
-	// на каждом тике, так что график всегда показывает одно и то же окно
-	// времени независимо от того, идёт лог или молчит.
-	activity    []int
-	activityNow int
-
 	// scr — отрисованное содержимое поблочно. Держит зебру, позиции
 	// проблемных записей (по ним прыгают n/N) и схлопывание повторов.
 	scr screen
@@ -123,7 +116,6 @@ func NewViewer(opts ViewerOpts) *Viewer {
 		minLevel:    logfeed.Level(saved.MinLevel),
 		watchdog:    saved.Watchdog,
 		version:     opts.Bot.Version(),
-		activity:    make([]int, activityWindow),
 	}
 }
 
@@ -137,9 +129,6 @@ func (v *Viewer) saveState() {
 		Watchdog:    v.watchdog,
 	})
 }
-
-// activityWindow — сколько секунд истории показывает sparkline.
-const activityWindow = 24
 
 // ringCapacity — сколько сырых строк держится для пересборки экрана. Тем же
 // числом читается стартовая история: раньше история бралась на 5000 строк,
@@ -219,9 +208,6 @@ func (v *Viewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return v, nil
 
 	case tickMsg:
-		// сдвигаем окно активности: текущая секунда закрывается и уезжает влево
-		v.activity = append(v.activity[1:], v.activityNow)
-		v.activityNow = 0
 		v.refreshBotState()
 		cmds := []tea.Cmd{tickCmd()}
 		if cmd := v.maybeWatchdogRestart(); cmd != nil {
@@ -392,7 +378,6 @@ func (v *Viewer) feedLine(raw string) {
 	if !complete {
 		return
 	}
-	v.activityNow++
 	w, e := v.parser.Counts()
 	v.warn, v.err = w, e
 

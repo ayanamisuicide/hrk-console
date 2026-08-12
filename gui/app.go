@@ -18,6 +18,7 @@ import (
 	"heroku-console/remotebot"
 	"heroku-console/selfupdate"
 	"heroku-console/state"
+	"heroku-console/termwin"
 )
 
 // version подставляется линкером из build/config или остаётся "dev" для
@@ -207,12 +208,19 @@ type startResult struct {
 	Err             error
 }
 
-func NewApp() *App {
-	dir := os.Getenv("HEROKU_DIR")
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, "Heroku")
+// herokuDir — тот же HEROKU_DIR/~/Heroku, что и у hkc (cmd/hkc/main.go).
+// Отдельная функция, а не только инлайн в NewApp: runSetupOnly (main.go)
+// должен резолвить тот же каталог, не поднимая App целиком.
+func herokuDir() string {
+	if dir := os.Getenv("HEROKU_DIR"); dir != "" {
+		return dir
 	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Heroku")
+}
+
+func NewApp() *App {
+	dir := herokuDir()
 	a := &App{bot: botproc.New(dir)}
 	a.pid = botproc.PID
 	a.aliveAt = botproc.AliveAt
@@ -571,6 +579,35 @@ func (a *App) PreflightChecks() []string {
 		names[i] = c.Name
 	}
 	return names
+}
+
+// FixEnvironment открывает настоящий терминал и гоняет в нём то же самое
+// setup.EnsureAll, что уже год чинит окружение hkc (python3, venv, ffmpeg,
+// зависимости модулей) — просто раньше это умел только TUI. У GUI нет
+// собственного терминала, а часть шагов может попросить пароль sudo, и у
+// молчаливого вызова из webview этот пароль было бы решительно негде
+// набрать — окно просто зависло бы навсегда на невидимом запросе. Вместо
+// этого: тот же бинарник GUI, запущенный ещё раз со скрытым флагом
+// setupOnlyFlag (main.go), в окне termwin.Open — том же механизме, что уже
+// открывает родную консоль бота в режиме "два окна" у TUI. bash -c с read в
+// конце держит окно открытым после того, как настройка закончится: иначе
+// многие эмуляторы закрывают окно тем же кадром, что и exit самого процесса,
+// и результат никто не успел бы прочитать.
+//
+// Не заменяет пункт «продолжить всё равно» на экране проверок — это
+// отдельное действие, которое пользователь запускает сам, когда видит, что
+// что-то не в порядке, а не автоматический шаг при каждом провале проверки.
+func (a *App) FixEnvironment() ActionResult {
+	exe, err := os.Executable()
+	if err != nil {
+		return ActionResult{OK: false, Message: err.Error()}
+	}
+	cmd := []string{"bash", "-c",
+		fmt.Sprintf("'%s' %s; echo; read -p 'нажмите Enter, чтобы закрыть…' _", exe, setupOnlyFlag)}
+	if !termwin.Open("Heroku · Настройка окружения", "#171129", cmd) {
+		return ActionResult{OK: false, Message: "эмулятор терминала не найден"}
+	}
+	return ActionResult{OK: true, Message: "окно настройки открыто"}
 }
 
 func preflightStatusString(s preflight.Status) string {

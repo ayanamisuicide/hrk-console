@@ -16,7 +16,6 @@ func testViewer(w, h int) *Viewer {
 		showSidebar: true, ready: true,
 		botAlive: true, botPID: 4821, uptime: "1ч 12м", version: "2.2.2",
 		warn: 3, err: 12,
-		activity: []int{0, 1, 2, 5, 9, 3, 1, 0, 0, 2, 7, 4, 1, 0, 1, 3, 8, 2, 0, 0, 1, 4, 2, 1},
 	}
 	v.vp = viewport.New(v.logWidth(), h-2)
 	v.scr.reset(v.logWidth())

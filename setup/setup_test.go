@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,79 @@ func TestRunReportsExitStatus(t *testing.T) {
 	}
 	if run("hkc-заведомо-нет-такой-команды") {
 		t.Error("несуществующая команда отмечена как успешная")
+	}
+}
+
+// aptInstall обязан повторить попытку ровно один раз после apt-get update,
+// если первая install-попытка провалилась, — и не обновлять индекс снова на
+// следующий вызов aptInstall в том же прогоне (см. aptUpdated). Настоящих
+// apt-get/sudo в CI нет, поэтому runFn подменяется на счётчик вызовов вместо
+// реального exec.
+
+func withFakeRun(t *testing.T, fn func(name string, args ...string) bool) {
+	t.Helper()
+	origRun, origHasApt, origUpdated := runFn, hasAptGet, aptUpdated
+	runFn, hasAptGet, aptUpdated = fn, func() bool { return true }, false
+	t.Cleanup(func() { runFn, hasAptGet, aptUpdated = origRun, origHasApt, origUpdated })
+}
+
+func TestAptInstallRetriesOnceAfterUpdate(t *testing.T) {
+	var calls []string
+	withFakeRun(t, func(name string, args ...string) bool {
+		calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+		// Первая попытка install проваливается ("устаревший индекс"),
+		// apt-get update и повторный install — успешны.
+		if len(calls) == 1 {
+			return false
+		}
+		return true
+	})
+
+	if !aptInstall("ffmpeg") {
+		t.Fatal("aptInstall должен был вернуть true после успешного повтора")
+	}
+	want := []string{
+		"sudo apt-get install -y ffmpeg",
+		"sudo apt-get update",
+		"sudo apt-get install -y ffmpeg",
+	}
+	if strings.Join(calls, "|") != strings.Join(want, "|") {
+		t.Errorf("вызовы = %v, ожидалось %v", calls, want)
+	}
+}
+
+func TestAptInstallDoesNotRepeatUpdateInSameRun(t *testing.T) {
+	var updateCalls int
+	withFakeRun(t, func(name string, args ...string) bool {
+		if name == "sudo" && len(args) > 0 && args[0] == "apt-get" && len(args) > 1 && args[1] == "update" {
+			updateCalls++
+			return true
+		}
+		return false // install всегда проваливается — имя пакета правда не существует
+	})
+
+	aptInstall("kitty")
+	aptInstall("ffmpeg") // второй провал в том же прогоне не должен снова обновлять индекс
+
+	if updateCalls != 1 {
+		t.Errorf("apt-get update вызван %d раз за прогон, ожидался ровно один", updateCalls)
+	}
+}
+
+// Успешная первая попытка не должна трогать apt-get update вообще — это и
+// есть подавляющее большинство запусков (индекс обычно свежий), платить
+// временем сетевого update ради них было бы напрасно.
+func TestAptInstallNoRetryWhenFirstAttemptSucceeds(t *testing.T) {
+	var calls int
+	withFakeRun(t, func(name string, args ...string) bool {
+		calls++
+		return true
+	})
+
+	if !aptInstall("python3") {
+		t.Fatal("aptInstall должен был вернуть true")
+	}
+	if calls != 1 {
+		t.Errorf("вызовов run: %d, ожидался ровно один (без apt-get update)", calls)
 	}
 }

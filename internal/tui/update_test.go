@@ -293,3 +293,45 @@ func TestUpdateScreenFullProgressFlow(t *testing.T) {
 		t.Error("список шагов должен оставаться на экране updateDone, а не исчезать")
 	}
 }
+
+// Клавиша на updateDone не должна перезапускать процесс изнутри Update: она
+// лишь помечает намерение и выходит, а сам перезапуск делает вызывающий,
+// когда Bubble Tea уже вернул терминал (см. runUpdateScreen). Прежний код
+// звал restartSelf прямо здесь, тот делал os.Exit — и tea.Quit не
+// выполнялся вовсе, оставляя после себя alt-screen и raw-режим, а новый
+// процесс оказывался фоновым и падал на "error entering raw mode".
+func TestUpdateScreenRequestsRestartInsteadOfExiting(t *testing.T) {
+	u := NewUpdateScreen("v1.0.0")
+	u.phase = updateDone
+	u.latest = "v9.9.9"
+
+	if u.RestartRequested {
+		t.Fatal("RestartRequested взведён до нажатия клавиши")
+	}
+	model, cmd := u.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u = model.(*UpdateScreen)
+
+	if !u.RestartRequested {
+		t.Error("после подтверждения на updateDone должен быть взведён RestartRequested")
+	}
+	if cmd == nil {
+		t.Error("ожидался tea.Quit — экран обязан закрыться, вернув терминал")
+	}
+	if u.phase != updateDone {
+		t.Errorf("фаза не должна меняться, got %v", u.phase)
+	}
+}
+
+// На всех прочих фазах нажатие клавиши перезапуск не запрашивает — иначе
+// случайная клавиша на "уже последняя версия" или на ошибке подменяла бы
+// работающий бинарник неизвестно чем.
+func TestUpdateScreenDoesNotRequestRestartOnOtherPhases(t *testing.T) {
+	for _, phase := range []updatePhase{updateUpToDate, updateFailed, updateAvailable} {
+		u := NewUpdateScreen("v1.0.0")
+		u.phase = phase
+		model, _ := u.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if model.(*UpdateScreen).RestartRequested {
+			t.Errorf("фаза %v не должна запрашивать перезапуск", phase)
+		}
+	}
+}

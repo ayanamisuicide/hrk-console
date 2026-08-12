@@ -70,27 +70,31 @@ run_console() {
 
 run_gui() {
     if [ ! -x "$GUI" ]; then
-        # wails ставится через `go install`, а не через пакетный менеджер —
-        # это обычное локальное действие с самим Go-тулчеймом, автоматический
-        # запуск здесь безопасен. А вот системные библиотеки (libgtk,
-        # libwebkit2gtk, ...) требуют sudo — их устанавливать самим нельзя,
-        # так что при их отсутствии просто печатаем команду и останавливаемся.
+        # wails ставится через `go install` — обычный Go-бинарник в GOPATH/bin,
+        # без пакетного менеджера и без sudo, тот же риск, что у make build/
+        # make gui. Автоматический запуск здесь безопасен, поэтому запускаем,
+        # а не просто печатаем команду.
         local wails_gopath="$(go env GOPATH 2>/dev/null)/bin/wails"
         if ! command -v wails > /dev/null 2>&1 && [ ! -x "$wails_gopath" ]; then
-            cat >&2 <<EOF
-GUI ещё не собран, а wails не установлен.
-
-Разово (см. gui/README.md):
-  sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config nodejs npm
-  go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-Системные библиотеки этот скрипт сам не ставит — им нужен sudo.
-EOF
-            exec bash
+            echo "wails не найден — ставлю (go install .../wails@latest)…"
+            if ! go install github.com/wailsapp/wails/v2/cmd/wails@latest; then
+                echo "установка wails не удалась — см. вывод выше" >&2
+                exec bash
+            fi
         fi
         echo "GUI не собран — собираю (make gui, тянет сборку фронтенда, может занять минуту)…"
         if ! ( cd "$DIR" && make gui ); then
-            echo "сборка не удалась — см. вывод выше" >&2
+            # Системные библиотеки webview (libgtk, libwebkit2gtk, ...) требуют
+            # sudo — их этот скрипт не ставит ни при каких условиях, даже если
+            # они и есть настоящая причина провала. Подсказка, а не диагноз:
+            # он такой же вероятный, как и сетевая осечка при сборке фронтенда.
+            cat >&2 <<EOF
+сборка GUI не удалась — см. вывод выше.
+
+Частая причина — не хватает системных библиотек webview. Их этот скрипт
+сам не ставит (нужен sudo), разово руками (см. gui/README.md):
+  sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config nodejs npm
+EOF
             exec bash
         fi
     fi

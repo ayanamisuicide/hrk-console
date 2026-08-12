@@ -4,7 +4,7 @@ import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog,
     StartBot, StopBot, RestartBot, ClearLog, RestartApp, CheckForUpdate,
     SetUpdateChannel, PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
-    CheckChannels, ApplyUpdateFrom,
+    CheckChannels, ApplyUpdateFrom, FixEnvironment,
 } from '../wailsjs/go/main/App';
 import {
     EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL,
@@ -30,6 +30,7 @@ document.querySelector('#app').innerHTML = `
         <div class="preflight-bar"><div class="preflight-bar-fill" id="preflight-bar-fill"></div></div>
         <div class="preflight-status" id="preflight-status">запускаю проверки…</div>
       </div>
+      <button class="gate-primary preflight-fix" id="preflight-fix" style="display:none">Установить недостающее</button>
       <button class="preflight-continue" id="preflight-continue" style="display:none">продолжить всё равно</button>
     </div>
   </div>
@@ -209,6 +210,7 @@ const preflightList = el('preflight-list');
 const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
+const preflightFix = el('preflight-fix');
 const updateGate = el('update-gate');
 const gateList = el('gate-list');
 const gateCurrent = el('gate-current');
@@ -661,6 +663,7 @@ function finishPreflight() {
     if (preflightFailed) {
         preflightStatus.textContent = 'не всё в порядке';
         preflightStatus.className = 'preflight-status bad';
+        preflightFix.style.display = '';
         preflightContinue.style.display = '';
     } else {
         preflightStatus.textContent = 'всё готово';
@@ -681,6 +684,26 @@ function dismissPreflight() {
 }
 
 preflightContinue.addEventListener('click', dismissPreflight);
+
+// Установка недостающего идёт не здесь, а в НАСТОЯЩЕМ окне терминала,
+// которое открывает FixEnvironment: часть шагов просит пароль sudo, а
+// webview его показать негде — молчаливый вызов просто завис бы навсегда на
+// невидимом запросе. Экран проверок при этом не гасим: терминал открылся
+// рядом, и, когда он закончит, сюда возвращаются и перезапускают окно —
+// перепроверять окружение на лету, пока apt ещё ставит пакеты, значило бы
+// показывать заведомо промежуточный результат.
+preflightFix.addEventListener('click', async () => {
+    preflightFix.disabled = true;
+    const res = await FixEnvironment();
+    if (res.ok) {
+        preflightStatus.textContent = 'открыл окно установки — вернитесь сюда, когда закончится';
+        preflightStatus.className = 'preflight-status';
+    } else {
+        preflightFix.disabled = false;
+        preflightStatus.textContent = 'не удалось открыть терминал: ' + res.message;
+        preflightStatus.className = 'preflight-status bad';
+    }
+});
 
 // ─── экран обновлений ────────────────────────────────────────────────────
 //

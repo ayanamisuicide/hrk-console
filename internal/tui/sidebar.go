@@ -92,21 +92,16 @@ func (v *Viewer) renderSidebar(height int) string {
 		fixed = append(fixed, "", sectionTitle("ФИЛЬТР"), theme.SearchBar.Render(pad("/"+v.filter, inner)))
 	}
 
-	// Остаток высоты делится между графиком и списком модулей — они и режутся
-	// первыми. Счётчики проблем и состояние процесса не режутся никогда: это
-	// ответ на «всё ли плохо», ради которого панель и появилась.
+	// Остаток высоты делится списком модулей — он и режется первым. Счётчики
+	// проблем и состояние процесса не режутся никогда: это ответ на «всё ли
+	// плохо», ради которого панель и появилась.
 	budget := height - 1 - len(fixed) - len(bottom) // -1 на отбивку сверху
 	var top []string
 	top = append(top, "")
 
 	// ─── модули ───
 	stats := v.scr.moduleStats()
-	const activityCost = 3 // заголовок + график + отбивка
-	modBudget := budget
-	if len(v.activity) > 0 && modBudget > activityCost {
-		modBudget -= activityCost
-	}
-	if n := modBudget - 2; len(stats) > 0 && n >= 1 { // -2 на заголовок и отбивку
+	if n := budget - 2; len(stats) > 0 && n >= 1 { // -2 на заголовок и отбивку
 		top = append(top, sectionTitle("МОДУЛИ"))
 		peak := stats[0].count
 		shown := stats
@@ -138,15 +133,6 @@ func (v *Viewer) renderSidebar(height int) string {
 			top = append(top, line)
 		}
 		top = append(top, "")
-	}
-
-	// ─── поток ───
-	// Заголовок короткий не случайно: разрядка растягивает слово вдвое, и
-	// "АКТИВНОСТЬ" не влезала в ширину панели.
-	if len(top)+activityCost+len(fixed)+len(bottom) <= height {
-		if spark := theme.Sparkline(tailInts(v.activity, inner)); spark != "" {
-			top = append(top, sectionTitle("ПОТОК"), spark, "")
-		}
 	}
 
 	top = append(top, fixed...)
@@ -196,18 +182,6 @@ func padLeft(s string, w int) string {
 		return strings.Repeat(" ", n) + s
 	}
 	return s
-}
-
-// tailInts берёт последние n значений — sparkline рисуется по ширине панели,
-// а история активности длиннее.
-func tailInts(xs []int, n int) []int {
-	if n <= 0 {
-		return nil
-	}
-	if len(xs) > n {
-		return xs[len(xs)-n:]
-	}
-	return xs
 }
 
 func minInt(a, b int) int {
