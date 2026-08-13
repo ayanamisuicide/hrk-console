@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"heroku-console/botproc"
+
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -207,7 +209,9 @@ func (c *Client) Alive() (bool, error) {
 // продублирован, а не вынесен в общую с botproc функцию: там он читает
 // файлы напрямую через os.ReadFile, здесь — уже готовые байты с другого
 // транспорта, и подгонять одно под другое было бы менее читаемо, чем
-// тридцать строк, которые редко меняются.
+// тридцать строк, которые редко меняются. Форматирование результата в
+// строку — уже не разбор, а чистая функция без транспорта под ней, поэтому
+// оно общее: botproc.FormatUptime.
 func (c *Client) Uptime(pid int) (string, error) {
 	out, err := c.run(fmt.Sprintf(
 		`cat /proc/%d/stat 2>/dev/null; echo ===HKC===; cat /proc/uptime 2>/dev/null`, pid))
@@ -222,7 +226,7 @@ func (c *Client) Uptime(pid int) (string, error) {
 	if err != nil {
 		return "—", err
 	}
-	return formatUptime(d), nil
+	return botproc.FormatUptime(d), nil
 }
 
 func parseUptime(statData, uptimeData []byte) (time.Duration, error) {
@@ -253,16 +257,6 @@ func parseUptime(statData, uptimeData []byte) (time.Duration, error) {
 		procUptimeSec = 0
 	}
 	return time.Duration(procUptimeSec * float64(time.Second)), nil
-}
-
-func formatUptime(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dч %02dм", h, m)
-	}
-	return fmt.Sprintf("%dм %02dс", m, s)
 }
 
 var versionRe = regexp.MustCompile(`Heroku (\d+\.\d+\.\d+)`)

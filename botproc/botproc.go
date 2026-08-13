@@ -104,6 +104,13 @@ func Uptime(pid int) string {
 	if d < 0 {
 		d = 0
 	}
+	return FormatUptime(d)
+}
+
+// FormatUptime форматирует длительность как "1ч 12м" / "34м 05с" — общий
+// хвост с remotebot.Client.Uptime, который вычисляет ту же длительность по
+// SSH вместо локального /proc.
+func FormatUptime(d time.Duration) string {
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
 	s := int(d.Seconds()) % 60

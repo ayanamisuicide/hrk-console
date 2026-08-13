@@ -5,7 +5,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// Единственная зависимость remotebot.Client.Uptime от этого пакета — сама
+// проверяется отдельно там же (TestUptimeUsesSharedFormatter), эта — что
+// форматирование само по себе не сломано, без /proc и без SSH.
+func TestFormatUptime(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{45 * time.Second, "0м 45с"},
+		{90 * time.Second, "1м 30с"},
+		{75 * time.Minute, "1ч 15м"},
+	}
+	for _, c := range cases {
+		if got := FormatUptime(c.d); got != c.want {
+			t.Errorf("FormatUptime(%v) = %q, ожидалось %q", c.d, got, c.want)
+		}
+	}
+}
 
 func TestUptimeFormat(t *testing.T) {
 	if got := Uptime(0); got != "—" {

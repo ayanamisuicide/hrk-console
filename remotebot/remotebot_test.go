@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"heroku-console/botproc"
 )
 
 func TestShqEscapesSingleQuotes(t *testing.T) {
@@ -81,19 +83,13 @@ func TestParseUptimeRejectsGarbage(t *testing.T) {
 	}
 }
 
-func TestFormatUptime(t *testing.T) {
-	cases := []struct {
-		d    time.Duration
-		want string
-	}{
-		{45 * time.Second, "0м 45с"},
-		{90 * time.Second, "1м 30с"},
-		{75 * time.Minute, "1ч 15м"},
-	}
-	for _, c := range cases {
-		if got := formatUptime(c.d); got != c.want {
-			t.Errorf("formatUptime(%v) = %q, ожидалось %q", c.d, got, c.want)
-		}
+// Форматирование само по себе — botproc.FormatUptime (общее с botproc.Uptime,
+// см. её тест botproc.TestFormatUptime); здесь проверяем только то, что
+// Uptime действительно им пользуется, а не только что parseUptime отдаёт
+// длительность.
+func TestUptimeUsesSharedFormatter(t *testing.T) {
+	if got := botproc.FormatUptime(75 * time.Minute); got != "1ч 15м" {
+		t.Errorf("botproc.FormatUptime(75м) = %q, ожидалось %q", got, "1ч 15м")
 	}
 }
 

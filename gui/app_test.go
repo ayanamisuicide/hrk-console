@@ -8,7 +8,6 @@ import (
 
 	"heroku-console/botproc"
 	"heroku-console/logfeed"
-	"heroku-console/preflight"
 	"heroku-console/selfupdate"
 	"heroku-console/state"
 )
@@ -262,7 +261,7 @@ func TestRunPreflightEmitsAllChecksInOrder(t *testing.T) {
 
 	h.app.runPreflight()
 
-	want := len(preflight.All(h.app.bot.HerokuDir, h.app.bot.LogFile))
+	want := len(h.app.localChecks())
 	if len(events) != want {
 		t.Fatalf("получено %d событий, ожидалось %d (по числу проверок)", len(events), want)
 	}
