@@ -551,7 +551,19 @@ func (a *App) runChecklist(checks []preflight.Check) {
 }
 
 func (a *App) runPreflight() {
-	a.runChecklist(preflight.All(a.bot.HerokuDir, a.bot.LogFile))
+	a.runChecklist(a.localChecks())
+}
+
+// localChecks — проверки локального окружения, либо честная заглушка
+// "локальный режим не поддерживается" на ОС, где botproc умеет только
+// притворяться (macOS, Windows — см. botproc/manage_other.go): гонять там
+// venv/ffmpeg/права-на-запись под несуществующий Linux-каталог бота бессмысленно,
+// единственный рабочий путь — SSH-подключение (remotebot).
+func (a *App) localChecks() []preflight.Check {
+	if runtime.GOOS != "linux" {
+		return preflight.Unsupported()
+	}
+	return preflight.All(a.bot.HerokuDir, a.bot.LogFile)
 }
 
 // PreflightChecks — только имена проверок, без запуска. Фронтенду нужно
@@ -572,7 +584,7 @@ func (a *App) PreflightChecks() []string {
 	if a.ui.Remote.Host != "" {
 		checks = (&remotebot.Client{}).Preflight()
 	} else {
-		checks = preflight.All(a.bot.HerokuDir, a.bot.LogFile)
+		checks = a.localChecks()
 	}
 	names := make([]string, len(checks))
 	for i, c := range checks {
@@ -598,6 +610,9 @@ func (a *App) PreflightChecks() []string {
 // отдельное действие, которое пользователь запускает сам, когда видит, что
 // что-то не в порядке, а не автоматический шаг при каждом провале проверки.
 func (a *App) FixEnvironment() ActionResult {
+	if runtime.GOOS != "linux" {
+		return ActionResult{OK: false, Message: "бот работает только на Linux — подключитесь к удалённой машине по SSH вместо локальной настройки"}
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}

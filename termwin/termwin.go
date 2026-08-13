@@ -4,6 +4,7 @@ package termwin
 
 import (
 	"os/exec"
+	"runtime"
 )
 
 // start запускает окно и снимает с себя обязанность его хоронить: консоль
@@ -27,6 +28,12 @@ func start(cmd *exec.Cmd) bool {
 // который есть почти на любом Debian/Ubuntu-производном дистрибутиве.
 // Возвращает false, если вообще ничего не нашлось.
 func Open(title, bg string, cmd []string) bool {
+	// bg игнорируется на Windows — ни wt.exe, ни cmd.exe не берут цвет фона
+	// из командной строки так же просто, как их Linux-аналоги, а этот путь
+	// и так уже best-effort (см. openWindows).
+	if runtime.GOOS == "windows" {
+		return openWindows(title, cmd)
+	}
 	if _, err := exec.LookPath("ghostty"); err == nil {
 		args := append([]string{
 			"--title=" + title,
@@ -75,6 +82,21 @@ func Open(title, bg string, cmd []string) bool {
 	if _, err := exec.LookPath("x-terminal-emulator"); err == nil {
 		args := append([]string{"-e"}, cmd...)
 		return start(exec.Command("x-terminal-emulator", args...))
+	}
+	return false
+}
+
+// openWindows — тот же выбор "что найдётся первым", что и Open на Linux, но
+// под здешние эмуляторы: Windows Terminal (wt.exe), если стоит, иначе
+// штатный cmd.exe, который есть на любой Windows машине.
+func openWindows(title string, cmd []string) bool {
+	if _, err := exec.LookPath("wt.exe"); err == nil {
+		args := append([]string{"new-tab", "--title", title, "--"}, cmd...)
+		return start(exec.Command("wt.exe", args...))
+	}
+	if _, err := exec.LookPath("cmd.exe"); err == nil {
+		args := append([]string{"/C", "start", title}, cmd...)
+		return start(exec.Command("cmd.exe", args...))
 	}
 	return false
 }
