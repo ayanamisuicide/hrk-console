@@ -487,7 +487,11 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
 }
 .mod-menu-empty { padding: 10px 8px; font-size: 11px; color: var(--text-muted); }
 
-.module-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; }
+/* overflow-x: hidden в паре — иначе браузер по спецификации переопределяет
+   его в auto вслед за overflow-y (правило "visible становится auto, если
+   другая ось не visible"), и любой временный горизонтальный вылет строки
+   (hover translateX, .entering slide-in) рисует нижнюю полосу прокрутки. */
+.module-list { overflow-y: auto; overflow-x: hidden; min-height: 0; display: flex; flex-direction: column; gap: 3px; }
 
 /* Каждая строка влетает со своей задержкой (--i, main.js) — список
    раскрывается сверху вниз пока панель едет, а не появляется разом одним

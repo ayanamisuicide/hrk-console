@@ -295,6 +295,17 @@ let selectedModules = new Set();
 // просто обновляется на месте; анимация остаётся только для НОВОЙ строки
 // и для перестановки при смене места в сортировке (см. renderModules).
 let modRowEls = new Map();
+// modOrder — текущий видимый порядок строк (имена), отдельно от «истинной»
+// сортировки по счётчику. renderModules раньше сортировал по count заново
+// каждый вызов — при всплеске лога, где счётчики десятка модулей меняются
+// за один тик, это двигало разом всё, что оказалось между старым и новым
+// местом строки (плотный список, без зазоров), и выглядело как общая
+// тряска, а не как «эти два поменялись местами». Теперь на каждый вызов
+// список лишь ОДИН проход бабл-сорта: каждая строка может обогнать соседа
+// максимум на одну позицию за раз, если её счётчик больше. Дальний прыжок
+// (был 40-м, стал первым) займёт несколько тиков и на каждом будет видно
+// ровно одну смену местами, а не единомоментный скачок через весь список.
+let modOrder = [];
 
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -1345,14 +1356,40 @@ function updateModuleRow(row, m, isSelected, peak) {
 // (новый модуль или сменившийся порядок по шуму); строка, которая просто
 // получила +1 к счётчику и осталась на месте, не шевелится вообще.
 function renderModules() {
-    const stats = [...moduleStats.entries()]
+    // "Истинная" сортировка — для топ-3 в статус-строке и для шкалы объёма
+    // (peak). Порядок строк В ПАНЕЛИ — отдельная вещь, см. modOrder ниже.
+    const trueSorted = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
         .sort((a, b) => b.count - a.count);
-    const peak = stats.length ? stats[0].count : 1;
+    const peak = trueSorted.length ? trueSorted[0].count : 1;
     // Топ-3 прямо в строке — кто вообще шумит, без единого клика; полный
     // список за тем же сегментом, если этих трёх не хватило.
-    slMods.textContent = stats.slice(0, 3).map((m) => m.name).join(' · ') || '—';
-    modMenuEmpty.style.display = stats.length ? 'none' : '';
+    slMods.textContent = trueSorted.slice(0, 3).map((m) => m.name).join(' · ') || '—';
+    modMenuEmpty.style.display = trueSorted.length ? 'none' : '';
+
+    // Пропавшие модули — вон из порядка; новые — вставляются сразу на
+    // примерно верное место (по текущему счётчику), а не в конец: иначе
+    // список при первом же построении был бы отсортирован только после
+    // десятков тиков бабл-сорта ниже.
+    modOrder = modOrder.filter((name) => moduleStats.has(name));
+    for (const m of trueSorted) {
+        if (modOrder.includes(m.name)) continue;
+        let idx = modOrder.findIndex((n) => moduleStats.get(n).count < m.count);
+        if (idx === -1) idx = modOrder.length;
+        modOrder.splice(idx, 0, m.name);
+    }
+    // Один проход бабл-сорта: строка может обогнать соседа максимум на одну
+    // позицию за вызов. `i++` после свопа — переставленная вперёд строка не
+    // сравнивается со следующим соседом в этом же проходе, иначе один
+    // громкий всплеск утащил бы модуль через весь список за один тик.
+    for (let i = 0; i < modOrder.length - 1; i++) {
+        const a = moduleStats.get(modOrder[i]);
+        const b = moduleStats.get(modOrder[i + 1]);
+        if (b.count > a.count) {
+            [modOrder[i], modOrder[i + 1]] = [modOrder[i + 1], modOrder[i]];
+            i++;
+        }
+    }
 
     // FLIP "First": позиции существующих строк ДО перестановки.
     const prevRects = new Map();
@@ -1360,15 +1397,16 @@ function renderModules() {
 
     const seen = new Set();
     const entering = [];
-    stats.forEach((m, i) => {
-        seen.add(m.name);
-        const isSelected = selectedModules.has(m.name);
-        let row = modRowEls.get(m.name);
+    modOrder.forEach((name) => {
+        seen.add(name);
+        const m = moduleStats.get(name);
+        const isSelected = selectedModules.has(name);
+        let row = modRowEls.get(name);
         if (!row) {
-            row = buildModuleRow(m.name);
+            row = buildModuleRow(name);
             row.style.setProperty('--i', entering.length);
             entering.push(row);
-            modRowEls.set(m.name, row);
+            modRowEls.set(name, row);
         }
         updateModuleRow(row, m, isSelected, peak);
         moduleList.appendChild(row); // "Last": переставляет в новый порядок
