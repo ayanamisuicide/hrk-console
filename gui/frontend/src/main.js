@@ -1385,6 +1385,7 @@ function renderModules() {
     for (let i = 0; i < modOrder.length - 1; i++) {
         const a = moduleStats.get(modOrder[i]);
         const b = moduleStats.get(modOrder[i + 1]);
+        if (!a || !b) continue;
         if (b.count > a.count) {
             [modOrder[i], modOrder[i + 1]] = [modOrder[i + 1], modOrder[i]];
             i++;
@@ -1398,8 +1399,9 @@ function renderModules() {
     const seen = new Set();
     const entering = [];
     modOrder.forEach((name) => {
+        const s = moduleStats.get(name);
+        if (!s) return; // не должно происходить (modOrder уже отфильтрован), но не рушить весь рендер, если всё же случилось
         seen.add(name);
-        const m = moduleStats.get(name);
         const isSelected = selectedModules.has(name);
         let row = modRowEls.get(name);
         if (!row) {
@@ -1408,7 +1410,10 @@ function renderModules() {
             entering.push(row);
             modRowEls.set(name, row);
         }
-        updateModuleRow(row, m, isSelected, peak);
+        // moduleStats хранит {count, warn, err} без имени (ключ — сам ключ Map) —
+        // updateModuleRow же читает m.name (для moduleColor). Раньше m приходило
+        // из stats, где было {name, ...s}; здесь имя нужно добавить явно.
+        updateModuleRow(row, { name, ...s }, isSelected, peak);
         moduleList.appendChild(row); // "Last": переставляет в новый порядок
     });
 
