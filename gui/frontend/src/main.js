@@ -1490,10 +1490,27 @@ function resortModOrder() {
 }
 
 function openMods() {
-    resortModOrder();
-    renderModules();
     modMenu.classList.add('visible');
     btnMods.classList.add('open');
+    // Пересортировка и FLIP-анимация перестановки строк запускаются ПОСЛЕ
+    // того, как сама панель уже полностью выехала (transitionend по
+    // transform), а не в тот же момент, что и её слайд-ин. Раньше оба шли
+    // одновременно: панель ещё за краем экрана или на середине своего
+    // .32s выезда, пока строчный FLIP (.28s) уже играет и гаснет — глазом
+    // это неразличимо, анимация перестановки просто не видна. Хуже того:
+    // getBoundingClientRect() посреди CSS-transition самой панели иногда
+    // отдавал позиции ещё не устаканившегося layout — отсюда и "не
+    // выстраивается правильно, пока не перезайдёшь". Теперь порядок
+    // считается по уже осевшему, полностью видимому layout, и
+    // перестановка — отдельный, заметный шаг после того, как панель встала
+    // на место.
+    const onSlidIn = (e) => {
+        if (e.target !== modMenu || e.propertyName !== 'transform') return;
+        modMenu.removeEventListener('transitionend', onSlidIn);
+        resortModOrder();
+        renderModules();
+    };
+    modMenu.addEventListener('transitionend', onSlidIn);
 }
 
 function closeMods() {
