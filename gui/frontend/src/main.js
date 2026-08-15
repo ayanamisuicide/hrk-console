@@ -1472,6 +1472,16 @@ function renderModules() {
     // конечное состояние, а сам keyframe без class-триггера повторно не
     // играет, снимать класс незачем). У всех прочих — короткий transform от
     // старой позиции к новой, только если она реально изменилась.
+    //
+    // Play — через Web Animations API (row.animate), не через ручной трюк
+    // "transition:none → форсировать reflow чтением layout → включить
+    // transition → снять transform": тот трюк полагается на то, что чтение
+    // getBoundingClientRect() гарантированно коммитит стили ДО следующей
+    // строки кода — в обычном Chromium так и есть, но в WebView2 (на нём
+    // реально работает это приложение) это не всегда синхронно, и анимация
+    // временами схлопывалась в мгновенный прыжок без единого кадра
+    // движения. .animate() описывает начальный и конечный кадр явно и не
+    // зависит от таймингов реального reflow — надёжнее в разных движках.
     for (const row of entering) row.classList.add('entering');
     for (const [name, row] of modRowEls) {
         if (entering.includes(row)) continue;
@@ -1480,12 +1490,10 @@ function renderModules() {
         const next = row.getBoundingClientRect();
         const dy = prev.top - next.top;
         if (Math.abs(dy) < 1) continue;
-        row.style.transition = 'none';
-        row.style.transform = `translateY(${dy}px)`;
-        void row.getBoundingClientRect(); // форсирует reflow между установкой и снятием transform
-        row.style.transition = 'transform .28s cubic-bezier(.19, 1, .22, 1)';
-        row.style.transform = '';
-        row.addEventListener('transitionend', () => { row.style.transition = ''; }, { once: true });
+        row.animate(
+            [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+            { duration: 280, easing: 'cubic-bezier(.19, 1, .22, 1)' },
+        );
     }
 }
 
