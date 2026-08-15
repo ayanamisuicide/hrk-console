@@ -162,7 +162,7 @@ func TestCheckReportsAvailableAndUpToDate(t *testing.T) {
 }
 
 // Баг: переключение с dev-канала обратно на stable, сидя на честной
-// dev-тег сборке ("vX.Y.Z-N-gHASH"), не должно молчать так же, как
+// dev-тег сборке ("vX.Y.Z-dev.N"), не должно молчать так же, как
 // безымянная "dev"-сборка — иначе откат на stable невозможен вообще,
 // кнопка "обновить" никогда не появляется.
 func TestCheckChannelDevBuildSeesStableUpdate(t *testing.T) {
@@ -176,9 +176,9 @@ func TestCheckChannelDevBuildSeesStableUpdate(t *testing.T) {
 	defer srv.Close()
 	CheckURL = srv.URL
 
-	res := CheckChannel("", "v1.12.0-4-gaeaba90")
+	res := CheckChannel("", "v1.12.1-dev.4")
 	if !res.OK || !res.Available || res.Latest != "v1.13.0" {
-		t.Errorf("CheckChannel(\"\", \"v1.12.0-4-gaeaba90\") = %+v, ожидался available=true latest=v1.13.0", res)
+		t.Errorf("CheckChannel(\"\", \"v1.12.1-dev.4\") = %+v, ожидался available=true latest=v1.13.0", res)
 	}
 }
 
@@ -341,25 +341,26 @@ func TestCheckBothParsesPublishedAt(t *testing.T) {
 	if stable.PublishedAt.IsZero() || dev.PublishedAt.IsZero() {
 		t.Errorf("published_at не разобран: stable=%v dev=%v", stable.PublishedAt, dev.PublishedAt)
 	}
-	if stable.Tag != "v1.15.0" || dev.Tag != "v1.14.0-9-g57dd2ab" {
+	if stable.Tag != "v1.15.0" || dev.Tag != "v1.14.1-dev.9" {
 		t.Errorf("выбраны не самые свежие: stable=%q dev=%q", stable.Tag, dev.Tag)
 	}
 }
 
 // Порядок, в котором GitHub реально отдаёт /releases: сначала обычные
 // релизы по убыванию даты, затем prerelease — отсортированные ПО ИМЕНИ
-// ТЕГА, а не по времени. У dev-тегов имя — "vX.Y.Z-N-gHASH" от последнего
-// стабильного релиза, при алфавитной сортировке строк это не лучше хеша:
-// порядок в списке случаен. Здесь самый свежий dev (07:23) стоит последним,
-// а первым — полуторачасовой давности: прежний код брал первый попавшийся
-// prerelease и потому годами отдавал не ту сборку.
+// ТЕГА, а не по времени. У dev-тегов имя — "vX.Y.Z-dev.N" от последнего
+// стабильного релиза, при алфавитной сортировке строк релизы с одной базовой
+// версией не идут по N подряд — порядок в списке случаен. Здесь самый
+// свежий dev (07:23) стоит последним, а первым — полуторачасовой давности:
+// прежний код брал первый попавшийся prerelease и потому годами отдавал
+// не ту сборку.
 const releasesInGitHubOrder = `[
  {"tag_name":"v1.15.0","prerelease":false,"published_at":"2026-08-11T07:27:13Z"},
  {"tag_name":"v1.14.0","prerelease":false,"published_at":"2026-08-11T06:49:52Z"},
- {"tag_name":"v1.14.0-3-gf2e9642","prerelease":true,"published_at":"2026-08-11T06:00:10Z"},
- {"tag_name":"v1.14.0-6-gf0b43bd","prerelease":true,"published_at":"2026-08-11T06:45:40Z"},
- {"tag_name":"v1.14.0-1-g9626045","prerelease":true,"published_at":"2026-08-11T05:52:27Z"},
- {"tag_name":"v1.14.0-9-g57dd2ab","prerelease":true,"published_at":"2026-08-11T07:23:04Z"}
+ {"tag_name":"v1.14.1-dev.3","prerelease":true,"published_at":"2026-08-11T06:00:10Z"},
+ {"tag_name":"v1.14.1-dev.6","prerelease":true,"published_at":"2026-08-11T06:45:40Z"},
+ {"tag_name":"v1.14.1-dev.1","prerelease":true,"published_at":"2026-08-11T05:52:27Z"},
+ {"tag_name":"v1.14.1-dev.9","prerelease":true,"published_at":"2026-08-11T07:23:04Z"}
 ]`
 
 func serveReleases(t *testing.T, body string) func() {
@@ -379,8 +380,8 @@ func TestFetchLatestDevPicksNewestNotFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchLatestDev: %v", err)
 	}
-	if rel.TagName != "v1.14.0-9-g57dd2ab" {
-		t.Errorf("выбрана сборка %q, а самая свежая по дате — v1.14.0-9-g57dd2ab", rel.TagName)
+	if rel.TagName != "v1.14.1-dev.9" {
+		t.Errorf("выбрана сборка %q, а самая свежая по дате — v1.14.1-dev.9", rel.TagName)
 	}
 }
 
@@ -409,8 +410,8 @@ func TestCheckBothPicksNewestAndUsesOneRequest(t *testing.T) {
 	if !stable.IsCurrent {
 		t.Error("stable.IsCurrent должен быть true — запущена ровно эта версия")
 	}
-	if dev.Tag != "v1.14.0-9-g57dd2ab" {
-		t.Errorf("dev.Tag = %q, ожидался v1.14.0-9-g57dd2ab (самый свежий по дате)", dev.Tag)
+	if dev.Tag != "v1.14.1-dev.9" {
+		t.Errorf("dev.Tag = %q, ожидался v1.14.1-dev.9 (самый свежий по дате)", dev.Tag)
 	}
 	if dev.IsCurrent {
 		t.Error("dev.IsCurrent должен быть false — запущена стабильная сборка")
