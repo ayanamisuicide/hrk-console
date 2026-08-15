@@ -306,6 +306,10 @@ let modRowEls = new Map();
 // (был 40-м, стал первым) займёт несколько тиков и на каждом будет видно
 // ровно одну смену местами, а не единомоментный скачок через весь список.
 let modOrder = [];
+// openPeak — счётчик самого шумного модуля, зафиксированный в момент
+// открытия панели (resortModOrder). См. комментарий в renderModules —
+// шкала объёма больше не гоняется за живым максимумом каждый тик.
+let openPeak = 1;
 
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -1343,7 +1347,10 @@ function updateModuleRow(row, m, isSelected, peak) {
     const name = row.querySelector('.module-name');
     name.className = 'module-name' + (m.err > 0 ? ' has-err' : m.warn > 0 ? ' has-warn' : '');
     const fill = row.querySelector('.fill');
-    fill.style.width = Math.round((m.count / peak) * 100) + '%';
+    // peak теперь снимок на момент открытия панели (openPeak) — модуль
+    // вполне может его обогнать, пока панель открыта; клампим на 100%,
+    // а не ломаем раскладку шкалы, которая физически не может быть шире.
+    fill.style.width = Math.min(100, Math.round((m.count / peak) * 100)) + '%';
     fill.style.background = moduleColor(m.name);
     row.querySelector('.module-count').textContent = m.count;
 }
@@ -1356,16 +1363,26 @@ function updateModuleRow(row, m, isSelected, peak) {
 // (новый модуль или сменившийся порядок по шуму); строка, которая просто
 // получила +1 к счётчику и осталась на месте, не шевелится вообще.
 function renderModules() {
-    // "Истинная" сортировка — для топ-3 в статус-строке и для шкалы объёма
-    // (peak). Порядок строк В ПАНЕЛИ — отдельная вещь, см. modOrder ниже.
+    // "Истинная" сортировка — только для топ-3 в статус-строке. Шкала объёма
+    // (peak) больше НЕ считается здесь заново каждый тик — см. openPeak ниже:
+    // самый частый (по трафику) модуль почти всегда продолжает расти между
+    // тиками, и пересчёт peak на его текущее значение каждую секунду сжимал
+    // ВСЕ остальные полоски одновременно — не перестановка строк была
+    // источником "всё двигается разом", а именно это; заморозка одного
+    // порядка строк (см. ниже) эту часть не трогала и на глаз ничего не
+    // меняла.
     const trueSorted = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
         .sort((a, b) => b.count - a.count);
-    const peak = trueSorted.length ? trueSorted[0].count : 1;
     // Топ-3 прямо в строке — кто вообще шумит, без единого клика; полный
     // список за тем же сегментом, если этих трёх не хватило.
     slMods.textContent = trueSorted.slice(0, 3).map((m) => m.name).join(' · ') || '—';
     modMenuEmpty.style.display = trueSorted.length ? 'none' : '';
+    // openPeak — снимок peak на момент открытия панели (см. resortModOrder).
+    // Пока панель открыта, шкала не гуляет вслед за самым шумным модулем;
+    // если кто-то всё же обгонит замороженный peak, unclamped-ширина просто
+    // держится на 100% (Math.min ниже), а не ломает раскладку.
+    const peak = openPeak || 1;
 
     // Порядок строк больше не гонится за счётчиком на каждый тик вообще —
     // сколько ни ограничивай перестановки (один свап за раз и то было
@@ -1445,10 +1462,11 @@ function renderModules() {
 // раз к моменту, когда на него смотрят, и дальше не трогается (renderModules
 // только дописывает новые модули в конец и убирает пропавшие — см. выше).
 function resortModOrder() {
-    modOrder = [...moduleStats.entries()]
+    const sorted = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
-        .sort((a, b) => b.count - a.count)
-        .map((m) => m.name);
+        .sort((a, b) => b.count - a.count);
+    modOrder = sorted.map((m) => m.name);
+    openPeak = sorted.length ? sorted[0].count : 1;
 }
 
 function openMods() {
