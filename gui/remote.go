@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"heroku-console/remotebot"
 	"heroku-console/state"
@@ -175,6 +177,63 @@ func (a *App) DisconnectRemote() ActionResult {
 	a.mu.Unlock()
 	state.Save(ui)
 	return a.RestartApp()
+}
+
+// DetectSSHKeys — все правдоподобные приватные ключи в ~/.ssh для формы
+// подключения, самый свежий первым. Имя ключа для конкретного хоста никак
+// не угадать (id_ed25519_hkc, id_rsa_prod — что угодно), поэтому вместо
+// точных имён (id_ed25519, id_rsa, …) просто читаем ~/.ssh целиком и берём
+// файлы, которые ПОХОЖИ на приватный ключ (начинаются с "-----BEGIN"), а
+// не .pub/known_hosts/config. Фронтенд подставляет первый (самый свежий)
+// как значение по умолчанию и показывает остальные выпадающим списком —
+// когда ключей несколько, порядок «недавно созданный, скорее всего, тот»
+// верен не всегда. nil, если ~/.ssh нет или в нём ничего похожего.
+func (a *App) DetectSSHKeys() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(home, ".ssh")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	type candidate struct {
+		path    string
+		modTime int64
+	}
+	var found []candidate
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) == ".pub" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		head := make([]byte, 32)
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		n, _ := f.Read(head)
+		f.Close()
+		if !bytes.HasPrefix(head[:n], []byte("-----BEGIN")) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		found = append(found, candidate{path, info.ModTime().Unix()})
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].modTime > found[j].modTime })
+	paths := make([]string, len(found))
+	for i, c := range found {
+		paths[i] = c.path
+	}
+	return paths
 }
 
 // TestRemoteConnection — «проверить соединение» до того, как сохранить

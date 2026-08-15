@@ -548,6 +548,10 @@ mark.hl {
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .14s ease, visibility 0s linear .14s;
 }
+/* remote-overlay может открываться поверх экрана проверок (preflight-overlay,
+   z-index 20) — кнопка "Подключиться по SSH" там ведёт сюда, и форма должна
+   быть видна, а не завешена преф-экраном. */
+.remote-overlay { z-index: 21; }
 .help-overlay.visible, .remote-overlay.visible {
   opacity: 1; visibility: visible; pointer-events: auto;
   transition: opacity .14s ease;
@@ -697,7 +701,7 @@ mark.hl {
    проверок, поэтому залита акцентом (.gate-primary), а «продолжить всё
    равно» под ней остаётся тихим контуром: порядок читается сверху вниз от
    «почини» к «и так сойдёт», а не наоборот. */
-.preflight-fix {
+.preflight-fix, .preflight-connect {
   display: block;
   width: 100%;
   margin: 15px 0 0;

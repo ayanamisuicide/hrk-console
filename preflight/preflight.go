@@ -55,7 +55,7 @@ func Unsupported() []Check {
 		{
 			Name: "локальный режим",
 			Run: func() (string, Status) {
-				return "бот работает только на Linux — подключитесь к удалённой машине по SSH (кнопка вверху)", Failed
+				return "бот работает только на Linux — подключитесь к удалённой машине по SSH", Failed
 			},
 		},
 	}

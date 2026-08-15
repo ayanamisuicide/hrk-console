@@ -4,7 +4,7 @@ import {
     Bootstrap, SetFilter, SetShowDebug, CycleMinLevel, SetWatchdog,
     StartBot, StopBot, RestartBot, ClearLog, RestartApp, CheckForUpdate,
     SetUpdateChannel, PreflightChecks, ConnectRemote, DisconnectRemote, TestRemoteConnection,
-    CheckChannels, ApplyUpdateFrom, FixEnvironment,
+    CheckChannels, ApplyUpdateFrom, FixEnvironment, DetectSSHKeys,
 } from '../wailsjs/go/main/App';
 import {
     EventsOn, WindowSetTitle, ClipboardSetText, BrowserOpenURL,
@@ -31,6 +31,7 @@ document.querySelector('#app').innerHTML = `
         <div class="preflight-status" id="preflight-status">запускаю проверки…</div>
       </div>
       <button class="gate-primary preflight-fix" id="preflight-fix" style="display:none">Установить недостающее</button>
+      <button class="gate-primary preflight-connect" id="preflight-connect" style="display:none">Подключиться по SSH</button>
       <button class="preflight-continue" id="preflight-continue" style="display:none">продолжить всё равно</button>
     </div>
   </div>
@@ -160,7 +161,8 @@ document.querySelector('#app').innerHTML = `
       <p class="remote-hint">Бот управляется на другой машине по SSH — окно только показывает и командует, ничего из бота на этом компьютере не хранится.</p>
       <label>Хост или IP<input type="text" id="remote-host" placeholder="192.168.31.128" autocomplete="off"></label>
       <label>Пользователь<input type="text" id="remote-user" placeholder="ayanami" autocomplete="off"></label>
-      <label>Приватный ключ<input type="text" id="remote-key" placeholder="C:\Users\...\.ssh\id_ed25519" autocomplete="off"></label>
+      <label>Приватный ключ<input type="text" id="remote-key" list="remote-key-options" placeholder="C:\Users\...\.ssh\id_ed25519" autocomplete="off"></label>
+      <datalist id="remote-key-options"></datalist>
       <label>Каталог бота на той машине<input type="text" id="remote-dir" placeholder="Heroku" autocomplete="off"></label>
       <div class="remote-note" id="remote-note"></div>
       <div class="remote-actions">
@@ -211,6 +213,7 @@ const preflightBarFill = el('preflight-bar-fill');
 const preflightStatus = el('preflight-status');
 const preflightContinue = el('preflight-continue');
 const preflightFix = el('preflight-fix');
+const preflightConnect = el('preflight-connect');
 const updateGate = el('update-gate');
 const gateList = el('gate-list');
 const gateCurrent = el('gate-current');
@@ -227,6 +230,7 @@ const remoteOverlay = el('remote-overlay');
 const remoteHostInput = el('remote-host');
 const remoteUserInput = el('remote-user');
 const remoteKeyInput = el('remote-key');
+const remoteKeyOptions = el('remote-key-options');
 const remoteDirInput = el('remote-dir');
 const remoteNote = el('remote-note');
 const btnRemoteTest = el('btn-remote-test');
@@ -630,6 +634,11 @@ channelBadge.addEventListener('click', async () => {
 let preflightRows = [];
 let preflightPending = [];
 let preflightFailed = false;
+// Отдельная псевдо-проверка preflight.Unsupported() (единственная строка
+// "локальный режим") — единственный случай, где "Установить недостающее"
+// бессмысленно предлагать: FixEnvironment на не-Linux всё равно откажет.
+// Тут нужна не установка, а прямое подключение по SSH.
+let preflightUnsupported = false;
 
 EventsOn('preflight-check', (ev) => {
     if (preflightRows.length === 0) {
@@ -663,7 +672,11 @@ function finishPreflight() {
     if (preflightFailed) {
         preflightStatus.textContent = 'не всё в порядке';
         preflightStatus.className = 'preflight-status bad';
-        preflightFix.style.display = '';
+        if (preflightUnsupported) {
+            preflightConnect.style.display = '';
+        } else {
+            preflightFix.style.display = '';
+        }
         preflightContinue.style.display = '';
     } else {
         preflightStatus.textContent = 'всё готово';
@@ -704,6 +717,12 @@ preflightFix.addEventListener('click', async () => {
         preflightStatus.className = 'preflight-status bad';
     }
 });
+
+// Открывает ту же форму настройки удалённого подключения, что и клик по
+// сегменту в шапке (slConn) — только доступную поверх экрана проверок:
+// на не-Linux он завешивает окно первым же кадром, и до самой шапки
+// пользователь бы просто не добрался.
+preflightConnect.addEventListener('click', () => openRemoteOverlay(uiState.remote));
 
 // ─── экран обновлений ────────────────────────────────────────────────────
 //
@@ -929,6 +948,7 @@ function renderPreflightChecks(names) {
         dismissPreflight();
         return;
     }
+    preflightUnsupported = names.length === 1 && names[0] === 'локальный режим';
     preflightRows = names.map((name, i) => {
         const row = document.createElement('div');
         row.className = 'pf-row';
@@ -1013,6 +1033,22 @@ function openRemoteOverlay(remote) {
     btnRemoteTest.disabled = false;
     btnRemoteConnect.disabled = false;
     remoteOverlay.classList.add('visible');
+
+    // Ключей в ~/.ssh может быть несколько — самый свежий сразу подставляем
+    // в поле (для однократно сгенерированного под это подключение ключа
+    // почти всегда верно), а остальные кладём в datalist: браузерная
+    // подсказка под полем, из которой можно выбрать другой без похода в
+    // проводник за путём. Список не трогаем, если ключ уже вписан руками.
+    remoteKeyOptions.innerHTML = '';
+    DetectSSHKeys().then((paths) => {
+        if (!paths || paths.length === 0) return;
+        paths.forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            remoteKeyOptions.appendChild(opt);
+        });
+        if (!remoteKeyInput.value) remoteKeyInput.value = paths[0];
+    });
 }
 
 function closeRemoteOverlay() {
