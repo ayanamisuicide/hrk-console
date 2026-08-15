@@ -16,7 +16,7 @@ func maxInt(a, b int) int {
 
 func toRec(r *logfeed.Record) Rec {
 	return Rec{
-		Time: r.Time, Level: int(r.Level), Module: r.Module,
+		Date: r.Date, Time: r.Time, Level: int(r.Level), Module: r.Module,
 		Lines: r.Lines, Hard: r.Hard, Warn: r.Warn, Err: r.Err, Count: r.Count,
 	}
 }

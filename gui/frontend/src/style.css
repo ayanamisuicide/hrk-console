@@ -492,6 +492,16 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
 /* Каждая строка влетает со своей задержкой (--i, main.js) — список
    раскрывается сверху вниз пока панель едет, а не появляется разом одним
    куском. Только при открытии: закрытие — простой transform панели. */
+/* Строка — переиспользуемый узел (modRowEls, main.js): создаётся один раз
+   на модуль и дальше только обновляется на месте, не пересоздаётся на
+   каждый вызов renderModules (тот идёт и раз в секунду, и на каждое
+   обновление лога). Раньше анимация появления висела на самом классе
+   .module-row безусловно — и играла заново при КАЖДОЙ пересборке списка,
+   даже когда в нём ничего не менялось, кроме счётчика: список выглядел
+   так, будто мигает каждую секунду. Теперь она — на .entering, который
+   ставится только новым строкам и никогда не снимается (animation-fill-
+   mode: forwards держит конечное состояние, повторно keyframe без смены
+   класса не запускается). */
 .module-row {
   display: grid;
   grid-template-columns: 8px 1fr 44px;
@@ -502,15 +512,29 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
   border-radius: var(--radius);
   font-size: 12px;
   font-family: var(--font-mono);
+}
+.module-row.entering {
+  /* Статичный opacity:0 — до того, как animation-delay истечёт, у элемента
+     иначе нет причины быть невидимым, и отложенные строки на миг мелькнули
+     бы полностью видимыми до начала своей анимации. */
   opacity: 0;
-  transform: translateX(10px);
   animation: mod-row-in .28s cubic-bezier(.19, 1, .22, 1) forwards;
   animation-delay: calc(var(--i, 0) * 22ms);
 }
-@keyframes mod-row-in { to { opacity: 1; transform: none; } }
+@keyframes mod-row-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
 
-.module-dot { width: 7px; height: 7px; transform: rotate(45deg); }
-.module-name { grid-row: 1; color: var(--text-primary); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Явное grid-column/grid-row на КАЖДОМ элементе, не только на части —
+   иначе auto-placement сначала расставляет частично закреплённые (было:
+   только .module-name с grid-row без column) и они перехватывают чужие
+   колонки раньше полностью автоматических (.module-dot без вообще
+   никакого позиционирования): имя утаскивало себе узкую 8px-колонку
+   точки, а сама точка уезжала в широкую — отсюда обрезка имени до
+   одного символа. */
+.module-dot { grid-column: 1; grid-row: 1; width: 7px; height: 7px; transform: rotate(45deg); }
+.module-name { grid-column: 2; grid-row: 1; min-width: 0; color: var(--text-primary); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-name.has-err { color: var(--critical); }
 .module-name.has-warn { color: var(--warning); }
 
@@ -749,7 +773,7 @@ mark.hl {
 
 /* ─── модальные окна (справка, удалённый бот) ──────────────────────────── */
 
-.help-overlay, .remote-overlay {
+.help-overlay, .remote-overlay, .matches-overlay {
   position: fixed; inset: 0; z-index: 15;
   display: flex; align-items: center; justify-content: center;
   background: rgba(4, 4, 3, .64);
@@ -760,12 +784,12 @@ mark.hl {
    z-index 20) — кнопка "Подключиться по SSH" там ведёт сюда, и форма должна
    быть видна, а не завешена преф-экраном. */
 .remote-overlay { z-index: 21; }
-.help-overlay.visible, .remote-overlay.visible {
+.help-overlay.visible, .remote-overlay.visible, .matches-overlay.visible {
   opacity: 1; visibility: visible; pointer-events: auto;
   transition: opacity .14s ease;
 }
 
-.help-card, .remote-card, .preflight-card, .gate-card {
+.help-card, .remote-card, .preflight-card, .gate-card, .matches-card {
   position: relative;
   background: var(--bg-float);
   border: 1px solid var(--line-strong);
@@ -778,14 +802,17 @@ mark.hl {
 .help-card::before, .help-card::after,
 .remote-card::before, .remote-card::after,
 .preflight-card::before, .preflight-card::after,
-.gate-card::before, .gate-card::after {
+.gate-card::before, .gate-card::after,
+.matches-card::before, .matches-card::after {
   content: ''; position: absolute; width: 14px; height: 14px;
   border: 2px solid var(--accent); opacity: .55; pointer-events: none;
 }
-.help-card::before, .remote-card::before, .preflight-card::before, .gate-card::before {
+.help-card::before, .remote-card::before, .preflight-card::before, .gate-card::before,
+.matches-card::before {
   top: -1px; left: -1px; border-right: none; border-bottom: none;
 }
-.help-card::after, .remote-card::after, .preflight-card::after, .gate-card::after {
+.help-card::after, .remote-card::after, .preflight-card::after, .gate-card::after,
+.matches-card::after {
   bottom: -1px; right: -1px; border-left: none; border-top: none;
 }
 
@@ -806,6 +833,57 @@ mark.hl {
 }
 .help-card code { color: var(--accent); }
 .help-foot { margin: 14px 0 0; font-size: 11px; color: var(--text-muted); font-family: var(--font-ui); }
+
+/* ─── все повторения одной записи (⊙ у строки) ───────────────────────────
+   Разовый снимок, не постоянная панель (как у модулей): открылось —
+   посмотрел — закрыл, поэтому модальное окно по центру, а не рельса или
+   выездная панель. Список внутри — те же .row, что и в основном логе
+   (buildRow переиспользуется как есть), поэтому фон/шрифт логовой ленты
+   унаследованы явно, а не через каскад. */
+.matches-card {
+  width: min(720px, 92vw);
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0 10px;
+  transform: translateY(6px);
+  transition: transform .16s ease;
+}
+.matches-overlay.visible .matches-card { transform: none; }
+
+.matches-head {
+  flex: none;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.matches-title {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.matches-close {
+  flex: none;
+  border: none; background: transparent;
+  color: var(--text-muted); font-size: 16px; line-height: 1; padding: 2px 4px;
+}
+.matches-close:hover { color: var(--critical); box-shadow: none; }
+
+.matches-list {
+  flex: 1; min-height: 0; overflow-y: auto;
+  background: var(--bg);
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55;
+  padding: 4px 0;
+}
+.matches-empty { padding: 10px 20px 0; font-size: 11px; color: var(--text-muted); }
+
+/* ⊙ — та же приглушённая иконка, что и ⧉ (row-copy), просто своя: видна
+   только при наведении на строку, чтобы не шуметь на девяти INF из
+   десяти, где её и нет вовсе. */
+.row-match { margin-left: -4px; }
 
 .remote-card {
   width: min(360px, 88vw);

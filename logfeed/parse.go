@@ -41,6 +41,7 @@ func parseLevel(s string) Level {
 // Record — одна логическая запись лога, уже собранная из всех своих
 // физических строк (заголовок + возможные переносы/трейсбек).
 type Record struct {
+	Date       string // "2026-08-15", то же условие пустоты, что у Time
 	Time       string // "15:04:05", пусто у мягкого переноса без заголовка
 	Level      Level
 	Module     string   // сокращённое имя, уже прошедшее shortModule — для показа
@@ -78,7 +79,11 @@ func SameEntry(a, b *Record) bool {
 	return true
 }
 
-var logRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^ :]+): ?(.*)$`)
+// Дата — своя группа (была частью незахваченного префикса): нужна для
+// полной метки времени в подсказке GUI над короткими "15:04:05" в строке —
+// heroku.log живёт неделями, и без даты не отличить "сегодня" от "три дня
+// назад" на глаз.
+var logRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^ :]+): ?(.*)$`)
 
 // Что видно всегда, даже когда DEBUG скрыт. Формально эти записи пишутся
 // уровнем DEBUG, но по смыслу они и есть то, ради чего открывают лог.
@@ -145,7 +150,7 @@ func (p *Parser) SetCounts(warn, err int) { p.warn, p.err = warn, err }
 // копится (ждёт продолжения) и rec равен nil.
 func (p *Parser) Feed(raw string) (rec *Record, complete bool) {
 	if m := logRe.FindStringSubmatch(raw); m != nil {
-		t, lvlStr, mod, msg := m[1], m[2], m[3], m[4]
+		date, t, lvlStr, mod, msg := m[1], m[2], m[3], m[4], m[5]
 		lvl := parseLevel(lvlStr)
 		p.lastLvl = lvl
 		p.lastMod = mod
@@ -161,10 +166,10 @@ func (p *Parser) Feed(raw string) (rec *Record, complete bool) {
 			// "root: " перед баннером). Придерживаем: текст приедет следующей
 			// строкой и встанет в ту же запись, а не разложится на пустую
 			// шапку плюс висящее продолжение.
-			p.pending = &Record{Time: t, Level: lvl, Module: shortModule(mod), fullModule: mod}
+			p.pending = &Record{Date: date, Time: t, Level: lvl, Module: shortModule(mod), fullModule: mod}
 			return nil, false
 		}
-		rec = &Record{Time: t, Level: lvl, Module: shortModule(mod), fullModule: mod, Lines: []string{msg}, Hard: []bool{false}}
+		rec = &Record{Date: date, Time: t, Level: lvl, Module: shortModule(mod), fullModule: mod, Lines: []string{msg}, Hard: []bool{false}}
 		p.pending = nil
 		rec.Warn = lvl == LevelWarning
 		rec.Err = lvl == LevelError || lvl == LevelCritical

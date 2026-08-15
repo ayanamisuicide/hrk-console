@@ -56,6 +56,7 @@ type Status struct {
 // logfeed.Record, но без непубличного fullModule (фильтрация по нему уже
 // сделана на бэкенде, фронтенду он не нужен).
 type Rec struct {
+	Date   string   `json:"date"`
 	Time   string   `json:"time"`
 	Level  int      `json:"level"`
 	Module string   `json:"module"`

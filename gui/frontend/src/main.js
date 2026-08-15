@@ -165,10 +165,27 @@ document.querySelector('#app').innerHTML = `
         <tr><td><kbd>n</kbd> <kbd>N</kbd></td><td>к следующей / предыдущей проблеме (warning и выше)</td></tr>
         <tr><td><kbd>r</kbd> <kbd>R</kbd></td><td>к следующему / предыдущему перезапуску</td></tr>
         <tr><td><kbd>g</kbd> <kbd>G</kbd></td><td>в начало / в конец лога</td></tr>
-        <tr><td><kbd>клик</kbd></td><td>по модулю в списке — фильтр по нему, повторный клик снимает</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>закрыть справку и список, снять фильтр</td></tr>
+        <tr><td><kbd>клик</kbd></td><td>по модулю в панели — добавить/убрать из фильтра, можно несколько сразу</td></tr>
+        <tr><td><kbd>клик</kbd></td><td>по ⧉ у строки — скопировать её (с трейсбеком, если есть)</td></tr>
+        <tr><td><kbd>клик</kbd></td><td>по ⊙ у warning/error — все повторения этой записи одним списком</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>закрыть справку, панель модулей и список повторений, снять фильтр</td></tr>
       </table>
       <p class="help-foot">Те же клавиши, что в консольной версии <code>hkc</code>.</p>
+    </div>
+  </div>
+
+  <!-- ── все повторения одной записи ──────────────────────────────────────
+       ⊙ у строки warning/error открывает это окно: не панель, что живёт
+       постоянно (как модули), а разовый снимок — какой бы бот молчаливый ни
+       был, сама запись никуда не убегает, пока окно открыто. -->
+  <div class="matches-overlay" id="matches-overlay">
+    <div class="matches-card">
+      <div class="matches-head">
+        <span class="matches-title" id="matches-title"></span>
+        <button class="matches-close" id="matches-close" title="Закрыть (Esc)">×</button>
+      </div>
+      <div class="matches-list" id="matches-list"></div>
+      <div class="matches-empty" id="matches-empty" style="display:none">кроме этой — повторений не нашлось</div>
     </div>
   </div>
   <div class="remote-overlay" id="remote-overlay">
@@ -214,6 +231,11 @@ const btnHelp = el('btn-help');
 const updateBadge = el('update-badge');
 const channelBadge = el('channel-badge');
 const helpOverlay = el('help-overlay');
+const matchesOverlay = el('matches-overlay');
+const matchesTitle = el('matches-title');
+const matchesList = el('matches-list');
+const matchesEmpty = el('matches-empty');
+const matchesClose = el('matches-close');
 const btnMods = el('btn-mods');
 const slWarn = el('sl-warn');
 const slErr = el('sl-err');
@@ -259,6 +281,29 @@ const btnRemoteCancel = el('btn-remote-cancel');
 let uiState = { showDebug: false, minLevel: LEVEL_DEBUG, watchdog: false };
 let lastRowEl = null;   // DOM-узел последней записи — для схлопывания повторов
 let moduleStats = new Map(); // имя → {count, warn, err}
+// selectedModules — множественный выбор в панели модулей: клик добавляет/
+// убирает модуль, а не заменяет фильтр целиком, как раньше. Собранное в
+// filterFromSelectedModules() ОБЪЕДИНЕНИЕ модулей — то же самое, что можно
+// набрать руками через "re:", просто без ручного экранирования точек в
+// именах модулей.
+let selectedModules = new Set();
+// modRowEls — переиспользуемые DOM-узлы строк панели модулей, по имени.
+// renderModules раньше пересоздавал список целиком (innerHTML='') на каждый
+// вызов, а вызывается он и раз в секунду, и на каждое обновление лога —
+// строка играла анимацию появления заново каждый раз, даже когда в ней не
+// менялось вообще ничего. Теперь существующая строка переиспользуется и
+// просто обновляется на месте; анимация остаётся только для НОВОЙ строки
+// и для перестановки при смене места в сортировке (см. renderModules).
+let modRowEls = new Map();
+
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function filterFromSelectedModules() {
+    const names = [...selectedModules];
+    if (names.length === 0) return '';
+    if (names.length === 1) return names[0];
+    return 're:^(' + names.map(escapeRegex).join('|') + ')$';
+}
 // warnCount/errCount считаются нарастающим итогом по КАЖДОМУ событию, а не
 // по числу строк на экране: одно и то же предупреждение, повторившееся 10
 // раз и схлопнутое в одну строку "×10", всё равно означает 10 срабатываний.
@@ -348,6 +393,9 @@ function buildRow(rec, zebra) {
     const time = document.createElement('span');
     time.className = 'time';
     time.textContent = rec.time || '';
+    // Строка показывает только часы:минуты:секунды — heroku.log живёт
+    // неделями, без даты в подсказке "вчера" от "три дня назад" не отличить.
+    if (rec.date) time.title = rec.date + ' ' + rec.time;
     row.appendChild(time);
 
     const badge = document.createElement('span');
@@ -383,13 +431,30 @@ function buildRow(rec, zebra) {
     });
     row.appendChild(copyBtn);
 
+    // "Все повторения" — только у проблемных записей (warning и выше): у
+    // обычных INF компилировать нечего смотреть, а кнопка на девяти строках
+    // из десяти была бы чистым шумом.
+    if (rec.level >= LEVEL_WARNING) {
+        const matchBtn = document.createElement('span');
+        matchBtn.className = 'row-copy row-match';
+        matchBtn.title = 'Показать все повторения этой ошибки';
+        matchBtn.textContent = '⊙';
+        matchBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openMatches(rec);
+        });
+        row.appendChild(matchBtn);
+    }
+
     row._rec = rec;
     return row;
 }
 
 function updateRowCount(rowEl, rec) {
     rowEl._rec = rec;
-    rowEl.querySelector('.time').textContent = rec.time || '';
+    const time = rowEl.querySelector('.time');
+    time.textContent = rec.time || '';
+    if (rec.date) time.title = rec.date + ' ' + rec.time;
     const count = rowEl.querySelector('.count');
     count.textContent = '×' + rec.count;
     count.style.visibility = 'visible';
@@ -1212,14 +1277,73 @@ function renderCounts() {
     }
 }
 
-// renderModules — дорогая часть: пересобирает весь список модулей заново
-// (innerHTML='' + N узлов + N новых обработчиков клика). Список полный, а не
-// топ-7, поэтому N может быть за сорок — звать это на каждый кадр всплеска
-// лога значит десятки полных пересборок в секунду. Дёргается из renderAll и
-// из секундного тикера ниже — не из «горячего» пути flushTail.
-//
-// Список живёт в выпадашке и пересобирается, даже когда она закрыта: топ-3
-// в самой статус-строке считаются здесь же, и они видны всегда.
+// buildModuleRow создаёт DOM-узел строки один раз — при первом появлении
+// модуля в списке. Дальше он живёт в modRowEls и просто обновляется на
+// месте (updateModuleRow), а не пересоздаётся: пересоздание на каждый
+// вызов было тем самым источником "мигания" — заново игралась анимация
+// появления у строки, в которой ничего не изменилось, кроме счётчика.
+function buildModuleRow(name) {
+    const row = document.createElement('div');
+    row.className = 'module-row clickable';
+    // Клик добавляет/убирает модуль из выбора — можно накопить несколько
+    // сразу (объединяются через "re:", см. filterFromSelectedModules),
+    // панель при этом не закрывается: закрыть её отдельное действие
+    // (клик по сегменту в статус-строке или мимо панели), а не побочный
+    // эффект выбора модуля.
+    row.addEventListener('click', () => {
+        if (selectedModules.has(name)) selectedModules.delete(name);
+        else selectedModules.add(name);
+        applyFilter(filterFromSelectedModules());
+        renderModules();
+    });
+
+    // Точка — состояние модуля (проблема ярче самого частого случая, что
+    // это просто разные модули): свой цвет в норме, warn/err — цветом
+    // проблемы. Полоса ниже красит объём тем же цветом модуля всегда —
+    // так объём и состояние не спорят за один и тот же сигнал.
+    const dot = document.createElement('span');
+    dot.className = 'module-dot';
+    row.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.className = 'module-name';
+    label.textContent = name;
+    row.appendChild(label);
+
+    const meter = document.createElement('span');
+    meter.className = 'meter';
+    const fill = document.createElement('span');
+    fill.className = 'fill';
+    meter.appendChild(fill);
+    row.appendChild(meter);
+
+    const count = document.createElement('span');
+    count.className = 'module-count';
+    row.appendChild(count);
+
+    return row;
+}
+
+function updateModuleRow(row, m, isSelected, peak) {
+    row.classList.toggle('active', isSelected);
+    row.title = isSelected ? 'убрать из фильтра' : 'добавить в фильтр';
+    const dot = row.querySelector('.module-dot');
+    dot.style.background = m.err > 0 ? 'var(--critical)' : m.warn > 0 ? 'var(--warning)' : moduleColor(m.name);
+    const name = row.querySelector('.module-name');
+    name.className = 'module-name' + (m.err > 0 ? ' has-err' : m.warn > 0 ? ' has-warn' : '');
+    const fill = row.querySelector('.fill');
+    fill.style.width = Math.round((m.count / peak) * 100) + '%';
+    fill.style.background = moduleColor(m.name);
+    row.querySelector('.module-count').textContent = m.count;
+}
+
+// renderModules зовётся и раз в секунду, и на каждое обновление лога — не
+// только пока панель открыта (топ-3 в самой статус-строке считаются здесь
+// же). Строки — переиспользуемые DOM-узлы (modRowEls, по имени модуля), не
+// пересоздаются каждый раз: только обновляются на месте. Анимация — FLIP,
+// и только для того, что реально сдвинулось местами при пересортировке
+// (новый модуль или сменившийся порядок по шуму); строка, которая просто
+// получила +1 к счётчику и осталась на месте, не шевелится вообще.
 function renderModules() {
     const stats = [...moduleStats.entries()]
         .map(([name, s]) => ({ name, ...s }))
@@ -1229,54 +1353,53 @@ function renderModules() {
     // список за тем же сегментом, если этих трёх не хватило.
     slMods.textContent = stats.slice(0, 3).map((m) => m.name).join(' · ') || '—';
     modMenuEmpty.style.display = stats.length ? 'none' : '';
-    moduleList.innerHTML = '';
-    const active = filterInput.value;
+
+    // FLIP "First": позиции существующих строк ДО перестановки.
+    const prevRects = new Map();
+    for (const [name, row] of modRowEls) prevRects.set(name, row.getBoundingClientRect());
+
+    const seen = new Set();
+    const entering = [];
     stats.forEach((m, i) => {
-        const row = document.createElement('div');
-        // Клик по модулю ставит его имя обычным фильтром — отдельного
-        // «режима модуля» нет, как и в TUI: снимается он тем же способом,
-        // что любой другой фильтр, и объяснять две механики не нужно.
-        row.className = 'module-row clickable' + (m.name === active ? ' active' : '');
-        row.title = m.name === active ? 'снять фильтр' : 'фильтр по модулю ' + m.name;
-        // --i двигает animation-delay построчного появления (style.css,
-        // mod-row-in) — список раскрывается сверху вниз, пока едет сама
-        // панель, а не всплывает разом одним куском.
-        row.style.setProperty('--i', i);
-        row.addEventListener('click', () => {
-            applyFilter(m.name === active ? '' : m.name);
-            closeMods();
-        });
-
-        // Точка — состояние модуля (проблема ярче самого частого случая, что
-        // это просто разные модули): свой цвет в норме, warn/err — цветом
-        // проблемы. Полоса ниже красит объём тем же цветом модуля всегда —
-        // так объём и состояние не спорят за один и тот же сигнал.
-        const dot = document.createElement('span');
-        dot.className = 'module-dot';
-        dot.style.background = m.err > 0 ? 'var(--critical)' : m.warn > 0 ? 'var(--warning)' : moduleColor(m.name);
-        row.appendChild(dot);
-
-        const name = document.createElement('span');
-        name.className = 'module-name' + (m.err > 0 ? ' has-err' : m.warn > 0 ? ' has-warn' : '');
-        name.textContent = m.name;
-        row.appendChild(name);
-
-        const meter = document.createElement('span');
-        meter.className = 'meter';
-        const fill = document.createElement('span');
-        fill.className = 'fill';
-        fill.style.width = Math.round((m.count / peak) * 100) + '%';
-        fill.style.background = moduleColor(m.name);
-        meter.appendChild(fill);
-        row.appendChild(meter);
-
-        const count = document.createElement('span');
-        count.className = 'module-count';
-        count.textContent = m.count;
-        row.appendChild(count);
-
-        moduleList.appendChild(row);
+        seen.add(m.name);
+        const isSelected = selectedModules.has(m.name);
+        let row = modRowEls.get(m.name);
+        if (!row) {
+            row = buildModuleRow(m.name);
+            row.style.setProperty('--i', entering.length);
+            entering.push(row);
+            modRowEls.set(m.name, row);
+        }
+        updateModuleRow(row, m, isSelected, peak);
+        moduleList.appendChild(row); // "Last": переставляет в новый порядок
     });
+
+    // Модуль пропал из статистики (обнулилась/пересобралась moduleStats,
+    // см. renderAll) — узел больше не нужен.
+    for (const [name, row] of modRowEls) {
+        if (!seen.has(name)) { row.remove(); modRowEls.delete(name); }
+    }
+
+    // "Invert" + "Play": у новых строк — обычная анимация появления (класс
+    // .entering остаётся навсегда — animation-fill-mode:forwards держит
+    // конечное состояние, а сам keyframe без class-триггера повторно не
+    // играет, снимать класс незачем). У всех прочих — короткий transform от
+    // старой позиции к новой, только если она реально изменилась.
+    for (const row of entering) row.classList.add('entering');
+    for (const [name, row] of modRowEls) {
+        if (entering.includes(row)) continue;
+        const prev = prevRects.get(name);
+        if (!prev) continue;
+        const next = row.getBoundingClientRect();
+        const dy = prev.top - next.top;
+        if (Math.abs(dy) < 1) continue;
+        row.style.transition = 'none';
+        row.style.transform = `translateY(${dy}px)`;
+        void row.getBoundingClientRect(); // форсирует reflow между установкой и снятием transform
+        row.style.transition = 'transform .28s cubic-bezier(.19, 1, .22, 1)';
+        row.style.transform = '';
+        row.addEventListener('transitionend', () => { row.style.transition = ''; }, { once: true });
+    }
 }
 
 // ─── панель модулей ────────────────────────────────────────────────────
@@ -1380,6 +1503,43 @@ function copyRowText(row) {
     });
 }
 
+// ─── все повторения одной записи ──────────────────────────────────────────
+//
+// SetFilter — единственный способ спросить бэкенд про совпадения по всему
+// буферу (а не только по тому, что уже отрисовано на экране): он фильтрует
+// заново от кольцевого буфера целиком, а не от текущего DOM. У бэкенда нет
+// отдельного "только посчитать, не трогая текущий фильтр" — поэтому здесь
+// временно подставляется фильтр записи, забирается результат, и тут же,
+// не дожидаясь, фильтр возвращается обратно: с точки зрения остального
+// окна (видимого лога, поля ввода) ничего не изменилось.
+async function openMatches(rec) {
+    const query = (rec.lines && rec.lines[0]) || '';
+    if (!query) return;
+    const prevFilter = filterInput.value;
+    const recs = await SetFilter(query);
+    if (filterInput.value === prevFilter) SetFilter(prevFilter); // не наступить на ручной ввод, случившийся за это время
+
+    matchesTitle.textContent = query;
+    matchesTitle.title = query;
+    matchesList.innerHTML = '';
+    const filtered = recs.filter((r) => r.lines && r.lines[0] === query);
+    matchesEmpty.style.display = filtered.length <= 1 ? '' : 'none';
+    filtered.forEach((r, i) => {
+        const row = buildRow(r, i % 2 === 1);
+        matchesList.appendChild(row);
+    });
+    matchesOverlay.classList.add('visible');
+}
+
+function closeMatches() {
+    matchesOverlay.classList.remove('visible');
+}
+
+matchesClose.addEventListener('click', closeMatches);
+matchesOverlay.addEventListener('click', (e) => {
+    if (e.target === matchesOverlay) closeMatches();
+});
+
 // ─── управление ──────────────────────────────────────────────────────────
 
 // Перезапуск отмечается в самом логе: без этой строки падение с автоподъёмом
@@ -1433,6 +1593,10 @@ btnClear.addEventListener('click', () => {
 
 let filterDebounce = null;
 filterInput.addEventListener('input', () => {
+    // Ручной ввод в поле — уже не тот фильтр, что собрала панель модулей:
+    // старый выбор (подсветка "активных" строк там) больше не отражает
+    // реальность, если его не сбросить.
+    selectedModules.clear();
     clearTimeout(filterDebounce);
     filterDebounce = setTimeout(async () => {
         renderAll(await SetFilter(filterInput.value));
@@ -1459,7 +1623,7 @@ document.addEventListener('keydown', (e) => {
     if (document.activeElement === filterInput) {
         if (e.key === 'Escape') {
             filterInput.blur();
-            if (filterInput.value) applyFilter('');
+            if (filterInput.value) { selectedModules.clear(); applyFilter(''); }
         }
         return;
     }
@@ -1469,6 +1633,10 @@ document.addEventListener('keydown', (e) => {
         // желание после прочтения именно такое.
         toggleHelp(false);
         if (e.key === 'Escape') return;
+    }
+
+    if (matchesOverlay.classList.contains('visible')) {
+        if (e.key === 'Escape') { closeMatches(); return; }
     }
 
     switch (e.key) {
@@ -1488,7 +1656,7 @@ document.addEventListener('keydown', (e) => {
             // ничего не открыто — снимаем фильтр: иначе один Esc делал бы
             // два дела разом.
             if (modMenu.classList.contains('visible')) closeMods();
-            else if (filterInput.value) applyFilter('');
+            else if (filterInput.value) { selectedModules.clear(); applyFilter(''); }
             break;
         case '/':
             e.preventDefault(); // иначе "/" попадёт в поле первым же символом
