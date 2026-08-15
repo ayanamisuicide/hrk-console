@@ -1367,34 +1367,18 @@ function renderModules() {
     slMods.textContent = trueSorted.slice(0, 3).map((m) => m.name).join(' · ') || '—';
     modMenuEmpty.style.display = trueSorted.length ? 'none' : '';
 
-    // Пропавшие модули — вон из порядка; новые — вставляются сразу на
-    // примерно верное место (по текущему счётчику), а не в конец: иначе
-    // список при первом же построении был бы отсортирован только после
-    // десятков тиков бабл-сорта ниже.
+    // Порядок строк больше не гонится за счётчиком на каждый тик вообще —
+    // сколько ни ограничивай перестановки (один свап за раз и то было
+    // заметно), пересортировка живого списка, пока на него смотрят, всегда
+    // читается как дёрганье. Ранг по шуму пересчитывается ТОЛЬКО в момент
+    // открытия панели (см. resortModOrder ниже, зовётся из openMods) — раз
+    // открыл, увидел организованный список и он остаётся на месте, пока
+    // панель открыта. Здесь — только синхронизация состава: пропавшие
+    // модули вон, новые дописываются в конец (не встревают в середину списка,
+    // который сейчас читают).
     modOrder = modOrder.filter((name) => moduleStats.has(name));
     for (const m of trueSorted) {
-        if (modOrder.includes(m.name)) continue;
-        let idx = modOrder.findIndex((n) => moduleStats.get(n).count < m.count);
-        if (idx === -1) idx = modOrder.length;
-        modOrder.splice(idx, 0, m.name);
-    }
-    // Не полный проход бабл-сорта — только ОДИН обмен за вызов, самая
-    // рассогласованная соседняя пара (наибольшая разница счётчиков). Полный
-    // проход мог свопнуть сразу несколько независимых пар за один тик (i=1↔2
-    // И i=5↔6 в одном проходе) — с частым логом это давало пачку одновременных
-    // прыжков каждую секунду, ровно то общее месиво, что и просили убрать.
-    // Один обмен за тик — в любой момент видно, как максимум два соседа
-    // меняются местами, а не половина списка разом.
-    let swapAt = -1, swapGap = 0;
-    for (let i = 0; i < modOrder.length - 1; i++) {
-        const a = moduleStats.get(modOrder[i]);
-        const b = moduleStats.get(modOrder[i + 1]);
-        if (!a || !b) continue;
-        const gap = b.count - a.count;
-        if (gap > swapGap) { swapGap = gap; swapAt = i; }
-    }
-    if (swapAt !== -1) {
-        [modOrder[swapAt], modOrder[swapAt + 1]] = [modOrder[swapAt + 1], modOrder[swapAt]];
+        if (!modOrder.includes(m.name)) modOrder.push(m.name);
     }
 
     // FLIP "First": позиции существующих строк ДО перестановки.
@@ -1456,7 +1440,20 @@ function renderModules() {
 // нужны — раньше выпадашка ставилась под сегмент «модули» вручную здесь,
 // потому что тот едет по горизонтали вслед за счётчиками разной ширины;
 // полноширинная панель от этого не зависит вовсе.
+// resortModOrder — единственное место, где порядок строк пересчитывается
+// по шуму. Зовётся только при открытии панели: список организуется один
+// раз к моменту, когда на него смотрят, и дальше не трогается (renderModules
+// только дописывает новые модули в конец и убирает пропавшие — см. выше).
+function resortModOrder() {
+    modOrder = [...moduleStats.entries()]
+        .map(([name, s]) => ({ name, ...s }))
+        .sort((a, b) => b.count - a.count)
+        .map((m) => m.name);
+}
+
 function openMods() {
+    resortModOrder();
+    renderModules();
     modMenu.classList.add('visible');
     btnMods.classList.add('open');
 }
