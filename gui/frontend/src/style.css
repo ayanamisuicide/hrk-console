@@ -98,33 +98,41 @@ html, body {
     var(--bg);
 }
 
-/* Никаких gap и padding: секции стыкуются вплотную и разделяются линией. */
+/* Корпус — не колонка сверху вниз, а строка: рельса слева на всю высоту,
+   контент справа. Раньше обвязка (заголовок + статус-строка) делила
+   высоту окна пополам с логом двумя горизонтальными полосами; теперь она
+   один вертикальный пульт, а лог получает всю оставшуюся площадь целиком. */
 #app {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100vh;
 }
 
-/* ─── шапка ─────────────────────────────────────────────────────────── */
-
-.topbar {
+/* ─── рельса ────────────────────────────────────────────────────────────
+   Вся хром-обвязка окна: управление процессом, переключатели показа,
+   версия, обновления. Один пульт слева вместо двух горизонтальных полос
+   сверху. -webkit-app-region: drag на самой рельсе — пустое место между
+   группами кнопок таскает окно, как раньше делал .spacer в шапке;
+   каждая кнопка отдельно помечена no-drag. */
+.rail {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 14px;
-  padding: 0 14px;
-  height: 42px;
+  width: 176px;
   flex: none;
+  height: 100%;
+  padding: 12px 10px;
   background: var(--bg-raised);
+  border-right: 1px solid var(--line);
   -webkit-app-region: drag;
-  /* "Линейка" вместо плоской линии — частые деления, редкие подписи-риски
-     подлиннее: приборная кромка, а не веб-разделитель секций. Тот же приём
-     повторяется под статус-строкой. */
+  /* "Линейка" вместо плоской линии по правому краю — частые деления,
+     приборная кромка, а не веб-разделитель колонок. Тот же приём — под
+     статус-строкой. */
   background-image:
-    repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 12px);
-  background-position: bottom;
-  background-repeat: repeat-x;
-  background-size: 100% 4px;
-  border-bottom: 1px solid var(--line);
+    repeating-linear-gradient(to bottom, var(--line-strong) 0 1px, transparent 1px 12px);
+  background-position: right;
+  background-repeat: repeat-y;
+  background-size: 4px 100%;
 }
 
 /* ─── трафик-лайты ────────────────────────────────────────────────────
@@ -133,7 +141,7 @@ html, body {
    единственный случай, где форма нарочно оставлена привычной (macOS-
    конвенция закрыть/свернуть/развернуть), а не заменена на ромб: узнаваемость
    важнее последовательности глифа именно здесь. -webkit-app-region: no-drag
-   обязателен на каждой кнопке отдельно: сам .topbar — drag-зона целиком. */
+   обязателен на каждой кнопке отдельно: сама .rail — drag-зона целиком. */
 .traffic {
   display: flex;
   gap: 8px;
@@ -155,13 +163,13 @@ html, body {
 .traffic-dot.m { background: #febc2e; }
 .traffic-dot.z { background: #28c840; }
 
-.brand-group {
+.rail-brand {
   display: flex;
-  align-items: baseline;
-  gap: 9px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.topbar .brand {
+.rail-brand .brand {
   font-weight: 700;
   letter-spacing: .22em;
   color: var(--text-primary);
@@ -181,21 +189,50 @@ html, body {
   100% { color: var(--text-primary); text-shadow: none; }
 }
 
-.topbar .version {
+.rail-brand .version {
   color: var(--text-muted);
   font-size: 11px;
 }
 
+/* Группы кнопок рельсы — полноширинные, выровнены по левому краю: список
+   переключателей, а не ряд компактных иконок, чтобы динамический текст
+   («порог: всё» → «порог: warning+», «Restart» и т.д.) не резался. */
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+.rail-spacer { flex: 1; }
+
+.rail-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 9px;
+}
+/* Кромка на ховере у остальных кнопок подсвечивается слева и сверху —
+   здесь она читалась бы как срез по диагонали угла (кнопки на всю
+   ширину). Вместо этого сама кнопка чуть съезжает вправо — переключатель
+   выезжает на палец, тактильнее плоской смены цвета. */
+.rail-btn:hover { transform: translateX(3px); box-shadow: inset 2px 0 0 var(--accent); }
+.rail-btn:active { transform: translateX(3px) scale(.98); }
+
 /* Бейдж обновлений виден всегда, цвет и текст несут состояние: тусклый
    (ничего не решено) → зелёный (актуально) / бирюзовый (есть новее) →
    жёлтый (готово, перезапустить) / красный (проверка не удалась). Ничего
-   не дышит и не мигает без причины — на плоском фоне хватает цвета. */
+   не дышит и не мигает без причины — на плоском фоне хватает цвета.
+   В рельсе — полноширинные блоки, как остальные .rail-btn, не мелкие
+   пилюли в углу шапки. */
 .update-badge,
 .channel-badge {
+  display: block;
+  width: 100%;
+  text-align: left;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: .04em;
-  padding: 2px 8px;
+  padding: 5px 9px;
   border-radius: var(--radius);
   color: var(--text-muted);
   background: transparent;
@@ -223,12 +260,13 @@ html, body {
   background: rgba(226, 161, 60, .1);
 }
 
-.topbar .spacer { flex: 1; -webkit-app-region: drag; }
-
-.controls {
+/* ─── основная колонка: статус-строка + лог, во всю оставшуюся ширину ─── */
+.main-col {
   display: flex;
-  gap: 6px;
-  -webkit-app-region: no-drag;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
 /* Кнопки: острая грань, тонкая рамка, ховер подсвечивает КРОМКУ акцентом
@@ -244,14 +282,17 @@ button {
   border-radius: var(--radius);
   padding: 4px 11px;
   cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease;
+  transition: background .16s ease, border-color .16s ease, color .16s ease,
+              box-shadow .2s cubic-bezier(.2, .8, .2, 1), transform .12s cubic-bezier(.2, .8, .2, 1);
 }
 button:hover {
   color: var(--text-primary);
   border-color: var(--line-strong);
   box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
 }
-button:active { background: rgba(255, 255, 255, .08); }
+/* Нажатие — лёгкий "утоп" вместо мгновенной смены заливки: кнопка
+   отзывается физически, а не просто перекрашивается. */
+button:active { background: rgba(255, 255, 255, .08); transform: scale(.97); }
 button:focus-visible {
   outline: none;
   border-color: var(--accent);
@@ -283,6 +324,9 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
    Всё, что нужно знать не отрываясь от лога: жив ли бот, сколько проблем,
    кто шумит, есть ли связь. Полный список модулей — за сегментом «модули»
    выпадашкой, настройка подключения — за сегментом связи. */
+/* Единственная горизонтальная полоса, что осталась, — и единственная
+   зона окна, за которую теперь можно таскать окно за пределами рельсы
+   (drag на пустом месте, no-drag на каждом сегменте-кнопке отдельно). */
 .statusline {
   display: flex;
   align-items: stretch;
@@ -298,12 +342,14 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
   background-repeat: repeat-x;
   background-size: 100% 3px;
   border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
 }
 .sl-seg {
   display: flex; align-items: center; gap: 6px;
   padding: 0 12px;
   border-right: 1px solid var(--line);
   white-space: nowrap;
+  -webkit-app-region: no-drag;
   flex: none;
 }
 .sl-seg:first-child { padding-left: 0; }
@@ -325,7 +371,17 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
   transform: rotate(45deg);
 }
 .status-pill.live { color: var(--good); }
-.status-pill.live .status-dot { background: var(--good); }
+/* Единственная постоянная анимация, кроме сканлайнов, — и она честная:
+   бот действительно жив и работает прямо сейчас, пульс ромба буквально
+   и есть тот факт. Останавливается сама, когда .live уходит (см. JS). */
+.status-pill.live .status-dot {
+  background: var(--good);
+  animation: signal-pulse 2.2s ease-in-out infinite;
+}
+@keyframes signal-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(142, 203, 76, .55); }
+  50% { opacity: .75; box-shadow: 0 0 0 3px rgba(142, 203, 76, 0); }
+}
 .status-pill.down .status-dot { background: var(--critical); }
 .status-pill.warn { color: var(--warning); }
 .status-pill.warn .status-dot { background: var(--warning); }
@@ -380,64 +436,96 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
 .sl-conn[data-state="offline"] { color: var(--critical); }
 .sl-conn[data-state="offline"] .conn-dot { background: var(--critical); }
 
-/* ─── выпадашка модулей ─────────────────────────────────────────────────
-   Список нужен на пару секунд — ткнуть в шумный модуль и отфильтровать
-   по нему, — и ради этого не нужен ни оверлей во весь экран, ни затемнение
-   фона за ним. Координаты ставит openMods в main.js (position: fixed). */
+/* ─── панель модулей — выезжает справа, во всю высоту ────────────────────
+   Раньше это была компактная выпадашка, приколотая к кнопке в статус-
+   строке, — список из четырёх десятков модулей приходилось листать в
+   окошке 380px высотой. Теперь это полноценная панель на всю высоту окна:
+   строки крупнее, у каждой свой момент появления (staggered fade+slide,
+   main.js выставляет --i на каждой), да и сама панель выезжает пружиной,
+   а не просто проявляется. Позиция больше не считается в JS (openMods) —
+   панель всегда прибита к правому краю, координаты кнопки ей не нужны. */
 .mod-menu {
   position: fixed;
   z-index: 14;
+  top: 0; right: 0; bottom: 0;
   display: flex;
   flex-direction: column;
-  width: 290px;
-  max-height: min(50vh, 380px);
-  padding: 5px;
+  width: min(360px, 86vw);
+  padding: 16px 10px;
   background: var(--bg-float);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-card);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
-  opacity: 0;
-  visibility: hidden;
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, .5);
+  transform: translateX(100%);
+  transition: transform .32s cubic-bezier(.19, 1, .22, 1);
   pointer-events: none;
-  transform: translateY(-4px);
-  transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
 }
 .mod-menu.visible {
-  opacity: 1;
-  visibility: visible;
+  transform: translateX(0);
   pointer-events: auto;
-  transform: none;
-  transition: opacity .12s ease, transform .12s ease;
+}
+/* Лёгкая дымка за панелью — она теперь занимает всю высоту, как модалка,
+   и должна отделяться от лога за собой, а не просто перекрывать угол. */
+.mod-menu::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background: rgba(4, 4, 3, .4);
+  opacity: 0;
+  transition: opacity .32s ease;
+  pointer-events: none;
+}
+.mod-menu.visible::before { opacity: 1; pointer-events: auto; }
+
+.mod-menu-head {
+  flex: none;
+  padding: 2px 6px 14px;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
 }
 .mod-menu-empty { padding: 10px 8px; font-size: 11px; color: var(--text-muted); }
 
-.module-list { overflow-y: auto; min-height: 0; }
+.module-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; }
 
+/* Каждая строка влетает со своей задержкой (--i, main.js) — список
+   раскрывается сверху вниз пока панель едет, а не появляется разом одним
+   куском. Только при открытии: закрытие — простой transform панели. */
 .module-row {
   display: grid;
-  grid-template-columns: 6px 1fr 40px 34px;
+  grid-template-columns: 8px 1fr 44px;
   align-items: center;
-  gap: 9px;
-  padding: 5px 8px;
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 8px 9px;
   border-radius: var(--radius);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
+  opacity: 0;
+  transform: translateX(10px);
+  animation: mod-row-in .28s cubic-bezier(.19, 1, .22, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 22ms);
 }
-.module-dot { width: 6px; height: 6px; transform: rotate(45deg); }
-.module-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes mod-row-in { to { opacity: 1; transform: none; } }
+
+.module-dot { width: 7px; height: 7px; transform: rotate(45deg); }
+.module-name { grid-row: 1; color: var(--text-primary); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-name.has-err { color: var(--critical); }
 .module-name.has-warn { color: var(--warning); }
 
 /* Полоса — объём (доля от самого шумного модуля), не тревога: красит её
    всегда свой цвет модуля, чтобы «громко» и «плохо» не читались одним и
-   тем же сигналом (состояние — отдельно, ромбом слева от имени). */
-.meter { position: relative; height: 3px; overflow: hidden; background: rgba(255, 255, 255, .08); }
-.meter .fill { position: absolute; inset: 0; right: auto; opacity: .8; transition: width .3s ease; }
-.module-count { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+   тем же сигналом (состояние — отдельно, ромбом слева от имени). Теперь
+   собственная строка сетки, а не втиснута в 40px рядом с именем — крупнее
+   и виднее, ради чего вообще эта панель существует: кто громче всех. */
+.meter { grid-column: 2; grid-row: 2; position: relative; height: 4px; overflow: hidden; background: rgba(255, 255, 255, .08); border-radius: 999px; }
+.meter .fill { position: absolute; inset: 0; right: auto; opacity: .85; transition: width .3s ease; border-radius: 999px; }
+.module-count { grid-column: 3; grid-row: 1 / 3; align-self: center; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 13px; }
 
 /* Модуль в списке — не подпись, а кнопка фильтра. */
-.module-row.clickable { cursor: pointer; }
-.module-row.clickable:hover { background: var(--bg-hover); }
+.module-row.clickable { cursor: pointer; transition: background .12s ease, transform .12s ease; }
+.module-row.clickable:hover { background: var(--bg-hover); transform: translateX(-2px); }
 .module-row.active { background: var(--accent-dim); box-shadow: inset 0 0 0 1px rgba(69, 211, 186, .45); }
 
 /* ─── тело: только лог, во всю ширину ─────────────────────────────────── */
@@ -464,18 +552,33 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
    mtprotosender», «urllib3.connectionpool») обрезались на втором сегменте,
    и полдюжины разных модулей выглядели одинаковым «heroku.modul…».
    Полностью они всё равно не влезут — полное имя есть в подсказке. */
+/* Строка лога — не таблица с колонками, а строка терминальной сессии:
+   время → уровень в скобках → модуль тегом → сообщение сплошным текстом.
+   Разной длины имена модулей и разная длина сообщений больше не тянут за
+   собой пустоту в соседних колонках — читаешь поток, а не сверяешь ряды
+   в таблице. flex, а не grid: элементы просто идут друг за другом в том
+   порядке, в котором их строит buildRow (main.js), сам порядок и разметка
+   не менялись. */
 .row {
   position: relative;
-  display: grid;
-  grid-template-columns: 60px 34px 140px 1fr auto 20px;
-  gap: 10px;
-  padding: 2px 14px;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  column-gap: 8px;
+  padding: 3px 14px 3px 17px;
   white-space: pre-wrap;
   word-break: break-word;
-  align-items: baseline;
+  /* Каждая новая строка чуть впархивает, а не просто появляется —
+     проигрывается один раз при вставке в DOM, стоит копейки (только
+     transform+opacity), не мешает читать соседние строки. */
+  animation: row-in .18s ease-out;
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
 }
 .row.zebra { background: rgba(255, 255, 255, .02); }
-.row:hover { background: rgba(255, 255, 255, .05); }
+.row:hover { background: rgba(255, 255, 255, .05); transition: background .15s ease; }
 
 /* Плашка важности слева — то, что реально сканируешь взглядом по тысяче
    строк, а не три буквы бейджа в третьей колонке. Сидит в левом паддинге
@@ -490,6 +593,7 @@ button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--acc
    каждой из тысяч строк лога. Колонка зарезервирована всегда (20px), а не
    position:absolute, — проще и не наезжает на текст при переносе строк. */
 .row .row-copy {
+  flex: 0 0 auto;
   opacity: 0;
   cursor: pointer;
   color: var(--text-muted);
@@ -508,30 +612,44 @@ mark.hl {
   padding: 0 1px;
 }
 
-.row .time { color: var(--text-muted); }
+.row .time { flex: 0 0 auto; color: var(--text-muted); padding-top: 1px; }
 
-/* Бейдж уровня — без пилюли и заливки: три буквы своим цветом читаются с
-   того же расстояния, а тысяча залитых плашек подряд превращала колонку в
-   рябь и спорила с цветом самого сообщения справа. Заливка осталась только
-   у CRITICAL — там она и означает «это не рядовая строка». */
+/* Уровень — в квадратных скобках, строчными буквами: `[inf]`, `[wrn]` —
+   запись сессии в терминале, а не колонка таблицы. Скобки — псевдоэлементы,
+   не текст: сам бейдж по-прежнему просто три буквы уровня из BADGES
+   (main.js), разметку трогать не пришлось. Важность уже сказана плашкой
+   слева от строки — здесь она не должна снова спорить цветом за внимание,
+   поэтому WRN/ERR/CRT в скобках остаются приглушёнными, не яркими: узнать
+   уровень можно приглядевшись, а не он первым бьёт по глазам построчно. */
 .row .badge {
+  flex: 0 0 auto;
   font-size: 10px;
-  font-weight: 700;
-  text-align: center;
-  letter-spacing: .04em;
+  text-transform: lowercase;
+  letter-spacing: .02em;
   font-family: var(--font-mono);
+  color: var(--text-muted);
+  padding-top: 1px;
 }
+.row .badge::before { content: '['; }
+.row .badge::after { content: ']'; }
 .row .badge.dbg { color: #423e33; }
-/* INF — нейтральный, а не зелёный. Обычная строка лога и есть INF: их на
-   экране девять из десяти, и зелёный на каждой превращался в сплошной
-   цветной столбец, на фоне которого редкие WRN и ERR переставали выделяться.
-   Цвет здесь значит «на это стоит посмотреть», а не «уровень записи». */
 .row .badge.inf { color: #5a5646; }
-.row .badge.wrn { color: var(--warning); }
-.row .badge.err { color: var(--critical); }
-.row .badge.crt { color: #180a09; background: var(--critical); border-radius: var(--radius); }
 
-.row .module { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Модуль — тег с лёгкой заливкой, а не колонка фиксированной ширины:
+   короткие имена не тянут за собой пустоту, длинные обрезаются сами по
+   max-width, полное имя — в title (см. main.js). */
+.row .module {
+  flex: 0 1 auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .035);
+}
+
+.row .msg { flex: 1 1 auto; min-width: 160px; }
 /* DEBUG показывают по явному запросу (кнопка d) и вперемешку с обычными
    строками — если текст у них такой же яркий, включённый debug топит в себе
    всё остальное. Гасим сам текст, не только бейдж. */
@@ -541,11 +659,13 @@ mark.hl {
 .row .continuation-arrow { color: var(--text-muted); margin-right: 4px; }
 
 .row .count {
+  flex: 0 0 auto;
   font-size: 10px;
   color: var(--text-muted);
   background: rgba(255, 255, 255, .07);
   border-radius: var(--radius);
   padding: 0 6px;
+  align-self: center;
 }
 
 /* Редкое, осмысленное событие (старт/рестарт/стоп) — в отличие от строк

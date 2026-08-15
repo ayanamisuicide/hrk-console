@@ -65,74 +65,90 @@ document.querySelector('#app').innerHTML = `
       <button class="gate-primary" id="up-restart" style="display:none">перезапустить сейчас</button>
     </div>
   </div>
-  <div class="topbar">
+  <!-- ── рельса: вся хром-обвязка окна в одной вертикальной полосе слева —
+       управление процессом, режимы показа, версия, обновления. Раньше это
+       было двумя горизонтальными полосами сверху (шапка + статус-строка) —
+       теперь ровно один пульт слева, всё содержимое (лог) получает
+       оставшуюся ширину целиком, а не делит высоту с чужой обвязкой. -->
+  <div class="rail" id="app-rail">
     <div class="traffic">
       <button class="traffic-dot c" id="btn-close" title="Закрыть"><span>×</span></button>
       <button class="traffic-dot m" id="btn-minimise" title="Свернуть"><span>−</span></button>
       <button class="traffic-dot z" id="btn-maximise" title="Развернуть"><span>+</span></button>
     </div>
-    <div class="brand-group">
+
+    <div class="rail-brand">
       <span class="brand">HEROKU</span>
       <span class="version" id="hkc-version"></span>
+    </div>
+
+    <div class="rail-group">
+      <button id="btn-start" class="rail-btn primary" title="Запустить бота">▶ Start</button>
+      <button id="btn-restart" class="rail-btn" title="Перезапустить бота">⟳ Restart</button>
+      <button id="btn-stop" class="rail-btn danger" title="Остановить бота">■ Stop</button>
+    </div>
+
+    <div class="rail-group">
+      <button id="btn-debug" class="rail-btn" title="Показывать строки уровня DEBUG (d)">debug</button>
+      <button id="btn-level" class="rail-btn" title="Порог показа: всё → warning+ → error+ (w)">порог: всё</button>
+      <button id="btn-watchdog" class="rail-btn" title="Перезапускать бота автоматически, если он упал (a)">auto-restart</button>
+      <button id="btn-clear" class="rail-btn" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
+    </div>
+
+    <div class="rail-spacer"></div>
+
+    <div class="rail-group rail-bottom">
       <button class="update-badge" id="update-badge" data-state="idle" title="Проверить обновления">⟲ обновить</button>
       <button class="channel-badge" id="channel-badge" data-channel="" title="Канал обновлений — клик переключает stable/dev">stable</button>
-    </div>
-    <div class="spacer"></div>
-    <div class="controls">
-      <button id="btn-debug" title="Показывать строки уровня DEBUG (d)">debug</button>
-      <button id="btn-level" title="Порог показа: всё → warning+ → error+ (w)">порог: всё</button>
-      <button id="btn-watchdog" title="Перезапускать бота автоматически, если он упал (a)">auto-restart</button>
-      <button id="btn-clear" title="Очистить экран лога — файл на диске не трогается">Очистить</button>
-      <button id="btn-help" title="Горячие клавиши (?)">?</button>
+      <button id="btn-help" class="rail-btn" title="Горячие клавиши (?)">? справка</button>
     </div>
   </div>
 
-  <!-- ── статус-строка: всё, что нужно знать не отрываясь от лога ──────── -->
-  <div class="statusline">
-    <span class="sl-seg status-pill down" id="status-pill">
-      <span class="status-dot"></span><span id="status-text">…</span>
-    </span>
-    <span class="sl-seg sl-warn" id="sl-warn">⚠ 0</span>
-    <span class="sl-seg sl-err" id="sl-err">✗ 0</span>
-    <button class="sl-seg sl-mods" id="btn-mods" title="Самые шумные модули — клик открывает полный список (s)">
-      <span id="sl-mods-names">—</span><span class="sl-caret">▾</span>
-    </button>
-    <!-- порог — жёлтым, а не акцентом: он означает «часть строк сейчас
-         скрыта», и путать его с активным фильтром одним цветом нельзя -->
-    <span id="threshold-badge" class="sl-seg sl-chip warn" style="display:none"></span>
-    <span id="filter-badge" class="sl-seg sl-chip accent" style="display:none"></span>
-    <span id="sl-restarting" class="sl-seg sl-chip warn" style="display:none">⟳ перезапускаю…</span>
-    <div class="sl-spacer"></div>
-    <button class="sl-seg sl-conn" id="sl-conn" style="display:none" title="Подключение — клик настроит">
-      <span class="conn-dot"></span><span id="sl-conn-label"></span>
-    </button>
-  </div>
+  <div class="main-col">
+    <!-- ── статус-строка: всё, что нужно знать не отрываясь от лога ────── -->
+    <div class="statusline">
+      <span class="sl-seg status-pill down" id="status-pill">
+        <span class="status-dot"></span><span id="status-text">…</span>
+      </span>
+      <span class="sl-seg sl-warn" id="sl-warn">⚠ 0</span>
+      <span class="sl-seg sl-err" id="sl-err">✗ 0</span>
+      <button class="sl-seg sl-mods" id="btn-mods" title="Самые шумные модули — клик открывает полный список (s)">
+        <span id="sl-mods-names">—</span><span class="sl-caret">▾</span>
+      </button>
+      <!-- порог — жёлтым, а не акцентом: он означает «часть строк сейчас
+           скрыта», и путать его с активным фильтром одним цветом нельзя -->
+      <span id="threshold-badge" class="sl-seg sl-chip warn" style="display:none"></span>
+      <span id="filter-badge" class="sl-seg sl-chip accent" style="display:none"></span>
+      <span id="sl-restarting" class="sl-seg sl-chip warn" style="display:none">⟳ перезапускаю…</span>
+      <div class="sl-spacer"></div>
+      <button class="sl-seg sl-conn" id="sl-conn" style="display:none" title="Подключение — клик настроит">
+        <span class="conn-dot"></span><span id="sl-conn-label"></span>
+      </button>
+    </div>
 
-  <!-- ── список модулей: выпадашка от статус-строки, а не панель ─────────
-       Единственное, ради чего раньше существовала выезжающая справа панель.
-       Списку модулей не нужен ни оверлей на полэкрана, ни затемнение фона —
-       он нужен на пару секунд, чтобы ткнуть в шумный модуль и отфильтровать
-       по нему. Позиционируется fixed по координатам кнопки (см. openMods):
-       так его не режет ни overflow статус-строки, ни её собственный layout. -->
-  <div class="mod-menu" id="mod-menu">
-    <div class="module-list" id="module-list"></div>
-    <div class="mod-menu-empty" id="mod-menu-empty">пока ни одного модуля</div>
-  </div>
+    <!-- ── панель модулей: выезжает справа во всю высоту ────────────────
+         Полный список, отсортированный по шуму — те же данные, что и топ-3
+         прямо в статус-строке, но с местом на счёт и полосу объёма у
+         каждого. Позиция фиксирована (правый край) — координаты кнопки
+         больше не нужны, см. openMods в main.js. -->
+    <div class="mod-menu" id="mod-menu">
+      <div class="mod-menu-head">модули · по шуму</div>
+      <div class="module-list" id="module-list"></div>
+      <div class="mod-menu-empty" id="mod-menu-empty">пока ни одного модуля</div>
+    </div>
 
-  <div class="stream-issue" id="stream-issue" style="display:none">
-    <span class="si-icon">⚠</span>
-    <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
-    <span class="si-for" id="si-for"></span>
-  </div>
+    <div class="stream-issue" id="stream-issue" style="display:none">
+      <span class="si-icon">⚠</span>
+      <span class="si-text"><span class="si-reason" id="si-reason"></span><span class="si-hint">команды боту по-прежнему уходят — не читается только поток лога</span></span>
+      <span class="si-for" id="si-for"></span>
+    </div>
 
-  <div class="body">
-    <div class="log-pane">
-      <div class="log-scroll" id="log-scroll"></div>
-      <div class="log-footer">
-        <button id="btn-start" class="primary">Start</button>
-        <button id="btn-restart">Restart</button>
-        <button id="btn-stop" class="danger">Stop</button>
-        <input type="text" id="filter-input" placeholder="подстрока для поиска… (re:шаблон — регулярное выражение)" autocomplete="off" />
+    <div class="body">
+      <div class="log-pane">
+        <div class="log-scroll" id="log-scroll"></div>
+        <div class="log-footer">
+          <input type="text" id="filter-input" placeholder="подстрока для поиска… (re:шаблон — регулярное выражение)" autocomplete="off" />
+        </div>
       </div>
     </div>
   </div>
@@ -1215,13 +1231,17 @@ function renderModules() {
     modMenuEmpty.style.display = stats.length ? 'none' : '';
     moduleList.innerHTML = '';
     const active = filterInput.value;
-    for (const m of stats) {
+    stats.forEach((m, i) => {
         const row = document.createElement('div');
         // Клик по модулю ставит его имя обычным фильтром — отдельного
         // «режима модуля» нет, как и в TUI: снимается он тем же способом,
         // что любой другой фильтр, и объяснять две механики не нужно.
         row.className = 'module-row clickable' + (m.name === active ? ' active' : '');
         row.title = m.name === active ? 'снять фильтр' : 'фильтр по модулю ' + m.name;
+        // --i двигает animation-delay построчного появления (style.css,
+        // mod-row-in) — список раскрывается сверху вниз, пока едет сама
+        // панель, а не всплывает разом одним куском.
+        row.style.setProperty('--i', i);
         row.addEventListener('click', () => {
             applyFilter(m.name === active ? '' : m.name);
             closeMods();
@@ -1256,23 +1276,18 @@ function renderModules() {
         row.appendChild(count);
 
         moduleList.appendChild(row);
-    }
+    });
 }
 
-// ─── выпадашка модулей ───────────────────────────────────────────────────
+// ─── панель модулей ────────────────────────────────────────────────────
 //
-// Позиция считается в момент открытия и ставится в fixed-координатах, а не
-// задаётся в CSS: сегмент «модули» едет по горизонтали вслед за счётчиками
-// (⚠ 0 и ⚠ 1204 — разной ширины), и привязать выпадашку к нему статикой
-// нельзя. Правый край дополнительно прижимается к окну, чтобы длинный
-// список не уезжал за границу на узком окне.
+// Панель прибита к правому краю окна (CSS), координаты кнопки ей больше не
+// нужны — раньше выпадашка ставилась под сегмент «модули» вручную здесь,
+// потому что тот едет по горизонтали вслед за счётчиками разной ширины;
+// полноширинная панель от этого не зависит вовсе.
 function openMods() {
-    const r = btnMods.getBoundingClientRect();
     modMenu.classList.add('visible');
     btnMods.classList.add('open');
-    const w = modMenu.offsetWidth;
-    modMenu.style.top = Math.round(r.bottom + 4) + 'px';
-    modMenu.style.left = Math.round(Math.min(r.left, window.innerWidth - w - 10)) + 'px';
 }
 
 function closeMods() {
