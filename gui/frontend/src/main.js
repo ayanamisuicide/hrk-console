@@ -1404,6 +1404,18 @@ function renderModules() {
 
     const seen = new Set();
     const entering = [];
+    // prevRow — последняя уже расставленная строка; используется, чтобы НЕ
+    // трогать DOM для строк, чья позиция и так верна. appendChild безусловно
+    // на каждой строке каждый тик (как было раньше) вызывает физическое
+    // remove+insert узла, даже если он остаётся на своём месте, — сам факт
+    // такого layout-безобидного перемещения где-то (судя по всему, в
+    // WebView2, не в обычном Chromium) перезапускал CSS-анимацию появления
+    // на классе .entering, который не снимается: весь список каждую секунду
+    // проигрывал стаггер-анимацию заново, будто все строки только что
+    // появились. Порядок не пересчитывается уже (см. выше), так что в
+    // typичный тик ни одна строка не должна переставляться вообще —
+    // но appendChild всё равно дёргал DOM просто по инерции цикла.
+    let prevRow = null;
     modOrder.forEach((name) => {
         const s = moduleStats.get(name);
         if (!s) return; // не должно происходить (modOrder уже отфильтрован), но не рушить весь рендер, если всё же случилось
@@ -1420,7 +1432,15 @@ function renderModules() {
         // updateModuleRow же читает m.name (для moduleColor). Раньше m приходило
         // из stats, где было {name, ...s}; здесь имя нужно добавить явно.
         updateModuleRow(row, { name, ...s }, isSelected, peak);
-        moduleList.appendChild(row); // "Last": переставляет в новый порядок
+        // row.parentNode !== moduleList — обязательная часть условия: у ещё
+        // не вставленного (только что созданного) узла previousElementSibling
+        // тоже null, как и у prevRow на первой строке прохода. Без проверки
+        // родителя новая строка молча никогда не попадала бы в DOM.
+        if (row.parentNode !== moduleList || row.previousElementSibling !== prevRow) {
+            if (prevRow) prevRow.after(row);
+            else moduleList.prepend(row);
+        }
+        prevRow = row;
     });
 
     // Модуль пропал из статистики (обнулилась/пересобралась moduleStats,
