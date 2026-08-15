@@ -1,59 +1,76 @@
-/* Плоский инструмент, а не стеклянная витрина.
-   Раньше окно было набором плавающих блюр-карточек с зазорами, двумя
-   радиальными свечениями на фоне и шестью бесконечными анимациями (дыхание
-   кнопки, свечение бейджа, пинг подключения, шиммер). В окне, которое висит
-   открытым весь день ради чтения лога, это не «живость», а фон, с которым
-   текст лога конкурирует за внимание.
+/* Приборная панель, а не веб-дашборд.
+   Прошлая тема была плоской, но всё ещё говорила языком обычного SaaS:
+   фиолетовый акцент (самый затёртый цвет для дев-тулов и AI-интерфейсов
+   последних пары лет), системный sans для чтения, скруглённые пилюли и
+   заливка при наведении — тот же словарь, что у любого другого тёмного
+   дашборда. Инструмент, который открыт весь день ради чтения живого лога
+   бота, заслуживает свой голос, а не чужой.
 
-   Теперь: одна сплошная поверхность, секции разделены линией в 1px, а не
-   зазором и тенью. Контраст держится на типографике и цвете уровня записи.
-   Анимация осталась только там, где отражает реально идущий процесс
-   (прогон проверок) или разовое событие (старт/стоп), — ничего не крутится
-   само по себе, пока ничего не происходит.
+   Новая тема — тёплый почти-чёрный корпус прибора и один холодный
+   «фосфорный» сигнальный цвет (бирюза, не фиолетовый и не Matrix-зелёный).
+   Весь интерфейс говорит одним моноширинным шрифтом — включая кнопки и
+   заголовки, не только цифры и лог, — потому что это терминал, а не сайт,
+   притворяющийся терминалом. Радиусы почти везде убраны: острые грани и
+   тонкие линии читаются как корпус прибора, а не как стопка карточек.
+   Индикаторы состояния — ромбом, не кружком: свой узнаваемый глиф, которого
+   не спутать с точками в любом другом приложении. Ховер у кнопок подсвечивает
+   кромку акцентным цветом, а не заливает фон целиком — приборная лампочка,
+   а не веб-кнопка.
 
-   Системный шрифт для интерфейса, моноширинный — там, где нужно
-   выравнивание колонок: сам лог, список модулей, числа. Инструмент личный
-   и всегда тёмный, отдельного светлого режима намеренно нет. */
+   Анимация по-прежнему только там, где отражает реально идущий процесс
+   (прогон проверок, обновление) — ничего не крутится само по себе, пока
+   ничего не происходит. */
 
 :root {
   color-scheme: dark;
 
-  /* Три ступени поверхности вместо стекла: лог самый тёмный (на него
-     смотрят), обвязка на ступень светлее, всплывающее — ещё на ступень.
-     Так глубина читается яркостью, а не тенью и блюром. */
-  --bg: #0e0d13;
-  --bg-raised: #16151d;
-  --bg-float: #1c1a25;
-  --bg-hover: rgba(255, 255, 255, .05);
+  /* Тёплый нейтральный почти-чёрный, не сине-чёрный — корпус прибора, а не
+     очередной "космический" градиент. Три ступени поверхности, глубина
+     читается яркостью, а не тенью и блюром. */
+  --bg: #0c0c0a;
+  --bg-raised: #131310;
+  --bg-float: #1a1a15;
+  --bg-hover: rgba(255, 255, 255, .045);
 
-  --line: rgba(255, 255, 255, .08);
-  --line-strong: rgba(255, 255, 255, .15);
+  --line: rgba(255, 255, 255, .075);
+  --line-strong: rgba(255, 255, 255, .17);
 
-  --text-primary: #e9e7f1;
-  --text-secondary: #a8a2ba;
-  --text-muted: #6b6579;
+  --text-primary: #ece9df;
+  --text-secondary: #9d998b;
+  --text-muted: #605c4f;
 
-  /* Фиолетовый остался, но приглушённый: он теперь единственный акцент на
-     плоском фоне, и в прежней яркости перетягивал бы взгляд с самого лога. */
-  --accent: #8b7cf5;
-  --accent-dim: rgba(139, 124, 245, .14);
+  /* Единственный холодный цвет на тёплом фоне — фосфорная бирюза вместо
+     фиолетового. Разговор про "сигнал", а не про "бренд": ровно то, что
+     ищешь глазами на приборной панели. */
+  --accent: #45d3ba;
+  --accent-ink: #06120f;
+  --accent-dim: rgba(69, 211, 186, .14);
 
-  --good: #5fc98f;
-  --warning: #e0a94a;
-  --critical: #e8697f;
+  --good: #8ecb4c;
+  --warning: #e2a13c;
+  --critical: #ef5f5c;
 
-  /* категориальные цвета модулей — приглушены под общий тон */
-  --mod-1: #6f97e8;
-  --mod-2: #e0966a;
-  --mod-3: #52bd97;
-  --mod-4: #c8a35c;
-  --mod-5: #d8829d;
-  --mod-6: #8fc25f;
-  --mod-7: #9d8ce8;
-  --mod-8: #e08080;
+  /* категориальные цвета модулей — тот же тёплый корпус, разные сигнальные
+     оттенки, ни один не спорит с --accent за внимание */
+  --mod-1: #5aa3dd;
+  --mod-2: #dd9257;
+  --mod-3: #4fbd8a;
+  --mod-4: #d3ae52;
+  --mod-5: #d17ea0;
+  --mod-6: #9dc257;
+  --mod-7: #7ac2c2;
+  --mod-8: #dd7878;
 
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Радиус почти везде один и мелкий — острая грань прибора, не скруглённая
+     SaaS-пилюля. Индикаторы (кружки/ромбы) считаются отдельно. */
+  --radius: 2px;
+  --radius-card: 4px;
+
+  /* Один голос на весь интерфейс — моноширинный. Не сайт, притворяющийся
+     терминалом, а терминал: заголовки, кнопки и лог говорят одним шрифтом,
+     разница — в весе, кегле и трекинге, а не в смене гарнитуры. */
+  --font-mono: "Berkeley Mono", "Departure Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-ui: var(--font-mono);
 
   font-family: var(--font-ui);
 }
@@ -64,14 +81,24 @@ html, body {
   margin: 0;
   height: 100%;
   color: var(--text-primary);
-  background: var(--bg);
   font-size: 13px;
   overflow: hidden;
+  /* Сканлайны — тонкая горизонтальная штриховка по всему корпусу, 3%
+     непрозрачности: не мешает читать текст, но с любого расстояния сразу
+     говорит "это прибор, а не веб-страница". Дешёвый повторяющийся
+     градиент, не картинка — ни байта веса, ни запроса. */
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, .035) 0px,
+      rgba(255, 255, 255, .035) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    var(--bg);
 }
 
-/* Никаких gap и padding: секции стыкуются вплотную и разделяются линией.
-   Зазоры между плавающими карточками съедали около 50px высоты окна,
-   ничего не сообщая. */
+/* Никаких gap и padding: секции стыкуются вплотную и разделяются линией. */
 #app {
   display: flex;
   flex-direction: column;
@@ -85,19 +112,28 @@ html, body {
   align-items: center;
   gap: 14px;
   padding: 0 14px;
-  height: 40px;
+  height: 42px;
   flex: none;
   background: var(--bg-raised);
-  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
+  /* "Линейка" вместо плоской линии — частые деления, редкие подписи-риски
+     подлиннее: приборная кромка, а не веб-разделитель секций. Тот же приём
+     повторяется под статус-строкой. */
+  background-image:
+    repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 12px);
+  background-position: bottom;
+  background-repeat: repeat-x;
+  background-size: 100% 4px;
+  border-bottom: 1px solid var(--line);
 }
 
 /* ─── трафик-лайты ────────────────────────────────────────────────────
    Frameless-окно (gui/main.go) не рисует системную рамку с её кнопками —
-   это единственный способ закрыть/свернуть/развернуть окно.
-   -webkit-app-region: no-drag обязателен на каждой кнопке отдельно: сам
-   .topbar — drag-зона целиком, без этого клик по кнопке потащил бы окно
-   вместо срабатывания. */
+   это единственный способ закрыть/свернуть/развернуть окно. Кружки — тот
+   единственный случай, где форма нарочно оставлена привычной (macOS-
+   конвенция закрыть/свернуть/развернуть), а не заменена на ромб: узнаваемость
+   важнее последовательности глифа именно здесь. -webkit-app-region: no-drag
+   обязателен на каждой кнопке отдельно: сам .topbar — drag-зона целиком. */
 .traffic {
   display: flex;
   gap: 8px;
@@ -122,34 +158,45 @@ html, body {
 .brand-group {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 9px;
 }
 
 .topbar .brand {
-  font-weight: 600;
-  letter-spacing: .06em;
+  font-weight: 700;
+  letter-spacing: .22em;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
+  /* Один разовый прогрев лампы при старте окна — не постоянное дыхание
+     (тех давно убрали), а буквально "включили прибор". Играет один раз на
+     загрузке и гаснет — prefers-reduced-motion сокращает её глобальным
+     правилом внизу файла. */
+  animation: brand-warmup 1.1s ease-out;
+}
+@keyframes brand-warmup {
+  0%   { color: var(--accent); text-shadow: 0 0 12px var(--accent), 0 0 2px var(--accent); }
+  8%   { color: var(--text-muted); text-shadow: none; }
+  16%  { color: var(--accent); text-shadow: 0 0 12px var(--accent), 0 0 2px var(--accent); }
+  22%  { color: var(--text-muted); text-shadow: none; }
+  30%  { color: var(--accent); text-shadow: 0 0 12px var(--accent), 0 0 2px var(--accent); }
+  100% { color: var(--text-primary); text-shadow: none; }
 }
 
 .topbar .version {
   color: var(--text-muted);
   font-size: 11px;
-  font-family: var(--font-mono);
 }
 
 /* Бейдж обновлений виден всегда, цвет и текст несут состояние: тусклый
-   (ничего не решено) → зелёный (актуально) / фиолетовый (есть новее) →
-   жёлтый (готово, перезапустить) / розовый (проверка не удалась).
-   Раньше «available» дышал свечением, а «updating» гнал по себе блик —
-   на плоском фоне хватает цвета: бейдж и так единственное цветное пятно
-   в шапке, мигать ему незачем. */
+   (ничего не решено) → зелёный (актуально) / бирюзовый (есть новее) →
+   жёлтый (готово, перезапустить) / красный (проверка не удалась). Ничего
+   не дышит и не мигает без причины — на плоском фоне хватает цвета. */
 .update-badge,
 .channel-badge {
   font-family: var(--font-mono);
   font-size: 10px;
+  letter-spacing: .04em;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   background: transparent;
   border: 1px solid var(--line-strong);
@@ -161,19 +208,19 @@ html, body {
 .update-badge[data-state="checking"],
 .update-badge[data-state="updating"] { color: var(--text-secondary); cursor: default; }
 
-.update-badge[data-state="uptodate"] { color: var(--good); border-color: rgba(95, 201, 143, .35); }
+.update-badge[data-state="uptodate"] { color: var(--good); border-color: rgba(142, 203, 76, .35); }
 .update-badge[data-state="available"],
-.update-badge[data-state="updating"] { color: var(--accent); border-color: rgba(139, 124, 245, .45); background: var(--accent-dim); }
-.update-badge[data-state="done"] { color: var(--warning); border-color: rgba(224, 169, 74, .4); background: rgba(224, 169, 74, .12); }
-.update-badge[data-state="error"] { color: var(--critical); border-color: rgba(232, 105, 127, .4); }
+.update-badge[data-state="updating"] { color: var(--accent); border-color: rgba(69, 211, 186, .45); background: var(--accent-dim); }
+.update-badge[data-state="done"] { color: var(--warning); border-color: rgba(226, 161, 60, .4); background: rgba(226, 161, 60, .12); }
+.update-badge[data-state="error"] { color: var(--critical); border-color: rgba(239, 95, 92, .4); }
 
 /* stable по умолчанию тихий, dev — явно жёлтый: это осознанный выбор
    получать возможно недоделанные сборки, а не тихая настройка, о которой
    легко забыть, что она включена. */
 .channel-badge[data-channel="dev"] {
   color: var(--warning);
-  border-color: rgba(224, 169, 74, .4);
-  background: rgba(224, 169, 74, .1);
+  border-color: rgba(226, 161, 60, .4);
+  background: rgba(226, 161, 60, .1);
 }
 
 .topbar .spacer { flex: 1; -webkit-app-region: drag; }
@@ -184,6 +231,9 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
+/* Кнопки: острая грань, тонкая рамка, ховер подсвечивает КРОМКУ акцентом
+   вместо заливки фона целиком — приборная лампочка вокруг переключателя,
+   а не веб-кнопка, реагирующая заливкой. */
 button {
   font: inherit;
   font-family: var(--font-ui);
@@ -191,36 +241,43 @@ button {
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 4px 11px;
   cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  transition: background .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease;
 }
-button:hover { background: var(--bg-hover); color: var(--text-primary); }
-button:active { background: rgba(255, 255, 255, .1); }
+button:hover {
+  color: var(--text-primary);
+  border-color: var(--line-strong);
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+button:active { background: rgba(255, 255, 255, .08); }
+button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 
 /* Единственная заливка сплошным цветом во всём окне — она и означает
-   «главное действие здесь». Раньше ту же роль пыталось играть дышащее
-   свечение; на плоском фоне достаточно того, что кнопка одна такая. */
+   «главное действие здесь». */
 button.primary {
-  color: #14101f;
+  color: var(--accent-ink);
   background: var(--accent);
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
 }
-button.primary:hover { background: #9d90f7; border-color: #9d90f7; color: #14101f; }
-button.danger { color: var(--critical); border-color: rgba(232, 105, 127, .35); }
-button.danger:hover { color: var(--critical); background: rgba(232, 105, 127, .12); }
+button.primary:hover { background: #6fe2cd; border-color: #6fe2cd; color: var(--accent-ink); box-shadow: none; }
+button.danger { color: var(--critical); border-color: rgba(239, 95, 92, .35); }
+button.danger:hover { color: var(--critical); box-shadow: inset 2px 0 0 var(--critical), inset 0 2px 0 var(--critical); }
 
 /* Включённый тумблер (debug, auto-restart) — контур и текст акцентом, без
-   заливки: заливка зарезервирована за .primary, и два разных «залитых»
-   состояния в одном ряду читались бы как две главные кнопки. */
+   заливки: заливка зарезервирована за .primary. */
 button.toggled {
   color: var(--accent);
-  border-color: rgba(139, 124, 245, .5);
+  border-color: rgba(69, 211, 186, .5);
   background: var(--accent-dim);
 }
-button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22); }
+button.toggled:hover { color: var(--accent); box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent); }
 
 /* ─── статус-строка ─────────────────────────────────────────────────────
    Всё, что нужно знать не отрываясь от лога: жив ли бот, сколько проблем,
@@ -230,11 +287,16 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
   display: flex;
   align-items: stretch;
   flex: none;
-  height: 28px;
+  height: 30px;
   padding: 0 14px;
   font-size: 11.5px;
   color: var(--text-secondary);
   background: var(--bg-raised);
+  background-image:
+    repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 12px);
+  background-position: bottom;
+  background-repeat: repeat-x;
+  background-size: 100% 3px;
   border-bottom: 1px solid var(--line);
 }
 .sl-seg {
@@ -247,8 +309,21 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
 .sl-seg:first-child { padding-left: 0; }
 .sl-seg:last-child { border-right: none; padding-right: 0; }
 
-.status-pill { gap: 7px; }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex: none; }
+/* Первый сегмент строки — единственный "readout": крупнее и жирнее
+   соседей, с трекингом как у бренда в шапке. Остальные сегменты — обычная
+   строка сведений, этот — то единственное число, которое читаешь одним
+   взглядом, не вчитываясь. */
+.status-pill { gap: 8px; font-weight: 700; letter-spacing: .03em; }
+/* Индикатор состояния — ромб, не кружок: свой узнаваемый глиф вместо точки,
+   которую рисует любое другое приложение. Те же ромбы — у модулей и
+   подключения (.module-dot, .conn-dot), один словарь на всё окно.
+   Крутящиеся индикаторы прогресса (.pf-dot/.up-dot) остаются кружками —
+   вращение читается по кругу, не по ромбу. */
+.status-dot {
+  width: 7px; height: 7px; flex: none;
+  background: var(--text-muted);
+  transform: rotate(45deg);
+}
 .status-pill.live { color: var(--good); }
 .status-pill.live .status-dot { background: var(--good); }
 .status-pill.down .status-dot { background: var(--critical); }
@@ -293,7 +368,11 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
 
 .sl-spacer { flex: 1; }
 
-.sl-conn .conn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.sl-conn .conn-dot {
+  width: 7px; height: 7px; flex: none;
+  background: var(--text-muted);
+  transform: rotate(45deg);
+}
 .sl-conn[data-state="online"] { color: var(--good); }
 .sl-conn[data-state="online"] .conn-dot { background: var(--good); }
 .sl-conn[data-state="connecting"] { color: var(--warning); }
@@ -302,10 +381,9 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
 .sl-conn[data-state="offline"] .conn-dot { background: var(--critical); }
 
 /* ─── выпадашка модулей ─────────────────────────────────────────────────
-   Всё, что осталось от выезжавшей справа панели. Список нужен на пару
-   секунд — ткнуть в шумный модуль и отфильтровать по нему, — и ради этого
-   не нужен ни оверлей во весь экран, ни затемнение фона за ним.
-   Координаты ставит openMods в main.js (position: fixed). */
+   Список нужен на пару секунд — ткнуть в шумный модуль и отфильтровать
+   по нему, — и ради этого не нужен ни оверлей во весь экран, ни затемнение
+   фона за ним. Координаты ставит openMods в main.js (position: fixed). */
 .mod-menu {
   position: fixed;
   z-index: 14;
@@ -316,7 +394,7 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
   padding: 5px;
   background: var(--bg-float);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
   opacity: 0;
   visibility: hidden;
@@ -341,26 +419,26 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
   align-items: center;
   gap: 9px;
   padding: 5px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius);
   font-size: 11px;
   font-family: var(--font-mono);
 }
-.module-dot { width: 6px; height: 6px; border-radius: 50%; }
+.module-dot { width: 6px; height: 6px; transform: rotate(45deg); }
 .module-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .module-name.has-err { color: var(--critical); }
 .module-name.has-warn { color: var(--warning); }
 
 /* Полоса — объём (доля от самого шумного модуля), не тревога: красит её
    всегда свой цвет модуля, чтобы «громко» и «плохо» не читались одним и
-   тем же сигналом (состояние — отдельно, точкой слева от имени). */
-.meter { position: relative; height: 3px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, .08); }
-.meter .fill { position: absolute; inset: 0; right: auto; border-radius: 999px; opacity: .8; transition: width .3s ease; }
+   тем же сигналом (состояние — отдельно, ромбом слева от имени). */
+.meter { position: relative; height: 3px; overflow: hidden; background: rgba(255, 255, 255, .08); }
+.meter .fill { position: absolute; inset: 0; right: auto; opacity: .8; transition: width .3s ease; }
 .module-count { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* Модуль в списке — не подпись, а кнопка фильтра. */
 .module-row.clickable { cursor: pointer; }
 .module-row.clickable:hover { background: var(--bg-hover); }
-.module-row.active { background: var(--accent-dim); box-shadow: inset 0 0 0 1px rgba(139, 124, 245, .45); }
+.module-row.active { background: var(--accent-dim); box-shadow: inset 0 0 0 1px rgba(69, 211, 186, .45); }
 
 /* ─── тело: только лог, во всю ширину ─────────────────────────────────── */
 
@@ -387,6 +465,7 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
    и полдюжины разных модулей выглядели одинаковым «heroku.modul…».
    Полностью они всё равно не влезут — полное имя есть в подсказке. */
 .row {
+  position: relative;
   display: grid;
   grid-template-columns: 60px 34px 140px 1fr auto 20px;
   gap: 10px;
@@ -397,6 +476,15 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
 }
 .row.zebra { background: rgba(255, 255, 255, .02); }
 .row:hover { background: rgba(255, 255, 255, .05); }
+
+/* Плашка важности слева — то, что реально сканируешь взглядом по тысяче
+   строк, а не три буквы бейджа в третьей колонке. Сидит в левом паддинге
+   строки (14px), колонки не трогает. INF и так девять строк из десяти —
+   ему плашка не положена, тревожный цвет должен значить именно тревогу. */
+.row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.row:has(.badge.wrn)::before { background: var(--warning); }
+.row:has(.badge.err)::before { background: var(--critical); }
+.row:has(.badge.crt)::before { background: var(--critical); }
 
 /* Копирование по клику — видно только при наведении, чтобы не шуметь на
    каждой из тысяч строк лога. Колонка зарезервирована всегда (20px), а не
@@ -414,7 +502,7 @@ button.toggled:hover { color: var(--accent); background: rgba(139, 124, 245, .22
 
 /* Совпадение активного фильтра в тексте — как обычный Ctrl+F. */
 mark.hl {
-  background: rgba(139, 124, 245, .35);
+  background: rgba(69, 211, 186, .32);
   color: var(--text-primary);
   border-radius: 2px;
   padding: 0 1px;
@@ -433,21 +521,21 @@ mark.hl {
   letter-spacing: .04em;
   font-family: var(--font-mono);
 }
-.row .badge.dbg { color: #45414f; }
+.row .badge.dbg { color: #423e33; }
 /* INF — нейтральный, а не зелёный. Обычная строка лога и есть INF: их на
    экране девять из десяти, и зелёный на каждой превращался в сплошной
    цветной столбец, на фоне которого редкие WRN и ERR переставали выделяться.
    Цвет здесь значит «на это стоит посмотреть», а не «уровень записи». */
-.row .badge.inf { color: #5d5870; }
+.row .badge.inf { color: #5a5646; }
 .row .badge.wrn { color: var(--warning); }
 .row .badge.err { color: var(--critical); }
-.row .badge.crt { color: #1a0a10; background: var(--critical); border-radius: 3px; }
+.row .badge.crt { color: #180a09; background: var(--critical); border-radius: var(--radius); }
 
 .row .module { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* DEBUG показывают по явному запросу (кнопка d) и вперемешку с обычными
    строками — если текст у них такой же яркий, включённый debug топит в себе
    всё остальное. Гасим сам текст, не только бейдж. */
-.row .msg.dbg { color: #837d94; }
+.row .msg.dbg { color: #7d7869; }
 .row .msg.wrn { color: var(--warning); }
 .row .msg.err, .row .msg.crt { color: var(--critical); }
 .row .continuation-arrow { color: var(--text-muted); margin-right: 4px; }
@@ -456,7 +544,7 @@ mark.hl {
   font-size: 10px;
   color: var(--text-muted);
   background: rgba(255, 255, 255, .07);
-  border-radius: 3px;
+  border-radius: var(--radius);
   padding: 0 6px;
 }
 
@@ -469,12 +557,12 @@ mark.hl {
   border-left: 2px solid var(--accent);
   background: var(--accent-dim);
   color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 12px;
   font-family: var(--font-ui);
   animation: fade-in .18s ease;
 }
-.banner.alert { border-left-color: var(--critical); background: rgba(232, 105, 127, .1); color: var(--critical); }
+.banner.alert { border-left-color: var(--critical); background: rgba(239, 95, 92, .1); color: var(--critical); }
 
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(-3px); }
@@ -494,22 +582,22 @@ mark.hl {
 .log-footer input[type="text"] {
   flex: 1;
   font: inherit;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 5px 11px;
   color: var(--text-primary);
 }
 .log-footer input[type="text"]::placeholder { color: var(--text-muted); }
-.log-footer input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.log-footer input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* Подсказка о том, что прыгать больше некуда: всплывает над логом и гаснет
    сама — иначе нажатие n на последней ошибке выглядит как залипшая клавиша. */
 .jump-hint {
   position: absolute; top: 10px; left: 50%;
-  padding: 5px 12px; border-radius: 6px;
+  padding: 5px 12px; border-radius: var(--radius);
   background: var(--bg-float); border: 1px solid var(--line-strong);
   color: var(--text-secondary); font-size: 11px;
   opacity: 0; transform: translate(-50%, -4px);
@@ -529,13 +617,13 @@ mark.hl {
   flex: none;
   padding: 8px 14px;
   font-size: 12px;
-  background: rgba(232, 105, 127, .1);
+  background: rgba(239, 95, 92, .1);
   border-bottom: 1px solid var(--line);
   animation: fade-in .2s ease;
 }
 .stream-issue .si-icon { flex: none; color: var(--critical); line-height: 1.35; }
 .stream-issue .si-text { flex: 1; min-width: 0; }
-.stream-issue .si-reason { display: block; font-weight: 600; color: var(--critical); overflow-wrap: anywhere; }
+.stream-issue .si-reason { display: block; font-weight: 700; color: var(--critical); overflow-wrap: anywhere; }
 .stream-issue .si-hint { display: block; margin-top: 2px; font-size: 11px; color: var(--text-muted); }
 .stream-issue .si-for { flex: none; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); }
 
@@ -544,7 +632,7 @@ mark.hl {
 .help-overlay, .remote-overlay {
   position: fixed; inset: 0; z-index: 15;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(5, 5, 8, .6);
+  background: rgba(4, 4, 3, .64);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .14s ease, visibility 0s linear .14s;
 }
@@ -557,11 +645,28 @@ mark.hl {
   transition: opacity .14s ease;
 }
 
-.help-card, .remote-card, .preflight-card {
+.help-card, .remote-card, .preflight-card, .gate-card {
+  position: relative;
   background: var(--bg-float);
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+}
+/* HUD-уголки — рамка приборной панели, а не карточка сайта. Только два
+   противоположных угла (не все четыре): читается как framing device, не
+   как декоративная рамка по периметру. */
+.help-card::before, .help-card::after,
+.remote-card::before, .remote-card::after,
+.preflight-card::before, .preflight-card::after,
+.gate-card::before, .gate-card::after {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  border: 2px solid var(--accent); opacity: .55; pointer-events: none;
+}
+.help-card::before, .remote-card::before, .preflight-card::before, .gate-card::before {
+  top: -1px; left: -1px; border-right: none; border-bottom: none;
+}
+.help-card::after, .remote-card::after, .preflight-card::after, .gate-card::after {
+  bottom: -1px; right: -1px; border-left: none; border-top: none;
 }
 
 .help-card {
@@ -570,13 +675,13 @@ mark.hl {
   transition: transform .16s ease;
 }
 .help-overlay.visible .help-card { transform: none; }
-.help-card h2 { margin: 0 0 14px; font-size: 11px; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+.help-card h2 { margin: 0 0 14px; font-size: 11px; color: var(--text-muted); letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
 .help-card table { border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); }
 .help-card td { padding: 4px 0; vertical-align: top; color: var(--text-secondary); }
 .help-card td:first-child { width: 96px; white-space: nowrap; }
 .help-card kbd {
   display: inline-block; min-width: 18px; padding: 1px 6px;
-  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius);
   color: var(--text-primary); font-family: inherit; font-size: 11px; text-align: center;
 }
 .help-card code { color: var(--accent); }
@@ -589,16 +694,16 @@ mark.hl {
   transition: transform .16s ease;
 }
 .remote-overlay.visible .remote-card { transform: none; }
-.remote-card h2 { margin: 0 0 8px; font-size: 11px; color: var(--text-muted); letter-spacing: .1em; text-transform: uppercase; font-weight: 700; }
+.remote-card h2 { margin: 0 0 8px; font-size: 11px; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
 .remote-hint { margin: 0 0 16px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .remote-card label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 11px; }
 .remote-card input[type="text"] {
   display: block; width: 100%; margin-top: 4px;
   font: inherit; font-family: var(--font-mono); font-size: 12px;
-  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius);
   padding: 6px 9px; color: var(--text-primary);
 }
-.remote-card input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.remote-card input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .remote-note { min-height: 14px; margin: 2px 0 12px; font-size: 11px; color: var(--warning); }
 .remote-note.ok { color: var(--good); }
 .remote-note.bad { color: var(--critical); }
@@ -627,7 +732,7 @@ mark.hl {
 }
 
 .preflight-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 18px; }
-.preflight-brand { font-weight: 600; letter-spacing: .06em; color: var(--text-primary); font-size: 12px; }
+.preflight-brand { font-weight: 700; letter-spacing: .16em; color: var(--text-primary); font-size: 12px; }
 .preflight-sub { font-size: 11px; color: var(--text-muted); }
 
 .preflight-list { display: flex; flex-direction: column; padding-left: 23px; }
@@ -636,7 +741,8 @@ mark.hl {
    в цвет своего исхода — соседние решённые отрезки визуально сливаются в
    один растущий сверху вниз цветной след, а не мигают поодиночке: прогон
    читается как одна прочерчивающаяся линия, а не список, обновившийся
-   разом. */
+   разом. Сама точка прогресса остаётся кружком — вращение читается по
+   кругу, ромб здесь только сбил бы плавность. */
 .pf-row {
   position: relative;
   display: flex; align-items: baseline; gap: 10px;
@@ -672,7 +778,7 @@ mark.hl {
 /* Единственная бесконечная анимация во всём окне: она отражает реально
    идущий прямо сейчас процесс и живёт ровно столько, сколько он длится. */
 .pf-row[data-state="running"] .pf-dot {
-  opacity: 1; border-color: rgba(139, 124, 245, .25); border-top-color: var(--accent);
+  opacity: 1; border-color: rgba(69, 211, 186, .25); border-top-color: var(--accent);
   animation: pf-spin .7s linear infinite;
 }
 @keyframes pf-spin { to { transform: translateY(-50%) rotate(360deg); } }
@@ -711,23 +817,22 @@ mark.hl {
 
 .preflight-continue {
   display: block; margin: 14px auto 0; padding: 5px 16px;
-  border-radius: 6px; border: 1px solid rgba(232, 105, 127, .35);
+  border-radius: var(--radius); border: 1px solid rgba(239, 95, 92, .35);
   background: transparent; color: var(--critical);
   font-family: var(--font-ui); font-size: 12px; cursor: pointer;
 }
-.preflight-continue:hover { background: rgba(232, 105, 127, .12); color: var(--critical); }
+.preflight-continue:hover { background: rgba(239, 95, 92, .12); color: var(--critical); }
 
 /* ─── экран обновлений и ход обновления ─────────────────────────────────
    Тот же язык, что у экрана проверок (та же карточка, та же шапка) — это
    продолжение одной и той же процедуры запуска, а не отдельное приложение.
    Здесь единственное место во всём окне, где анимация идёт постоянно, и
    она заслужена: обновление — процесс с направлением и концом, ровно как
-   спиннер проверок. Всё, что крутилось в пустоту при бездействии, убрано
-   ещё в 1.14.0, и это ему не противоречит. */
+   спиннер проверок. */
 .gate-overlay {
   position: fixed; inset: 0; z-index: 22;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(5, 5, 8, .72);
+  background: rgba(4, 4, 3, .74);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .18s ease, visibility 0s linear .18s;
 }
@@ -740,7 +845,7 @@ mark.hl {
   padding: 24px 28px 20px;
   background: var(--bg-float);
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
   transform: translateY(8px);
   transition: transform .2s var(--gate-ease, cubic-bezier(.2, .8, .3, 1.2));
@@ -755,7 +860,7 @@ mark.hl {
   gap: 12px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
 }
 .gate-chan {
   font-family: var(--font-mono); font-size: 10px; font-weight: 700;
@@ -770,12 +875,12 @@ mark.hl {
 .gate-act button { padding: 4px 12px; font-size: 11px; }
 
 button.gate-primary {
-  color: #14101f;
+  color: var(--accent-ink);
   background: var(--accent);
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
 }
-button.gate-primary:hover { background: #9d90f7; border-color: #9d90f7; color: #14101f; }
+button.gate-primary:hover { background: #6fe2cd; border-color: #6fe2cd; color: var(--accent-ink); box-shadow: none; }
 
 .gate-skip {
   display: block; width: 100%;
@@ -809,7 +914,7 @@ button.gate-primary:hover { background: #9d90f7; border-color: #9d90f7; color: #
 }
 .up-row[data-state="running"] .up-dot {
   opacity: 1;
-  border-color: rgba(139, 124, 245, .25);
+  border-color: rgba(69, 211, 186, .25);
   border-top-color: var(--accent);
   animation: pf-spin .7s linear infinite;
 }
