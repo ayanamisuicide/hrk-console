@@ -1188,3 +1188,23 @@ button.gate-primary:hover { background: #6fe2cd; border-color: #6fe2cd; color: v
     transition-duration: .01ms !important;
   }
 }
+
+/* ─── визуальный язык запуска: прибор включается слоями ──────────────── */
+.rail, .statusline, .log-pane { position: relative; }
+.rail::after, .statusline::after, .log-pane::after {
+  content: ''; position: absolute; pointer-events: none; opacity: .22;
+  background: repeating-linear-gradient(90deg, transparent 0 47px, rgba(69,211,186,.16) 48px, transparent 49px);
+}
+.rail::after { inset: 0 5px 0 auto; width: 1px; background: repeating-linear-gradient(180deg, transparent 0 30px, rgba(69,211,186,.32) 31px, transparent 32px); }
+.statusline::after { inset: auto 0 0; height: 1px; }
+.log-pane::after { inset: 0; }
+.rail-brand .brand { text-shadow: 0 0 14px rgba(69,211,186,.18); }
+.rail-btn, .update-badge, .channel-badge { border-left: 2px solid transparent; }
+.rail-btn:hover, .rail-btn.toggled, .update-badge[data-state="available"], .channel-badge[data-channel="dev"] { border-left-color: var(--accent); }
+.statusline { box-shadow: 0 1px 18px rgba(0,0,0,.22); }
+.log-scroll { background: linear-gradient(90deg, rgba(69,211,186,.025), transparent 20%, transparent 80%, rgba(69,211,186,.018)); }
+.log-footer input[type="text"] { border-width: 1px 1px 1px 2px; border-left-color: var(--accent); background: var(--bg-raised); }
+.module-row.active { border-left: 2px solid var(--accent); }
+.gate-card, .preflight-card, .help-card, .remote-card, .matches-card { box-shadow: 0 0 0 1px rgba(69,211,186,.035), 0 24px 70px rgba(0,0,0,.62); }
+.gate-row, .up-row { border-left: 2px solid transparent; padding-left: 8px; }
+.gate-row:hover, .up-row[data-state="running"] { border-left-color: var(--accent); background: rgba(69,211,186,.035); }
