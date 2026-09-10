@@ -108,6 +108,26 @@ html, body {
   height: 100vh;
 }
 
+.boot-overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  background: var(--bg); transition: opacity .5s ease, visibility .5s ease; }
+.boot-overlay.dismissed { opacity: 0; visibility: hidden; pointer-events: none; }
+.boot-card { width: min(430px, calc(100vw - 48px)); padding: 28px 30px; border: 1px solid var(--line-strong); background: var(--bg-raised); box-shadow: 0 0 0 1px rgba(69,211,186,.05), 0 18px 60px rgba(0,0,0,.5); }
+.boot-mark { letter-spacing: .24em; font-weight: 700; color: var(--accent); }
+.boot-mark span { color: var(--text-muted); font-weight: 400; }
+.boot-sub { margin-top: 7px; color: var(--text-muted); font-size: 11px; }
+.boot-steps { display: grid; gap: 13px; margin: 30px 0 22px; }
+.boot-step { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; color: var(--text-muted); font-size: 11px; transition: color .25s ease; }
+.boot-step i { width: 9px; height: 9px; border: 1px solid var(--text-muted); transform: rotate(45deg); }
+.boot-step b { width: 18px; height: 1px; background: transparent; }
+.boot-step.active { color: var(--text-primary); }
+.boot-step.active i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pf-spin .9s linear infinite; }
+.boot-step.done { color: var(--good); }
+.boot-step.done i { border-color: var(--good); background: var(--good); }
+.boot-step.done b::after { content: 'OK'; color: var(--good); font-size: 9px; }
+.boot-progress { height: 2px; background: rgba(255,255,255,.08); }
+.boot-progress span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .35s ease; box-shadow: 0 0 8px var(--accent); }
+.boot-status { margin-top: 9px; color: var(--text-muted); font-size: 10px; }
+
 /* ─── рельса ────────────────────────────────────────────────────────────
    Вся хром-обвязка окна: управление процессом, переключатели показа,
    версия, обновления. Один пульт слева вместо двух горизонтальных полос

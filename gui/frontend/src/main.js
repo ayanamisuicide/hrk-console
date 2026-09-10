@@ -19,6 +19,20 @@ const MODULE_COLORS = 8; // --mod-1..--mod-8 в style.css
 // ─── разметка ────────────────────────────────────────────────────────────
 
 document.querySelector('#app').innerHTML = `
+  <div class="boot-overlay" id="boot-overlay">
+    <div class="boot-card">
+      <div class="boot-mark">HEROKU <span>CONSOLE</span></div>
+      <div class="boot-sub">запуск рабочего пространства</div>
+      <div class="boot-steps" id="boot-steps">
+        <div class="boot-step active"><i></i><span>инициализация интерфейса</span><b></b></div>
+        <div class="boot-step"><i></i><span>проверка окружения</span><b></b></div>
+        <div class="boot-step"><i></i><span>подготовка зависимостей</span><b></b></div>
+        <div class="boot-step"><i></i><span>подключение потока лога</span><b></b></div>
+      </div>
+      <div class="boot-progress"><span id="boot-progress-fill"></span></div>
+      <div class="boot-status" id="boot-status">запускаю…</div>
+    </div>
+  </div>
   <div class="preflight-overlay" id="preflight-overlay">
     <div class="preflight-card">
       <div class="preflight-head">
@@ -728,6 +742,27 @@ channelBadge.addEventListener('click', async () => {
 // отрисованы, копятся в очереди и применяются разом, как только список
 // готов — тот же приём, что и pendingTail для строк лога.
 let preflightRows = [];
+const bootOverlay = document.querySelector('#boot-overlay');
+const bootSteps = [...document.querySelectorAll('.boot-step')];
+const bootFill = document.querySelector('#boot-progress-fill');
+const bootStatus = document.querySelector('#boot-status');
+let bootTimer = setInterval(() => {
+    const active = bootSteps.findIndex(s => s.classList.contains('active'));
+    const next = Math.min(active + 1, bootSteps.length - 1);
+    bootSteps.forEach((s, i) => s.classList.toggle('done', i < next));
+    bootSteps.forEach((s, i) => s.classList.toggle('active', i === next));
+    bootFill.style.width = Math.round((next / (bootSteps.length - 1)) * 100) + '%';
+    bootStatus.textContent = bootSteps[next].querySelector('span').textContent + '…';
+}, 480);
+
+function finishBoot() {
+    clearInterval(bootTimer);
+    bootSteps.forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
+    bootFill.style.width = '100%';
+    bootStatus.textContent = 'готово';
+    setTimeout(() => bootOverlay.classList.add('dismissed'), 420);
+}
+
 let preflightPending = [];
 let preflightFailed = false;
 // Отдельная псевдо-проверка preflight.Unsupported() (единственная строка
@@ -1824,4 +1859,5 @@ Bootstrap().then((boot) => {
     renderRemoteTarget(uiState.remote);
     renderStatus(boot.status);
     renderAll(boot.records);
+    finishBoot();
 });
