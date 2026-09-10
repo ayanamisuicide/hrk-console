@@ -746,6 +746,8 @@ const bootOverlay = document.querySelector('#boot-overlay');
 const bootSteps = [...document.querySelectorAll('.boot-step')];
 const bootFill = document.querySelector('#boot-progress-fill');
 const bootStatus = document.querySelector('#boot-status');
+const bootStartedAt = performance.now();
+const bootStepDuration = 950;
 let bootTimer = setInterval(() => {
     const active = bootSteps.findIndex(s => s.classList.contains('active'));
     const next = Math.min(active + 1, bootSteps.length - 1);
@@ -753,14 +755,19 @@ let bootTimer = setInterval(() => {
     bootSteps.forEach((s, i) => s.classList.toggle('active', i === next));
     bootFill.style.width = Math.round((next / (bootSteps.length - 1)) * 100) + '%';
     bootStatus.textContent = bootSteps[next].querySelector('span').textContent + '…';
-}, 480);
+}, bootStepDuration);
 
 function finishBoot() {
     clearInterval(bootTimer);
-    bootSteps.forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
-    bootFill.style.width = '100%';
-    bootStatus.textContent = 'готово';
-    setTimeout(() => bootOverlay.classList.add('dismissed'), 420);
+    const elapsed = performance.now() - bootStartedAt;
+    const reveal = () => {
+        bootSteps.forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
+        bootFill.style.width = '100%';
+        bootStatus.textContent = 'готово · открываю консоль';
+        setTimeout(() => bootOverlay.classList.add('dismissed'), 900);
+    };
+    // Даже на быстрой машине человек должен успеть прочитать все четыре шага.
+    setTimeout(reveal, Math.max(0, 4 * bootStepDuration - elapsed));
 }
 
 let preflightPending = [];
