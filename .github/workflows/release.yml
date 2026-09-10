@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           check-latest: true
 
       - name: Проверки
@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       # Сборка обязана идти до "go vet": //go:embed all:frontend/dist в
       # gui/main.go ссылается на каталог, который генерирует именно
@@ -80,12 +80,19 @@ jobs:
           fi
           cat release-notes.md
 
+      - name: Sign release archives
+        shell: bash
+        env:
+          HKC_RELEASE_SIGNING_SEED: ${{ secrets.HKC_RELEASE_SIGNING_SEED }}
+        run: go run ./cmd/release-sign ./*.tar.gz
       - uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
           files: |
             hkc-*-linux-amd64.tar.gz
+            hkc-*-linux-amd64.tar.gz.sig
             hrk-console-gui-*-linux-amd64.tar.gz
+            hrk-console-gui-*-linux-amd64.tar.gz.sig
 
   # Windows-сборка GUI — отдельный job (нужен windows-latest runner, свой
   # тулчейн WebView2), добавляет файл в уже созданный первым job'ом релиз.
@@ -99,7 +106,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           check-latest: true
 
       - uses: actions/setup-node@v4
@@ -107,7 +114,7 @@ jobs:
           node-version: '20'
 
       - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       # Тот же архив (.tar.gz), что и у Linux-сборок, не .zip — selfupdate
       # сам распаковывает tar.gz из Go (archive/tar+compress/gzip), одним
@@ -120,6 +127,13 @@ jobs:
           "$(go env GOPATH)/bin/wails" build -platform windows/amd64 -ldflags "-X main.version=${GITHUB_REF_NAME}"
           tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-windows-amd64.tar.gz -C build/bin hrk-console-gui.exe
 
+      - name: Sign release archives
+        shell: bash
+        env:
+          HKC_RELEASE_SIGNING_SEED: ${{ secrets.HKC_RELEASE_SIGNING_SEED }}
+        run: go run ./cmd/release-sign ./*.tar.gz
       - uses: softprops/action-gh-release@v2
         with:
-          files: hrk-console-gui-*-windows-amd64.tar.gz
+          files: |
+            hrk-console-gui-*-windows-amd64.tar.gz
+            hrk-console-gui-*-windows-amd64.tar.gz.sig

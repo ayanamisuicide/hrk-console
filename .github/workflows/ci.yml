@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           check-latest: true
 
       # Форматирование проверяется отдельным шагом, а не глазами в ревью:
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           check-latest: true
 
       - uses: actions/setup-node@v4
@@ -72,7 +72,7 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       # Полная сборка идёт до проверок не для галочки: она генерирует
       # frontend/wailsjs (импорты фронтенда) и frontend/dist (его тянет
@@ -98,3 +98,17 @@ jobs:
       - name: go test
         working-directory: gui
         run: go test -count=1 -race -tags webkit2_41 ./...
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bootstrap, build and test on Windows PowerShell 5.1
+        shell: powershell
+        run: .\setup.ps1

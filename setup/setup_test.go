@@ -92,15 +92,30 @@ func TestMissingModuleDepsUsesCache(t *testing.T) {
 }
 
 func TestRunReportsExitStatus(t *testing.T) {
-	if !run("true") {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HKC_TEST_EXIT_HELPER", "1")
+	if !run(exe, "-test.run=^TestExitHelper$", "--", "success") {
 		t.Error("успешная команда отмечена как провалившаяся")
 	}
-	if run("false") {
+	if run(exe, "-test.run=^TestExitHelper$", "--", "failure") {
 		t.Error("команда с ненулевым кодом отмечена как успешная")
 	}
 	if run("hkc-заведомо-нет-такой-команды") {
 		t.Error("несуществующая команда отмечена как успешная")
 	}
+}
+
+func TestExitHelper(t *testing.T) {
+	if os.Getenv("HKC_TEST_EXIT_HELPER") != "1" {
+		return
+	}
+	if os.Args[len(os.Args)-1] == "success" {
+		os.Exit(0)
+	}
+	os.Exit(1)
 }
 
 // aptInstall обязан повторить попытку ровно один раз после apt-get update,

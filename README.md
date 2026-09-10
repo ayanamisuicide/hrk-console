@@ -62,3 +62,23 @@ make test    # тесты
 make vet     # go vet
 make build
 ```
+
+### Windows: установка зависимостей и сборка GUI
+
+Из PowerShell можно выполнить единый bootstrap-скрипт. Он установит
+отсутствующие Go и Node.js через `winget`, поставит Wails, скачает зависимости,
+запустит тесты и соберёт Windows GUI:
+
+```powershell
+.\setup.ps1
+```
+
+Если PowerShell запрещает запуск локальных скриптов, разрешение можно дать
+только для текущего окна:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup.ps1
+```
+
+Поддерживаемые платформы, проверки и настройка подписанных обновлений: [docs/releases.md](docs/releases.md).

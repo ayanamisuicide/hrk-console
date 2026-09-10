@@ -436,6 +436,9 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // первый же обычный файл в архиве и есть искомое, искать по имени незачем.
 // Возвращает путь к временному файлу с правом на исполнение — вызывающий
 // обязан его удалить.
+const maxArchiveBytes int64 = 128 << 20
+const maxBinaryBytes int64 = 256 << 20
+
 func downloadBinary(url string, onProgress ProgressFunc) (string, error) {
 	client := &http.Client{Timeout: 2 * time.Minute}
 	resp, err := client.Get(url)
@@ -446,61 +449,74 @@ func downloadBinary(url string, onProgress ProgressFunc) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("скачивание вернуло %d", resp.StatusCode)
 	}
-
-	// Счётчик стоит ДО gzip: считать надо то, что реально едет по сети
-	// (сжатый поток, чей объём и обещан в Content-Length), а не то, во что
-	// оно разворачивается, — иначе «скачано» перевалило бы за «всего».
-	body := io.Reader(resp.Body)
-	if onProgress != nil {
-		body = &countingReader{r: resp.Body, total: resp.ContentLength, on: onProgress, lastAt: time.Now()}
+	body := &countingReader{r: io.LimitReader(resp.Body, maxArchiveBytes+1), total: resp.ContentLength, on: onProgress, lastAt: time.Now()}
+	result, err := extractBinary(body, "")
+	if err != nil {
+		return "", err
 	}
+	if body.n > maxArchiveBytes {
+		os.Remove(result)
+		return "", fmt.Errorf("архив обновления слишком большой")
+	}
+	onProgress.emit(Progress{Stage: StageDownload, Done: true, Bytes: body.n, Total: body.total})
+	onProgress.emit(Progress{Stage: StageUnpack, Done: true})
+	return result, nil
+}
 
+// Read through the gzip footer: stopping after the first tar entry misses CRC errors.
+func extractBinary(body io.Reader, expectedName string) (result string, err error) {
 	gz, err := gzip.NewReader(body)
 	if err != nil {
 		return "", err
 	}
 	defer gz.Close()
-
 	out, err := os.CreateTemp("", "hrk-console-update-*")
 	if err != nil {
 		return "", err
 	}
-	defer out.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			os.Remove(out.Name())
-			return "", fmt.Errorf("в архиве не нашёлся бинарник")
-		}
+	defer func() {
+		out.Close()
 		if err != nil {
 			os.Remove(out.Name())
-			return "", err
 		}
-		if hdr.Typeflag != tar.TypeReg {
+	}()
+	expanded := &io.LimitedReader{R: gz, N: maxBinaryBytes + (1 << 20)}
+	tr := tar.NewReader(expanded)
+	found := false
+	for {
+		hdr, readErr := tr.Next()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return "", readErr
+		}
+		if hdr.Typeflag == tar.TypeDir {
 			continue
 		}
-		if _, err := io.Copy(out, tr); err != nil {
-			os.Remove(out.Name())
+		if hdr.Typeflag != tar.TypeReg || found || hdr.Size <= 0 || hdr.Size > maxBinaryBytes ||
+			path.Base(hdr.Name) != hdr.Name || strings.Contains(hdr.Name, "\\") ||
+			(expectedName != "" && hdr.Name != expectedName) {
+			return "", fmt.Errorf("недопустимое содержимое архива обновления")
+		}
+		if _, err = io.Copy(out, tr); err != nil {
 			return "", err
 		}
-		break
+		found = true
 	}
-	// Скачивание и распаковка идут одним потоком: tar тянет из gzip, gzip —
-	// из сети, и «скачано» перестаёт расти ровно тогда, когда распаковано
-	// последнее. Поэтому оба шага закрываются здесь, после io.Copy, а не
-	// поодиночке где-то выше — иначе «скачано» отрапортовало бы о готовности,
-	// пока байты ещё едут.
-	if c, ok := body.(*countingReader); ok {
-		onProgress.emit(Progress{Stage: StageDownload, Done: true, Bytes: c.n, Total: c.total})
-	} else {
-		onProgress.emit(Progress{Stage: StageDownload, Done: true})
+	if !found {
+		return "", fmt.Errorf("в архиве не нашёлся бинарник")
 	}
-	onProgress.emit(Progress{Stage: StageUnpack, Done: true, Note: filepath.Base(out.Name())})
-
-	if err := out.Chmod(0o755); err != nil {
-		os.Remove(out.Name())
+	if _, err = io.Copy(io.Discard, expanded); err != nil {
+		return "", err
+	}
+	if expanded.N <= 0 {
+		return "", fmt.Errorf("распакованный архив слишком большой")
+	}
+	if err = out.Chmod(0o755); err != nil {
+		return "", err
+	}
+	if err = out.Close(); err != nil {
 		return "", err
 	}
 	return out.Name(), nil
@@ -508,12 +524,30 @@ func downloadBinary(url string, onProgress ProgressFunc) (string, error) {
 
 // copyFile читает src целиком и пишет в dst с правом на исполнение — файлы
 // обновления маленькие (один бинарник), читать потоково смысла нет.
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
+func copyFile(src, dst string) (err error) {
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o755)
+	defer in.Close()
+	out, err := os.CreateTemp(filepath.Dir(dst), ".hkc-stage-*")
+	if err != nil {
+		return err
+	}
+	defer func() { out.Close(); os.Remove(out.Name()) }()
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	if err = out.Chmod(0o755); err != nil {
+		return err
+	}
+	if err = out.Sync(); err != nil {
+		return err
+	}
+	if err = out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(out.Name(), dst)
 }
 
 // Apply скачивает бинарник assetPrefix*assetSuffix из последнего релиза и
@@ -577,7 +611,7 @@ func applyRelease(rel *Release, assetPrefix, assetSuffix string, onProgress Prog
 	onProgress.emit(Progress{Stage: StageFind, Done: true, Note: path.Base(assetURL)})
 
 	onProgress.emit(Progress{Stage: StageDownload})
-	tmpBinary, err := downloadBinary(assetURL, onProgress)
+	tmpBinary, err := downloadSignedBinary(rel, assetPrefix, assetSuffix, onProgress)
 	if err != nil {
 		return "", err
 	}

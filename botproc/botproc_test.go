@@ -3,6 +3,7 @@ package botproc
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,12 @@ func TestFormatUptime(t *testing.T) {
 func TestUptimeFormat(t *testing.T) {
 	if got := Uptime(0); got != "—" {
 		t.Errorf("незапущенный процесс: got %q, want —", got)
+	}
+	if runtime.GOOS != "linux" {
+		if got := Uptime(os.Getpid()); got != "—" {
+			t.Errorf("unsupported platform uptime = %q", got)
+		}
+		return
 	}
 	// Собственный процесс жив заведомо, и время должно разбираться без
 	// ошибок: формат /proc/<pid>/stat — единственное, на чём это стоит.
@@ -93,11 +100,12 @@ func TestAliveAt(t *testing.T) {
 }
 
 func TestNewPaths(t *testing.T) {
-	m := New("/tmp/бот")
-	if m.LogFile != "/tmp/бот/heroku.log" {
+	dir := filepath.Join(t.TempDir(), "бот")
+	m := New(dir)
+	if m.LogFile != filepath.Join(dir, "heroku.log") {
 		t.Errorf("путь к логу: got %q", m.LogFile)
 	}
-	if m.LockFile != "/tmp/бот/.launch.lock" {
+	if m.LockFile != filepath.Join(dir, ".launch.lock") {
 		t.Errorf("путь к локу: got %q", m.LockFile)
 	}
 }

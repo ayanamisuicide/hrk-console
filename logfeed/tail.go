@@ -15,8 +15,11 @@ import (
 // индексацией по модулю, а не сдвигом массива на каждую строку — иначе
 // на большом файле пересборка стала бы квадратичной.
 func TailLines(path string, max int) []string {
+	if max <= 0 {
+		return nil
+	}
 	f, err := os.Open(path)
-	if err != nil || max <= 0 {
+	if err != nil {
 		return nil
 	}
 	defer f.Close()
@@ -130,7 +133,7 @@ type followState struct {
 // подменённый ротацией файл: его содержимое новое целиком, и пропускать
 // в нём нечего).
 func (s *followState) open(path string, from int) error {
-	file, err := os.Open(path)
+	file, err := openLog(path)
 	if err != nil {
 		return err
 	}

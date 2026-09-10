@@ -59,24 +59,24 @@ func TestAppStartRemoteIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { a.remote.Close() })
 
-	pid := a.pid()
-	t.Logf("a.pid() = %d", pid)
+	pid := a.currentBackend().PID()
+	t.Logf("a.currentBackend().PID() = %d", pid)
 	if pid == 0 {
 		t.Skip("бот на удалённой машине не запущен — дальше проверять нечего")
 	}
 
-	if !a.aliveAt(pid) {
-		t.Errorf("a.aliveAt(%d) = false для только что найденного pid", pid)
+	if !a.currentBackend().AliveAt(pid) {
+		t.Errorf("a.currentBackend().AliveAt(%d) = false для только что найденного pid", pid)
 	}
-	if a.aliveAt(pid + 999999) {
+	if a.currentBackend().AliveAt(pid + 999999) {
 		t.Error("a.aliveAt на заведомо несуществующем pid вернул true")
 	}
 
-	if got := a.uptime(pid); got == "—" || got == "" {
-		t.Errorf("a.uptime(%d) = %q, ожидалось что-то содержательное для живого процесса", pid, got)
+	if got := a.currentBackend().Uptime(pid); got == "—" || got == "" {
+		t.Errorf("a.currentBackend().Uptime(%d) = %q, ожидалось что-то содержательное для живого процесса", pid, got)
 	}
-	t.Logf("a.uptime(%d) = %q", pid, a.uptime(pid))
-	t.Logf("a.botVersion() = %q", a.botVersion())
+	t.Logf("a.currentBackend().Uptime(%d) = %q", pid, a.currentBackend().Uptime(pid))
+	t.Logf("a.currentBackend().Version() = %q", a.currentBackend().Version())
 
 	// loadRemoteHistory + followRemoteLog кормят a.ring/a.visible через тот
 	// же rebuildLocked/feedLine, что и локальный режим — проверяем, что

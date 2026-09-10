@@ -53,7 +53,9 @@ func (a *App) followLog() {
 	if err != nil {
 		return
 	}
+	a.mu.Lock()
 	a.follower = f
+	a.mu.Unlock()
 	for raw := range f.Lines {
 		a.feedLine(raw)
 	}
@@ -121,7 +123,7 @@ func (a *App) emitStatus(pid int) {
 func (a *App) statusLocked(pid int) Status {
 	uptime := "—"
 	if pid != 0 {
-		uptime = a.uptime(pid)
+		uptime = a.currentBackend().Uptime(pid)
 	}
 	streamIssue, streamIssueFor := "", ""
 	switch {
@@ -139,7 +141,7 @@ func (a *App) statusLocked(pid int) Status {
 	a.watchMu.Unlock()
 	return Status{
 		Alive: pid != 0, PID: pid, Uptime: uptime,
-		BotVersion: a.botVersion(), HkcVersion: version,
+		BotVersion: a.currentBackend().Version(), HkcVersion: version,
 		Watchdog: a.ui.Watchdog, Restarting: restarting,
 		StreamIssue: streamIssue, StreamIssueFor: streamIssueFor,
 		RemoteState: a.remoteState, RemoteStateNote: a.remoteStateNote,
@@ -153,6 +155,7 @@ func (a *App) statusLocked(pid int) Status {
 func (a *App) maybeWatchdogRestart(pid int) {
 	a.mu.Lock()
 	on := a.ui.Watchdog
+	remoteUnavailable := a.ui.Remote.Host != "" && a.remoteState != "online"
 	a.mu.Unlock()
 
 	alive := pid != 0
@@ -163,7 +166,7 @@ func (a *App) maybeWatchdogRestart(pid int) {
 	seen := a.everAlive
 	a.watchMu.Unlock()
 
-	if !on || alive || !seen {
+	if !on || alive || !seen || remoteUnavailable {
 		return
 	}
 
@@ -179,7 +182,7 @@ func (a *App) maybeWatchdogRestart(pid int) {
 	a.emit("notice", "watchdog: бот не отвечает — перезапускаю")
 	notifyDesktop("Heroku", "Бот не отвечает — перезапускаю")
 	go func() {
-		a.start()
+		a.currentBackend().Start()
 		a.watchMu.Lock()
 		a.restarting = false
 		a.watchMu.Unlock()

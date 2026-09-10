@@ -31,12 +31,14 @@ func newHarness(t *testing.T) *harness {
 	// state.Save пишет в os.UserConfigDir(); без подмены тесты затирали бы
 	// живые настройки того, кто их запускает.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
 	h := &harness{}
-	a := &App{bot: botproc.New(t.TempDir())}
+	a := &App{bot: botproc.New(t.TempDir()), backend: &backendFuncs{}}
 	a.parser = logfeed.NewParser()
 	a.ui = state.Default
-	a.pid = func() int {
+	a.backend.(*backendFuncs).pid = func() int {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		return h.pid
@@ -45,21 +47,21 @@ func newHarness(t *testing.T) *harness {
 	// ожидают, что каждый тик увидит актуальное значение немедленно;
 	// настоящий кэш (tickPID) не должен подтверждать устаревший lastPID по
 	// реальному /proc, которого в тестовом окружении для этого pid и нет.
-	a.aliveAt = func(int) bool { return false }
-	a.start = func() startResult {
+	a.backend.(*backendFuncs).aliveAt = func(int) bool { return false }
+	a.backend.(*backendFuncs).start = func() startResult {
 		h.mu.Lock()
 		h.starts++
 		h.mu.Unlock()
 		return startResult{PID: 4242}
 	}
-	a.stop = func() (int, error) {
+	a.backend.(*backendFuncs).stop = func() (int, error) {
 		h.mu.Lock()
 		h.stops++
 		h.mu.Unlock()
 		return 0, nil
 	}
-	a.uptime = func(int) string { return "—" }
-	a.botVersion = func() string { return "" }
+	a.backend.(*backendFuncs).uptime = func(int) string { return "—" }
+	a.backend.(*backendFuncs).botVersion = func() string { return "" }
 	a.emit = func(event string, data ...interface{}) {
 		if event != "notice" || len(data) == 0 {
 			return
@@ -284,13 +286,13 @@ func TestRunPreflightEmitsAllChecksInOrder(t *testing.T) {
 // вся оптимизация (не сканировать /proc заново на каждой секунде) ничего
 // не даёт. bot/mu не нужны: tickPID их не трогает.
 func TestTickPIDCachesWhileAlive(t *testing.T) {
-	a := &App{}
+	a := &App{backend: &backendFuncs{}}
 	pidCalls := 0
-	a.pid = func() int {
+	a.backend.(*backendFuncs).pid = func() int {
 		pidCalls++
 		return 4242
 	}
-	a.aliveAt = func(pid int) bool { return pid == 4242 }
+	a.backend.(*backendFuncs).aliveAt = func(pid int) bool { return pid == 4242 }
 
 	if got := a.tickPID(); got != 4242 || pidCalls != 1 {
 		t.Fatalf("первый тик: pid=%d calls=%d, ожидалось 4242/1", got, pidCalls)
@@ -306,8 +308,8 @@ func TestTickPIDCachesWhileAlive(t *testing.T) {
 
 	// Бот упал — кэш обязан не соврать, что pid ещё жив, и вернуться к
 	// полному обходу.
-	a.aliveAt = func(int) bool { return false }
-	a.pid = func() int {
+	a.backend.(*backendFuncs).aliveAt = func(int) bool { return false }
+	a.backend.(*backendFuncs).pid = func() int {
 		pidCalls++
 		return 0
 	}

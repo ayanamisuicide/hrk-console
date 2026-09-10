@@ -74,7 +74,7 @@ func (a *App) StartBot() ActionResult {
 	a.lastRestartAttempt = time.Now()
 	a.watchMu.Unlock()
 
-	res := a.start()
+	res := a.currentBackend().Start()
 	switch {
 	case res.Err != nil:
 		return ActionResult{OK: false, Message: res.Err.Error()}
@@ -86,7 +86,7 @@ func (a *App) StartBot() ActionResult {
 }
 
 func (a *App) StopBot() ActionResult {
-	code, err := a.stop()
+	code, err := a.currentBackend().Stop()
 	if err != nil {
 		return ActionResult{OK: false, Message: err.Error()}
 	}
@@ -102,7 +102,7 @@ func (a *App) StopBot() ActionResult {
 
 func (a *App) RestartBot() ActionResult {
 	if a.alive() {
-		a.stop()
+		a.currentBackend().Stop()
 	}
 	return a.StartBot()
 }

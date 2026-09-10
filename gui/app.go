@@ -182,23 +182,9 @@ type App struct {
 	remotePID   int
 	remotePIDAt time.Time
 
-	// Точки подмены. Всё, чем бэкенд трогает внешний мир, — поиск процесса,
-	// запуск и остановка бота, его версия и аптайм, отправка события в
-	// окно — проходит через эти поля. Изначально (см. NewApp) смотрят на
-	// локальный botproc; startRemote переставляет их на remotebot.Client,
-	// если в настройках указан удалённый хост — дальше statusLoop, вотчдог
-	// и StartBot/StopBot/RestartBot работают одинаково в обоих случаях, не
-	// зная, локальный бот или нет. Без этой подмены логику вотчдога (кто,
-	// когда и на каком основании решает перезапускать) нельзя было бы
-	// проверить, не подняв настоящего бота в настоящем окне Wails; ровно
-	// поэтому ложное срабатывание из 1.6.1 и доехало до релиза.
-	pid        func() int
-	aliveAt    func(pid int) bool
-	start      func() startResult
-	stop       func() (int, error)
-	uptime     func(pid int) string
-	botVersion func() string
-	emit       func(event string, data ...interface{})
+	backendMu sync.RWMutex
+	backend   botBackend
+	emit      func(event string, data ...interface{})
 }
 
 // startResult — тот же контракт, что у botproc.StartResult и
@@ -224,15 +210,17 @@ func herokuDir() string {
 func NewApp() *App {
 	dir := herokuDir()
 	a := &App{bot: botproc.New(dir)}
-	a.pid = botproc.PID
-	a.aliveAt = botproc.AliveAt
-	a.start = func() startResult {
+	b := &backendFuncs{}
+	b.pid = botproc.PID
+	b.aliveAt = botproc.AliveAt
+	b.start = func() startResult {
 		r := a.bot.Start()
 		return startResult{PID: r.PID, AlreadyStarting: r.AlreadyStarting, Err: r.Err}
 	}
-	a.stop = func() (int, error) { return a.bot.Stop(), nil }
-	a.uptime = botproc.Uptime
-	a.botVersion = a.bot.Version
+	b.stop = func() (int, error) { return a.bot.Stop(), nil }
+	b.uptime = botproc.Uptime
+	b.botVersion = a.bot.Version
+	a.setBackend(b)
 	// ctx читается в момент вызова, а не сейчас: на этапе NewApp окна ещё
 	// нет, его подставит startup.
 	a.emit = func(event string, data ...interface{}) {
@@ -245,7 +233,7 @@ func NewApp() *App {
 // действий (RestartBot и подобные), где нет смысла кэшировать pid между
 // вызовами — в отличие от statusLoop, тут нет тика раз в секунду. Сам тик
 // использует tickPID, дешевле.
-func (a *App) alive() bool { return a.pid() != 0 }
+func (a *App) alive() bool { return a.currentBackend().PID() != 0 }
 
 // tickPID — pid бота для очередного тика statusLoop. Пока бот жив на том
 // же pid, что и на прошлом тике, подтверждает это одним чтением
@@ -259,11 +247,11 @@ func (a *App) tickPID() int {
 	last := a.lastPID
 	a.watchMu.Unlock()
 
-	if last != 0 && a.aliveAt(last) {
+	if last != 0 && a.currentBackend().AliveAt(last) {
 		return last
 	}
 
-	pid := a.pid()
+	pid := a.currentBackend().PID()
 	a.watchMu.Lock()
 	a.lastPID = pid
 	a.watchMu.Unlock()
@@ -307,6 +295,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	if a.ui.Remote.Host != "" {
+		a.setBackend(disconnectedBackend())
 		a.setRemoteState("connecting", "подключаюсь…")
 		go a.startRemote()
 	} else {
@@ -351,8 +340,14 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.tray != nil {
 		a.tray.Close()
 	}
-	if a.remote != nil {
-		a.remote.Close()
+	a.mu.Lock()
+	remote, follower := a.remote, a.follower
+	a.mu.Unlock()
+	if remote != nil {
+		remote.Close()
+	}
+	if follower != nil {
+		follower.Stop()
 	}
 }
 

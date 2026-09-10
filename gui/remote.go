@@ -43,7 +43,10 @@ func (a *App) startRemote() {
 		a.failRemotePreflight(err)
 		return
 	}
+	a.mu.Lock()
 	a.remote = c
+	a.mu.Unlock()
+	b := &backendFuncs{}
 	a.setRemoteState("online", "SSH · "+r.Dir)
 
 	// Сорвавшаяся SSH-команда — это «не смог спросить», а не «бота нет».
@@ -65,14 +68,14 @@ func (a *App) startRemote() {
 		a.setRemoteState("offline", err.Error())
 		return a.stalePID()
 	}
-	a.pid = func() int {
+	b.pid = func() int {
 		pid, err := c.PID()
 		if err != nil {
 			return offline(err)
 		}
 		return online(pid)
 	}
-	a.aliveAt = func(pid int) bool {
+	b.aliveAt = func(pid int) bool {
 		pids, err := c.PIDs()
 		if err != nil {
 			return offline(err) == pid
@@ -86,23 +89,24 @@ func (a *App) startRemote() {
 		a.setRemoteState("online", "SSH · "+r.Dir)
 		return false
 	}
-	a.start = func() startResult {
+	b.start = func() startResult {
 		r := c.Start()
 		return startResult{PID: r.PID, AlreadyStarting: r.AlreadyStarting, Err: r.Err}
 	}
-	a.stop = c.Stop
-	a.uptime = func(pid int) string {
+	b.stop = c.Stop
+	b.uptime = func(pid int) string {
 		s, err := c.Uptime(pid)
 		if err != nil {
 			return "—"
 		}
 		return s
 	}
-	a.botVersion = func() string {
+	b.botVersion = func() string {
 		v, _ := c.Version()
 		return v
 	}
 
+	a.setBackend(b)
 	go a.runChecklist(c.Preflight())
 	a.loadRemoteHistory()
 	go a.followRemoteLog()
@@ -148,7 +152,9 @@ func (a *App) followRemoteLog() {
 		a.emit("notice", "не удалось начать слежение за логом: "+err.Error())
 		return
 	}
+	a.mu.Lock()
 	a.remoteFollower = h
+	a.mu.Unlock()
 	for raw := range h.Lines {
 		a.feedLine(raw)
 	}

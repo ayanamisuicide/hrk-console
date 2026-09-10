@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -46,6 +47,10 @@ var knownTerminals = []string{
 // Заставка появляется, только если реально есть что делать: молчаливый
 // повторный запуск не должен ничем моргать на экране.
 func EnsureAll(herokuDir string) {
+	if runtime.GOOS != "linux" || !hasAptGet() {
+		fmt.Println("Автонастройка поддерживается только на Linux с apt-get. Используйте --no-setup для диагностики или GUI с SSH-подключением.")
+		return
+	}
 	pending := needHerokuDir(herokuDir) || needPython3() || needVenvModule() ||
 		needVenv(herokuDir) || needTerminal() || needFFmpeg() ||
 		needFirstRun(herokuDir) || len(MissingModuleDeps(herokuDir)) > 0
