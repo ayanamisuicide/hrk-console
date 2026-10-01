@@ -10,9 +10,12 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <span class="eyebrow">CONTROL DECK</span>
-        <h1>HEROKU</h1>
-        <p id="version">версия —</p>
+        <div class="brand-mark" aria-hidden="true"><span></span></div>
+        <div>
+          <span class="eyebrow">CONTROL DECK</span>
+          <h1>HEROKU</h1>
+          <p id="version">версия —</p>
+        </div>
       </div>
 
       <div id="status-card" class="status-card">
@@ -24,9 +27,9 @@
       </div>
 
       <div class="controls">
-        <button data-action="start" class="primary">▶ Запустить</button>
-        <button data-action="restart">↻ Перезапустить</button>
-        <button data-action="stop" class="danger">■ Остановить</button>
+        <button data-action="start" class="primary"><span class="button-icon">▶</span><span>Запустить</span></button>
+        <button data-action="restart"><span class="button-icon">↻</span><span>Перезапустить</span></button>
+        <button data-action="stop" class="danger"><span class="button-icon">■</span><span>Остановить</span></button>
       </div>
 
       <div class="settings">
@@ -44,21 +47,24 @@
       <header>
         <div>
           <span class="eyebrow">LIVE TELEMETRY</span>
-          <h2>Журнал событий</h2>
+          <div class="title-row"><h2>Журнал событий</h2><span class="live-badge"><i></i> LIVE</span></div>
         </div>
         <div class="header-actions">
           <span id="username"></span>
           <a class="admin-link" href="/admin/">Админ</a>
-          <input id="filter" type="search" placeholder="фильтр по тексту">
+          <div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Фильтр по тексту"><kbd>/</kbd></div>
           <button id="clear" class="compact">Очистить экран</button>
           <button id="logout" class="compact">Выйти</button>
         </div>
       </header>
 
       <section id="notice" class="notice" hidden></section>
-      <section id="log" class="log" aria-live="polite"></section>
+      <section class="log-frame">
+        <div class="log-head" aria-hidden="true"><span>ВРЕМЯ</span><span>УРОВЕНЬ</span><span>МОДУЛЬ</span><span>СООБЩЕНИЕ</span></div>
+        <section id="log" class="log" aria-live="polite"></section>
+      </section>
       <footer>
-        <span id="stream-state">● подключение к потоку</span>
+        <span id="stream-state"><i></i> подключение к потоку</span>
         <span id="line-count">0 строк</span>
       </footer>
     </main>

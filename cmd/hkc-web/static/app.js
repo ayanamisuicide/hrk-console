@@ -32,6 +32,18 @@ function showNotice(message, kind = 'ok') {
   showNotice.timer = setTimeout(() => { notice.hidden = true; }, 5000);
 }
 
+document.addEventListener('keydown', (event) => {
+  if (event.key === '/' && document.activeElement !== filterInput && !authDialog.open) {
+    event.preventDefault();
+    filterInput.focus();
+  }
+  if (event.key === 'Escape' && document.activeElement === filterInput) {
+    filterInput.value = '';
+    filterInput.blur();
+    renderLines();
+  }
+});
+
 function renderLines() {
   const query = filterInput.value.trim().toLowerCase();
   const visible = query ? allLines.filter((line) => line.toLowerCase().includes(query)) : allLines;
@@ -120,14 +132,14 @@ function connectStream() {
   if (stream) stream.close();
   stream = new EventSource('/api/events');
   stream.onopen = () => {
-    $('#stream-state').textContent = '● поток подключён';
+    $('#stream-state').innerHTML = '<i></i> поток подключён';
     $('#stream-state').classList.add('online');
   };
   stream.onmessage = (event) => {
     appendLiveLine(JSON.parse(event.data));
   };
   stream.onerror = () => {
-    $('#stream-state').textContent = '● переподключение…';
+    $('#stream-state').innerHTML = '<i></i> переподключение…';
     $('#stream-state').classList.remove('online');
   };
 }
@@ -136,12 +148,14 @@ document.querySelectorAll('[data-action]').forEach((button) => {
   button.addEventListener('click', async () => {
     const action = button.dataset.action;
     button.disabled = true;
+    button.classList.add('loading');
     try {
       const result = await request(`/api/bot/${action}`, {method: 'POST'});
       showNotice(result.message);
     } catch (error) {
       showNotice(error.message, 'error');
     } finally {
+      button.classList.remove('loading');
       setTimeout(refreshStatus, 500);
     }
   });
