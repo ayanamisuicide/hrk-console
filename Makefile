@@ -20,10 +20,14 @@ VERSION := $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 # при старте без исходников невозможен.
 LDFLAGS := -X main.version=$(VERSION) -X heroku-console/preflight.repoRoot=$(CURDIR)
 
-.PHONY: build gui test vet clean install
+.PHONY: build web gui test vet clean install
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/hkc
+
+web:
+	$(GO) build -ldflags "$(LDFLAGS)" -o bin/hkc-web ./cmd/hkc-web
+	@echo "собрано: bin/hkc-web"
 
 # GUI собирается своим тулчейном (wails тянет ещё и сборку фронтенда), а сам
 # он живёт в GOPATH/bin, которого может не быть в PATH — поэтому зовём по

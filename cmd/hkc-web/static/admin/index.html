@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HEROKU · ADMIN</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <div>
+      <span class="eyebrow">CONTROL DECK / ADMIN</span>
+      <h1>Доступ и пользователи</h1>
+    </div>
+    <nav>
+      <a href="/">Консоль</a>
+      <button id="admin-logout" class="compact">Закрыть сессию</button>
+    </nav>
+  </header>
+
+  <main class="admin-main">
+    <section class="summary" aria-label="Сводка">
+      <article><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong></article>
+      <article><span>СЕЙЧАС ОНЛАЙН</span><strong id="online-count">—</strong></article>
+      <article><span>АКТИВНЫЕ ИНВАЙТЫ</span><strong id="invites-count">—</strong></article>
+    </section>
+
+    <section class="bot-deck">
+      <div class="bot-orbit"><span id="bot-orbit-dot"></span></div>
+      <div class="bot-copy">
+        <span class="eyebrow">BOT RUNTIME</span>
+        <h2 id="admin-bot-status">Проверка процесса…</h2>
+        <p id="admin-bot-meta">—</p>
+      </div>
+      <div class="bot-actions">
+        <button data-bot-action="start" class="primary">▶ Запустить</button>
+        <button data-bot-action="restart">↻ Перезапустить</button>
+        <button data-bot-action="stop" class="danger">■ Остановить</button>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">MEMBERS</span>
+          <h2>Пользователи</h2>
+        </div>
+        <span class="muted">Онлайн — активность за последние 30 секунд</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Пользователь</th><th>Статус</th><th>Регистрация</th><th>Последняя активность</th><th></th></tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+      <p id="users-empty" class="empty" hidden>Пользователей пока нет.</p>
+    </section>
+
+    <section class="admin-section">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">INVITATIONS</span>
+          <h2>Инвайты</h2>
+        </div>
+        <form id="invite-form" class="invite-form">
+          <label>Срок, часов <input id="invite-hours" type="number" min="1" max="720" value="24" required></label>
+          <button class="primary" type="submit">Создать инвайт</button>
+        </form>
+      </div>
+      <div id="invites-grid" class="invites-grid"></div>
+      <p id="invites-empty" class="empty" hidden>Активных инвайтов нет.</p>
+    </section>
+
+    <p id="admin-notice" class="notice" hidden></p>
+  </main>
+
+  <dialog id="admin-auth">
+    <form id="admin-auth-form">
+      <span class="eyebrow">ADMIN ACCESS</span>
+      <h2>Административный токен</h2>
+      <p>Введите значение <code>HKC_ADMIN_TOKEN</code>. Оно останется только в памяти этой вкладки.</p>
+      <input id="admin-token" type="password" autocomplete="off" required autofocus>
+      <p id="admin-auth-error" class="auth-error"></p>
+      <button class="primary" type="submit">Открыть панель</button>
+    </form>
+  </dialog>
+
+  <script src="/admin/admin.js" defer></script>
+</body>
+</html>

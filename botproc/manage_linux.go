@@ -57,8 +57,8 @@ func (m *Manager) Start() StartResult {
 		return StartResult{PID: pid}
 	}
 
-	if _, err := os.Stat(filepath.Join(m.HerokuDir, "venv", "bin", "activate")); err != nil {
-		return StartResult{Err: fmt.Errorf("venv не найден: %w", err)}
+	if _, err := os.Stat(filepath.Join(m.HerokuDir, ".venv", "bin", "activate")); err != nil {
+		return StartResult{Err: fmt.Errorf(".venv не найден: %w", err)}
 	}
 
 	out, err := os.Create(m.StartupLog)
@@ -67,7 +67,7 @@ func (m *Manager) Start() StartResult {
 	}
 	defer out.Close()
 
-	cmd := exec.Command("bash", "-c", "source venv/bin/activate && exec python3 -m heroku")
+	cmd := exec.Command("bash", "-c", "source .venv/bin/activate && exec python3 -m heroku --root")
 	cmd.Dir = m.HerokuDir
 	cmd.Stdout = out
 	cmd.Stderr = out

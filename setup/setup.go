@@ -22,7 +22,7 @@ import (
 )
 
 // repoURL — откуда клонировать бота, если каталога ещё нет.
-const repoURL = "https://github.com/coddrago/Heroku"
+const repoURL = "https://github.com/ZetGoHack/Heroku"
 
 // terminalPkg — какой эмулятор ставить, если для режима «два окна» вообще
 // ничего не нашлось. kitty выбран как самый предсказуемо доступный пакет в

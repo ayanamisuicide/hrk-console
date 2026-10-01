@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HEROKU · WEB CONSOLE</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="eyebrow">CONTROL DECK</span>
+        <h1>HEROKU</h1>
+        <p id="version">версия —</p>
+      </div>
+
+      <div id="status-card" class="status-card">
+        <span id="status-dot" class="dot"></span>
+        <div>
+          <strong id="status-label">проверка…</strong>
+          <small id="status-meta">ожидание сервера</small>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button data-action="start" class="primary">▶ Запустить</button>
+        <button data-action="restart">↻ Перезапустить</button>
+        <button data-action="stop" class="danger">■ Остановить</button>
+      </div>
+
+      <div class="settings">
+        <label><input id="autoscroll" type="checkbox" checked> следить за логом</label>
+        <label><input id="timestamps" type="checkbox" checked> показывать время</label>
+      </div>
+
+      <div class="connection">
+        <span>КАТАЛОГ БОТА</span>
+        <code id="heroku-dir">—</code>
+      </div>
+    </aside>
+
+    <main>
+      <header>
+        <div>
+          <span class="eyebrow">LIVE TELEMETRY</span>
+          <h2>Журнал событий</h2>
+        </div>
+        <div class="header-actions">
+          <span id="username"></span>
+          <a class="admin-link" href="/admin/">Админ</a>
+          <input id="filter" type="search" placeholder="фильтр по тексту">
+          <button id="clear" class="compact">Очистить экран</button>
+          <button id="logout" class="compact">Выйти</button>
+        </div>
+      </header>
+
+      <section id="notice" class="notice" hidden></section>
+      <section id="log" class="log" aria-live="polite"></section>
+      <footer>
+        <span id="stream-state">● подключение к потоку</span>
+        <span id="line-count">0 строк</span>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="auth-dialog">
+    <form id="auth-form">
+      <span class="eyebrow">PRIVATE ACCESS</span>
+      <h2 id="auth-title">Вход</h2>
+      <p id="auth-note">Войдите в аккаунт, созданный по инвайту.</p>
+      <input id="invite" name="invite" placeholder="инвайт" autocomplete="off" hidden>
+      <input id="auth-username" name="username" placeholder="логин" autocomplete="username" required>
+      <input id="auth-password" name="password" type="password" placeholder="пароль" autocomplete="current-password" required>
+      <input id="auth-password-confirm" name="password-confirm" type="password" placeholder="повторите пароль" autocomplete="new-password" hidden>
+      <p id="auth-error" class="auth-error"></p>
+      <button class="primary" type="submit">Продолжить</button>
+      <button id="auth-switch" type="button">У меня есть инвайт</button>
+    </form>
+  </dialog>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
