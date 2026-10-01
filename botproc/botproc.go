@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,10 +25,13 @@ const needle = "python3 -m heroku"
 
 // Manager хранит каталог бота и путь к файлам, которые нужны для запуска.
 type Manager struct {
-	HerokuDir  string
-	LogFile    string
-	StartupLog string
-	LockFile   string
+	HerokuDir   string
+	LogFile     string
+	StartupLog  string
+	LockFile    string
+	versionMu   sync.Mutex
+	version     string
+	versionInfo os.FileInfo
 }
 
 func New(herokuDir string) *Manager {
@@ -189,6 +193,11 @@ func (m *Manager) Version() string {
 	if err != nil {
 		return ""
 	}
+	m.versionMu.Lock()
+	defer m.versionMu.Unlock()
+	if m.versionInfo != nil && os.SameFile(m.versionInfo, info) && m.versionInfo.Size() == info.Size() && m.versionInfo.ModTime().Equal(info.ModTime()) {
+		return m.version
+	}
 	start := int64(0)
 	if info.Size() > tail {
 		start = info.Size() - tail
@@ -198,10 +207,13 @@ func (m *Manager) Version() string {
 		return ""
 	}
 	matches := versionRe.FindAllSubmatch(buf, -1)
+	m.versionInfo = info
+	m.version = ""
 	if len(matches) == 0 {
-		return ""
+		return m.version
 	}
-	return string(matches[len(matches)-1][1])
+	m.version = string(matches[len(matches)-1][1])
+	return m.version
 }
 
 // StartResult — итог попытки запуска.

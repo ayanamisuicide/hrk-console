@@ -128,7 +128,14 @@ func main() {
 	log.Printf("hrk-console web: http://%s", addr)
 	log.Printf("каталог бота: %s", herokuDir)
 	log.Printf("база авторизации: %s", authFile)
-	if err := http.ListenAndServe(addr, securityHeaders(mux)); err != nil {
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -150,6 +157,7 @@ func loopbackAddress(addr string) bool {
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")

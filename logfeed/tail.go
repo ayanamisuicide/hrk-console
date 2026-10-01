@@ -2,6 +2,7 @@ package logfeed
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"os"
 	"strings"
@@ -9,11 +10,9 @@ import (
 	"time"
 )
 
-// TailLines возвращает последние max сырых строк файла — используется для
-// стартовой истории (--history N). Файл может быть до 10 МБ (heroku.log
-// ротируется по этому порогу), поэтому хвост держим кольцевым буфером с
-// индексацией по модулю, а не сдвигом массива на каждую строку — иначе
-// на большом файле пересборка стала бы квадратичной.
+// TailLines возвращает последние max сырых строк файла. Идёт от конца
+// файла, поэтому чтение истории и диагностика не сканируют старую часть
+// журнала без необходимости.
 func TailLines(path string, max int) []string {
 	if max <= 0 {
 		return nil
@@ -23,25 +22,54 @@ func TailLines(path string, max int) []string {
 		return nil
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	buf := make([]string, max)
-	n := 0
-	for scanner.Scan() {
-		buf[n%max] = scanner.Text()
-		n++
-	}
-	if n == 0 {
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
 		return nil
 	}
-	if n < max {
-		return buf[:n]
+	// Ищем границу начала нужной строки блоками. Последний '\n' не
+	// считается границей: при завершающем переводе строки он закрывает
+	// последнюю строку, а не добавляет пустую.
+	const chunkSize = 64 * 1024
+	buf := make([]byte, chunkSize)
+	end := info.Size()
+	pos := end
+	boundaries := 0
+	start := int64(0)
+	for pos > 0 {
+		readStart := pos - chunkSize
+		if readStart < 0 {
+			readStart = 0
+		}
+		n, readErr := f.ReadAt(buf[:pos-readStart], readStart)
+		if readErr != nil && readErr != io.EOF {
+			return nil
+		}
+		for i := n - 1; i >= 0; i-- {
+			if buf[i] != '\n' {
+				continue
+			}
+			absolute := readStart + int64(i)
+			if absolute == end-1 {
+				continue
+			}
+			boundaries++
+			if boundaries >= max {
+				start = absolute + 1
+				pos = 0
+				break
+			}
+		}
+		if pos != 0 {
+			pos = readStart
+		}
 	}
-	start := n % max
-	out := make([]string, max)
-	copy(out, buf[start:])
-	copy(out[max-start:], buf[:start])
-	return out
+	scanner := bufio.NewScanner(io.NewSectionReader(f, start, end-start))
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	lines := make([]string, 0, max)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines
 }
 
 // LineCount считает строки файла — нужно, чтобы --from мог начать поток
@@ -52,13 +80,30 @@ func LineCount(path string) int {
 		return 0
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	n := 0
-	for scanner.Scan() {
-		n++
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return 0
 	}
-	return n
+	buffer := make([]byte, 64*1024)
+	var count int
+	var last byte
+	for {
+		n, readErr := f.Read(buffer)
+		if n > 0 {
+			count += bytes.Count(buffer[:n], []byte{'\n'})
+			last = buffer[n-1]
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return 0
+		}
+	}
+	if last != '\n' {
+		count++
+	}
+	return count
 }
 
 // pollInterval — как часто проверяется, не дописали ли в файл. Логи бота

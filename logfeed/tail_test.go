@@ -3,6 +3,7 @@ package logfeed
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -214,5 +215,45 @@ func TestTailLinesAndCount(t *testing.T) {
 	}
 	if got := TailLines(path, 100); len(got) != 5 {
 		t.Errorf("TailLines больше файла: got %d строк, want 5", len(got))
+	}
+}
+
+func TestTailLinesTrailingAndEmptyLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heroku.log")
+	for _, fixture := range []struct {
+		content string
+		max     int
+		want    []string
+	}{
+		{"one\ntwo\nthree", 2, []string{"two", "three"}},
+		{"one\ntwo\nthree\n", 1, []string{"three"}},
+		{"one\n\n", 1, []string{""}},
+		{"one\n", 10, []string{"one"}},
+		{"", 10, nil},
+	} {
+		if err := os.WriteFile(path, []byte(fixture.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := TailLines(path, fixture.max)
+		wantCount := 0
+		if fixture.content != "" {
+			wantCount = strings.Count(fixture.content, "\n")
+			if !strings.HasSuffix(fixture.content, "\n") {
+				wantCount++
+			}
+		}
+		if count := LineCount(path); count != wantCount {
+			t.Errorf("LineCount(%q) = %d, want %d", fixture.content, count, wantCount)
+		}
+		if len(got) != len(fixture.want) {
+			t.Errorf("TailLines(%q, %d) = %q, want %q", fixture.content, fixture.max, got, fixture.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != fixture.want[i] {
+				t.Errorf("TailLines(%q, %d) = %q, want %q", fixture.content, fixture.max, got, fixture.want)
+				break
+			}
+		}
 	}
 }
