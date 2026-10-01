@@ -1,5 +1,15 @@
 const $ = (selector) => document.querySelector(selector);
 const authDialog = $('#admin-auth');
+function animateValue(element, value) {
+  const next = String(value);
+  if (!element || element.textContent === next) return;
+  element.textContent = next;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  element.classList.remove('value-change');
+  void element.offsetWidth;
+  element.classList.add('value-change');
+  element.addEventListener('animationend', () => element.classList.remove('value-change'), {once: true});
+}
 document.documentElement.dataset.theme = localStorage.getItem('hkc-theme') || 'dark';
 $('#admin-theme').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -134,7 +144,7 @@ function renderInvites(invites) {
 }
 
 function renderBot(bot) {
-  $('#admin-bot-status').textContent = bot.running ? 'Heroku работает' : 'Heroku остановлен';
+  animateValue($('#admin-bot-status'), bot.running ? 'Heroku работает' : 'Heroku остановлен');
   $('#admin-bot-meta').textContent = bot.running ? `PID ${bot.pid} · ${bot.uptime} · версия ${bot.version || '—'}` : bot.herokuDir;
   $('#bot-orbit-dot').classList.toggle('online', bot.running);
   document.querySelector('[data-bot-action="start"]').disabled = bot.running;
@@ -211,9 +221,9 @@ async function refresh() {
   }
   try {
     const [data, audit, backups, config, tokens] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups'), adminRequest('/api/admin/config'), adminRequest('/api/admin/tokens')]);
-    $('#users-count').textContent = data.users.length;
-    $('#online-count').textContent = data.users.filter((user) => user.online).length;
-    $('#invites-count').textContent = data.invites.length;
+    animateValue($('#users-count'), data.users.length);
+    animateValue($('#online-count'), data.users.filter((user) => user.online).length);
+    animateValue($('#invites-count'), data.invites.length);
     renderBot(data.bot);
     renderUsers(data.users);
     renderInvites(data.invites);

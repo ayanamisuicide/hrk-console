@@ -18,6 +18,16 @@ let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
 let savedFilters = {};
+function animateValue(element, value) {
+  const next = String(value);
+  if (!element || element.textContent === next) return;
+  element.textContent = next;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  element.classList.remove('value-change');
+  void element.offsetWidth;
+  element.classList.add('value-change');
+  element.addEventListener('animationend', () => element.classList.remove('value-change'), {once: true});
+}
 try {
   const stored = JSON.parse(localStorage.getItem('hkc-log-presets') || '{}');
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) savedFilters = stored;
@@ -62,7 +72,7 @@ function setView(view) {
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  $('#view-title').textContent = {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг'}[view];
+  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг'}[view]);
   localStorage.setItem('hkc-view', view);
 }
 
@@ -230,7 +240,7 @@ async function refreshStatus() {
     lastStatus = status;
     $('#status-dot').classList.toggle('online', status.running);
     $('#status-card').classList.toggle('online', status.running);
-    $('#status-label').textContent = status.running ? 'бот запущен' : 'бот остановлен';
+    animateValue($('#status-label'), status.running ? 'бот запущен' : 'бот остановлен');
     $('#status-meta').textContent = status.running ? `PID ${status.pid} · ${status.uptime}` : 'процесс не найден';
     $('#version').textContent = status.version ? `версия ${status.version}` : 'версия не определена';
     $('#heroku-dir').textContent = status.herokuDir;
@@ -238,7 +248,7 @@ async function refreshStatus() {
     document.querySelector('[data-action="stop"]').disabled = !status.running;
     document.querySelector('[data-action="restart"]').disabled = !status.running;
     if (!status.running && status.startupLog) $('#status-meta').title = status.startupLog;
-    $('#metric-process').textContent = status.running ? 'Работает' : 'Остановлен';
+    animateValue($('#metric-process'), status.running ? 'Работает' : 'Остановлен');
     $('#metric-process-meta').textContent = status.running ? `PID ${status.pid} · ${status.uptime}` : 'Можно запустить из панели';
     $('#service-description').textContent = status.running ? `Процесс активен ${status.uptime}` : 'Бот сейчас не запущен';
     $('#service-version').textContent = status.version || 'Не определена';
@@ -258,7 +268,24 @@ function renderChart(points) {
   if (values.length < 2) { $('#memory-area').setAttribute('d', ''); $('#memory-line').setAttribute('d', ''); return; }
   const max = Math.max(...values.map((point) => point.rssBytes), 1) * 1.15;
   const coordinates = values.map((point, index) => `${(index / (values.length - 1) * 800).toFixed(1)},${(205 - point.rssBytes / max * 180).toFixed(1)}`);
-  $('#memory-line').setAttribute('d', `M${coordinates.join(' L')}`);
+  const line = $('#memory-line');
+  const nextLine = `M${coordinates.join(' L')}`;
+  if (line.getAttribute('d') !== nextLine) {
+    line.setAttribute('d', nextLine);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const length = line.getTotalLength();
+      line.style.strokeDasharray = `${length}`;
+      line.style.strokeDashoffset = `${length}`;
+      line.classList.remove('chart-drawing');
+      void line.getBoundingClientRect();
+      line.classList.add('chart-drawing');
+      line.addEventListener('animationend', () => {
+        line.classList.remove('chart-drawing');
+        line.style.strokeDasharray = 'none';
+        line.style.strokeDashoffset = '0';
+      }, {once: true});
+    }
+  }
   $('#memory-area').setAttribute('d', `M${coordinates.join(' L')} L800,220 L0,220 Z`);
 }
 
@@ -266,13 +293,13 @@ async function refreshInsights() {
   try {
     const data = await request('/api/insights');
     lastInsights = data;
-    $('#metric-memory').textContent = formatMemory(data.rssBytes);
-    $('#metric-errors').textContent = data.logCounts.error;
-    $('#metric-warnings').textContent = data.logCounts.warning;
-    $('#monitor-status').textContent = data.running ? 'Работает' : 'Остановлен';
-    $('#monitor-memory').textContent = formatMemory(data.rssBytes);
-    $('#monitor-errors').textContent = data.logCounts.error;
-    $('#monitor-lines').textContent = data.sampledLines;
+    animateValue($('#metric-memory'), formatMemory(data.rssBytes));
+    animateValue($('#metric-errors'), data.logCounts.error);
+    animateValue($('#metric-warnings'), data.logCounts.warning);
+    animateValue($('#monitor-status'), data.running ? 'Работает' : 'Остановлен');
+    animateValue($('#monitor-memory'), formatMemory(data.rssBytes));
+    animateValue($('#monitor-errors'), data.logCounts.error);
+    animateValue($('#monitor-lines'), data.sampledLines);
     $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
     renderChart(data.points || []);
   } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
