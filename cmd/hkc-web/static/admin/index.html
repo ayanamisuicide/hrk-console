@@ -12,18 +12,20 @@
     <div>
       <span class="eyebrow">CONTROL DECK / ADMIN</span>
       <h1>Доступ и пользователи</h1>
+      <p class="admin-subtitle">Управление доступом, сессиями и процессом Heroku</p>
     </div>
     <nav>
       <a href="/">Консоль</a>
+      <button id="admin-refresh" class="compact">↻ Обновить</button>
       <button id="admin-logout" class="compact">Закрыть сессию</button>
     </nav>
   </header>
 
   <main class="admin-main">
     <section class="summary" aria-label="Сводка">
-      <article><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong></article>
-      <article><span>СЕЙЧАС ОНЛАЙН</span><strong id="online-count">—</strong></article>
-      <article><span>АКТИВНЫЕ ИНВАЙТЫ</span><strong id="invites-count">—</strong></article>
+      <article><i>01</i><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong><small>зарегистрировано</small></article>
+      <article><i>02</i><span>СЕЙЧАС ОНЛАЙН</span><strong id="online-count">—</strong><small>за последние 30 секунд</small></article>
+      <article><i>03</i><span>АКТИВНЫЕ ИНВАЙТЫ</span><strong id="invites-count">—</strong><small>готовы к использованию</small></article>
     </section>
 
     <section class="bot-deck">
@@ -83,6 +85,18 @@
       <input id="admin-token" type="password" autocomplete="off" required autofocus>
       <p id="admin-auth-error" class="auth-error"></p>
       <button class="primary" type="submit">Открыть панель</button>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="confirm-dialog">
+    <form method="dialog">
+      <span class="eyebrow">CONFIRM ACTION</span>
+      <h2 id="confirm-title">Подтвердите действие</h2>
+      <p id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button value="cancel">Отмена</button>
+        <button id="confirm-accept" value="confirm" class="danger">Подтвердить</button>
+      </div>
     </form>
   </dialog>
 

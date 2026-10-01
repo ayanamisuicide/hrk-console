@@ -59,6 +59,15 @@
       </header>
 
       <section id="notice" class="notice" hidden></section>
+      <section class="log-toolbar" aria-label="Фильтры журнала">
+        <div class="level-filters" role="group" aria-label="Уровень событий">
+          <button class="filter-chip active" data-level="ALL">Все</button>
+          <button class="filter-chip" data-level="INFO">Info</button>
+          <button class="filter-chip warning" data-level="WARNING">Warning</button>
+          <button class="filter-chip error" data-level="ERROR">Error</button>
+        </div>
+        <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
+      </section>
       <section class="log-frame">
         <div class="log-head" aria-hidden="true"><span>ВРЕМЯ</span><span>УРОВЕНЬ</span><span>МОДУЛЬ</span><span>СООБЩЕНИЕ</span></div>
         <section id="log" class="log" aria-live="polite"></section>

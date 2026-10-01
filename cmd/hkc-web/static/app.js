@@ -11,6 +11,19 @@ let authMode = initialInvite ? 'register' : 'login';
 let authenticated = false;
 let allLines = [];
 let stream;
+let activeLevel = 'ALL';
+let streamPaused = false;
+let pausedLines = [];
+
+function lineLevel(raw) {
+  return raw.match(/\[([A-Z]+)\]/)?.[1] || 'OTHER';
+}
+
+function matchesLevel(raw) {
+  if (activeLevel === 'ALL') return true;
+  const level = lineLevel(raw);
+  return activeLevel === 'ERROR' ? level === 'ERROR' || level === 'CRITICAL' : level === activeLevel;
+}
 
 async function request(path, options = {}) {
   const response = await fetch(path, options);
@@ -46,7 +59,7 @@ document.addEventListener('keydown', (event) => {
 
 function renderLines() {
   const query = filterInput.value.trim().toLowerCase();
-  const visible = query ? allLines.filter((line) => line.toLowerCase().includes(query)) : allLines;
+  const visible = allLines.filter((line) => matchesLevel(line) && (!query || line.toLowerCase().includes(query)));
   const fragment = document.createDocumentFragment();
   for (const raw of visible) fragment.append(createLine(raw));
   logEl.replaceChildren(fragment);
@@ -85,6 +98,11 @@ function createLine(raw, live = false) {
 }
 
 function appendLiveLine(raw) {
+  if (streamPaused) {
+    pausedLines.push(raw);
+    $('#pause-stream').innerHTML = `<span>▶</span> Продолжить · ${pausedLines.length}`;
+    return;
+  }
   allLines.push(raw);
   let trimmed = false;
   if (allLines.length > maxLines) {
@@ -97,11 +115,31 @@ function appendLiveLine(raw) {
     return;
   }
   if (trimmed && logEl.firstChild) logEl.firstChild.remove();
-  if (query && !raw.toLowerCase().includes(query)) return;
+  if (!matchesLevel(raw) || (query && !raw.toLowerCase().includes(query))) return;
   logEl.append(createLine(raw, true));
   $('#line-count').textContent = `${logEl.childElementCount} строк`;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
 }
+
+document.querySelectorAll('.filter-chip').forEach((button) => {
+  button.addEventListener('click', () => {
+    activeLevel = button.dataset.level;
+    document.querySelectorAll('.filter-chip').forEach((item) => item.classList.toggle('active', item === button));
+    renderLines();
+  });
+});
+
+$('#pause-stream').addEventListener('click', () => {
+  streamPaused = !streamPaused;
+  $('#pause-stream').classList.toggle('active', streamPaused);
+  if (!streamPaused) {
+    const queued = pausedLines.splice(0);
+    $('#pause-stream').innerHTML = '<span>Ⅱ</span> Пауза';
+    queued.forEach(appendLiveLine);
+  } else {
+    $('#pause-stream').innerHTML = '<span>▶</span> Продолжить';
+  }
+});
 
 async function refreshStatus() {
   try {

@@ -3,6 +3,16 @@ const authDialog = $('#admin-auth');
 let adminToken = sessionStorage.getItem('hkc-admin-token') || '';
 let refreshTimer;
 
+function confirmAction(title, message) {
+  const dialog = $('#confirm-dialog');
+  $('#confirm-title').textContent = title;
+  $('#confirm-message').textContent = message;
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), {once: true});
+  });
+}
+
 async function adminRequest(path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('Authorization', `Bearer ${adminToken}`);
@@ -142,7 +152,7 @@ document.querySelectorAll('[data-bot-action]').forEach((button) => {
 });
 
 async function deleteUser(username) {
-  if (!confirm(`Удалить пользователя ${username}? Все его сессии завершатся.`)) return;
+  if (!await confirmAction('Удалить пользователя?', `${username} потеряет доступ, а все активные сессии завершатся.`)) return;
   try {
     await adminRequest(`/api/admin/users/${encodeURIComponent(username)}`, {method: 'DELETE'});
     showNotice(`Пользователь ${username} удалён`);
@@ -153,7 +163,7 @@ async function deleteUser(username) {
 }
 
 async function revokeInvite(token) {
-  if (!confirm('Отозвать этот инвайт?')) return;
+  if (!await confirmAction('Отозвать инвайт?', 'Ссылка регистрации сразу перестанет работать.')) return;
   try {
     await adminRequest(`/api/admin/invites/${encodeURIComponent(token)}`, {method: 'DELETE'});
     showNotice('Инвайт отозван');
@@ -195,6 +205,15 @@ $('#admin-logout').addEventListener('click', () => {
   adminToken = '';
   clearInterval(refreshTimer);
   openAuth();
+});
+
+$('#admin-refresh').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = 'Обновление…';
+  await refresh();
+  button.textContent = '↻ Обновить';
+  button.disabled = false;
 });
 
 refresh();
