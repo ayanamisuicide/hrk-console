@@ -43,6 +43,33 @@
       </div>
     </section>
 
+    <section class="admin-section config-section">
+      <div class="section-heading"><div><span class="eyebrow">HEROKU CONFIG</span><h2>Настройки бота</h2></div><span class="muted">Секреты не отображаются после сохранения</span></div>
+      <form id="config-form" class="config-form">
+        <p>Новые значения записываются в <code>config.json</code>. Пустые поля останутся без изменений. Для применения перезапустите бота.</p>
+        <div class="config-grid">
+          <label>Telegram API ID <span data-config-state="api_id">—</span><input name="api_id" inputmode="numeric" autocomplete="off" placeholder="Введите новый ID"><button type="button" data-delete-config="api_id" class="config-delete">Удалить значение</button></label>
+          <label>Telegram API hash <span data-config-state="api_hash">—</span><input name="api_hash" type="password" autocomplete="new-password" placeholder="32 символа"><button type="button" data-delete-config="api_hash" class="config-delete">Удалить значение</button></label>
+          <label>Redis URL <span data-config-state="redis_uri">—</span><input name="redis_uri" type="password" autocomplete="new-password" placeholder="redis:// или rediss://"><button type="button" data-delete-config="redis_uri" class="config-delete">Удалить значение</button></label>
+          <label>Database URL <span data-config-state="db_uri">—</span><input name="db_uri" type="password" autocomplete="new-password" placeholder="Адрес базы данных"><button type="button" data-delete-config="db_uri" class="config-delete">Удалить значение</button></label>
+          <label>Имя приложения <span data-config-state="app_name">—</span><input name="app_name" autocomplete="off" placeholder="Имя Heroku"><button type="button" data-delete-config="app_name" class="config-delete">Удалить значение</button></label>
+        </div>
+        <div class="config-actions"><button class="primary" type="submit">Сохранить изменения</button><span id="config-path" class="muted"></span></div>
+      </form>
+    </section>
+
+    <section class="admin-section console-section">
+      <div class="section-heading"><div><span class="eyebrow">DIAGNOSTIC CONSOLE</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
+      <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
+      <pre id="diagnostic-output">Выберите проверку выше.</pre>
+    </section>
+
+    <section class="admin-section tokens-section">
+      <div class="section-heading"><div><span class="eyebrow">AUTOMATION</span><h2>API-токены Heroku</h2></div><span class="muted">Для скриптов и интеграций</span></div>
+      <form id="token-form" class="token-form"><label>Название <input id="token-label" maxlength="48" placeholder="Например, домашний сервер" required></label><label>Право <select id="token-scope"><option value="read">Только чтение</option><option value="control">Управление ботом</option></select></label><button type="submit" class="primary">Создать токен</button></form>
+      <div id="token-list" class="token-list"></div><p id="tokens-empty" class="empty" hidden>API-токенов пока нет.</p>
+    </section>
+
     <section class="admin-section">
       <div class="section-heading">
         <div>
@@ -114,6 +141,8 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="token-dialog" class="token-dialog"><div class="token-dialog-content"><span class="eyebrow">NEW API TOKEN</span><h2>Сохраните токен сейчас</h2><p>После закрытия окна значение больше не будет показано.</p><code id="new-api-token"></code><div><button id="copy-api-token" class="primary">Копировать</button><button id="close-api-token">Закрыть</button></div></div></dialog>
 
   <script src="/admin/admin.js" defer></script>
 </body>

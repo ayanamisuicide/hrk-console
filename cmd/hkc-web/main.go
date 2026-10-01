@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"heroku-console/botproc"
@@ -31,6 +32,7 @@ type server struct {
 	audit      *auditStore
 	metrics    *metricStore
 	notifier   *stateNotifier
+	configMu   sync.Mutex
 }
 
 type statusResponse struct {
@@ -94,6 +96,16 @@ func main() {
 	mux.HandleFunc("GET /api/admin/backups", s.listBackups)
 	mux.HandleFunc("POST /api/admin/backups", s.createBackup)
 	mux.HandleFunc("POST /api/admin/backups/{name}/restore", s.restoreBackup)
+	mux.HandleFunc("GET /api/admin/config", s.adminConfig)
+	mux.HandleFunc("PATCH /api/admin/config", s.updateConfig)
+	mux.HandleFunc("DELETE /api/admin/config/{key}", s.deleteConfigKey)
+	mux.HandleFunc("POST /api/admin/diagnostics/{command}", s.adminDiagnosticCommand)
+	mux.HandleFunc("GET /api/admin/tokens", s.listAPITokens)
+	mux.HandleFunc("POST /api/admin/tokens", s.createAPIToken)
+	mux.HandleFunc("DELETE /api/admin/tokens/{id}", s.revokeAPIToken)
+	mux.HandleFunc("GET /api/v1/status", s.apiAuthorize("read", s.status))
+	mux.HandleFunc("GET /api/v1/logs", s.apiAuthorize("read", s.logs))
+	mux.HandleFunc("POST /api/v1/bot/{action}", s.apiAuthorize("control", s.action))
 	mux.HandleFunc("POST /api/admin/invites", s.createInvite)
 	mux.HandleFunc("POST /api/admin/bot/{action}", s.adminBotAction)
 	mux.HandleFunc("DELETE /api/admin/invites/{token}", s.revokeInvite)
@@ -479,6 +491,9 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 	}
 	if status == http.StatusOK {
 		actor := "user"
+		if apiActor, ok := r.Context().Value(apiActorKey{}).(string); ok {
+			actor = apiActor
+		}
 		if cookie, err := r.Cookie(sessionCookie); err == nil {
 			if username, ok := s.sessions.get(cookie.Value); ok {
 				actor = username

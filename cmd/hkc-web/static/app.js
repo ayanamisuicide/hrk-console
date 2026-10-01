@@ -17,6 +17,45 @@ let pausedLines = [];
 let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
+let savedFilters = {};
+try {
+  const stored = JSON.parse(localStorage.getItem('hkc-log-presets') || '{}');
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) savedFilters = stored;
+} catch (_) {
+  localStorage.removeItem('hkc-log-presets');
+}
+
+function lineModule(raw) { return raw.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[A-Z]+\] ([^:]+):/)?.[1] || ''; }
+function matchesAdvanced(raw) {
+  const module = $('#module-filter').value;
+  if (module && lineModule(raw) !== module) return false;
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+  const from = $('#time-from').value;
+  const to = $('#time-to').value;
+  if (from || to) {
+    if (!match) return false;
+    const stamp = `${match[1]}T${match[2]}`;
+    if (from && stamp < from) return false;
+    if (to && stamp > `${to}:59`) return false;
+  }
+  return true;
+}
+
+function refreshModuleOptions() {
+  const select = $('#module-filter'); const selected = select.value;
+  const modules = [...new Set(allLines.map(lineModule).filter(Boolean))].sort();
+  select.replaceChildren(new Option('Все модули', ''));
+  for (const module of modules) select.add(new Option(module, module));
+  if (modules.includes(selected)) select.value = selected;
+}
+
+function refreshPresetOptions() {
+  const select = $('#preset-select'); const selected = select.value;
+  select.replaceChildren(new Option('Выберите', ''));
+  for (const name of Object.keys(savedFilters).sort()) select.add(new Option(name, name));
+  if (savedFilters[selected]) select.value = selected;
+}
+refreshPresetOptions();
 
 function setView(view) {
   if (!['overview', 'logs', 'monitor'].includes(view)) return;
@@ -86,7 +125,7 @@ document.addEventListener('keydown', (event) => {
 
 function renderLines() {
   const query = filterInput.value.trim().toLowerCase();
-  const visible = allLines.filter((line) => matchesLevel(line) && (!query || line.toLowerCase().includes(query)));
+  const visible = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
   const fragment = document.createDocumentFragment();
   for (const raw of visible) fragment.append(createLine(raw));
   logEl.replaceChildren(fragment);
@@ -145,6 +184,8 @@ function appendLiveLine(raw) {
     return;
   }
   allLines.push(raw);
+  const module = lineModule(raw);
+  if (module && ![...$('#module-filter').options].some((option) => option.value === module)) $('#module-filter').add(new Option(module, module));
   renderRecentEvents();
   let trimmed = false;
   if (allLines.length > maxLines) {
@@ -157,7 +198,7 @@ function appendLiveLine(raw) {
     return;
   }
   if (trimmed && logEl.firstChild) logEl.firstChild.remove();
-  if (!matchesLevel(raw) || (query && !raw.toLowerCase().includes(query))) return;
+  if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query))) return;
   logEl.append(createLine(raw, true));
   $('#line-count').textContent = `${logEl.childElementCount} строк`;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
@@ -255,9 +296,33 @@ $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
 $('#metrics-refresh').addEventListener('click', refreshInsights);
 $('#export-logs').addEventListener('click', () => {
-  const blob = new Blob([allLines.join('\n') + '\n'], {type: 'text/plain;charset=utf-8'});
+  const query = filterInput.value.trim().toLowerCase();
+  const lines = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
+  const blob = new Blob([lines.join('\n') + '\n'], {type: 'text/plain;charset=utf-8'});
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `heroku-log-${new Date().toISOString().slice(0, 10)}.txt`; link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+});
+
+for (const selector of ['#module-filter', '#time-from', '#time-to']) document.querySelector(selector).addEventListener('change', renderLines);
+$('#preset-save').addEventListener('click', () => {
+  const name = $('#preset-name').value.trim();
+  if (!name) { showNotice('Введите имя фильтра', 'error'); return; }
+  savedFilters[name] = {query: filterInput.value, level: activeLevel, module: $('#module-filter').value, from: $('#time-from').value, to: $('#time-to').value};
+  localStorage.setItem('hkc-log-presets', JSON.stringify(savedFilters));
+  refreshPresetOptions(); $('#preset-select').value = name; $('#preset-name').value = '';
+  showNotice(`Фильтр «${name}» сохранён`);
+});
+$('#preset-select').addEventListener('change', () => {
+  const preset = savedFilters[$('#preset-select').value]; if (!preset) return;
+  filterInput.value = preset.query || ''; activeLevel = preset.level || 'ALL';
+  $('#module-filter').value = preset.module || ''; $('#time-from').value = preset.from || ''; $('#time-to').value = preset.to || '';
+  document.querySelectorAll('.filter-chip').forEach((item) => item.classList.toggle('active', item.dataset.level === activeLevel));
+  renderLines();
+});
+$('#preset-delete').addEventListener('click', () => {
+  const name = $('#preset-select').value; if (!name) return;
+  delete savedFilters[name]; localStorage.setItem('hkc-log-presets', JSON.stringify(savedFilters)); refreshPresetOptions();
+  showNotice(`Фильтр «${name}» удалён`);
 });
 
 const commands = [
@@ -292,6 +357,7 @@ $('#command-query').addEventListener('keydown', (event) => {
 async function loadHistory() {
   const data = await request('/api/logs?limit=800');
   allLines = data.lines || [];
+  refreshModuleOptions();
   renderLines();
 }
 

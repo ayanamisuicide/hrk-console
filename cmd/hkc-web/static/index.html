@@ -88,6 +88,7 @@
       </section>
       <section id="logs-view" class="workspace-view logs-view" hidden>
       <div class="logs-actions"><div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Поиск по журналу"><kbd>/</kbd></div><button id="export-logs" class="compact">↓ Экспорт</button><button id="clear" class="compact">Очистить экран</button></div>
+      <div class="log-advanced"><label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label><label>С <input id="time-from" type="datetime-local"></label><label>По <input id="time-to" type="datetime-local"></label><label>Пресет <select id="preset-select"><option value="">Выберите</option></select></label><input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра"><button id="preset-save" class="compact">Сохранить</button><button id="preset-delete" class="compact" title="Удалить выбранный пресет">×</button></div>
       <section class="log-toolbar" aria-label="Фильтры журнала">
         <div class="level-filters" role="group" aria-label="Уровень событий">
           <button class="filter-chip active" data-level="ALL">Все</button>

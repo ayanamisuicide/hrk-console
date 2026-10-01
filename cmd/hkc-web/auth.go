@@ -36,8 +36,9 @@ type inviteRecord struct {
 }
 
 type authData struct {
-	Users   map[string]userRecord   `json:"users"`
-	Invites map[string]inviteRecord `json:"invites"`
+	Users   map[string]userRecord     `json:"users"`
+	Invites map[string]inviteRecord   `json:"invites"`
+	Tokens  map[string]apiTokenRecord `json:"tokens,omitempty"`
 }
 
 type authStore struct {
@@ -50,6 +51,7 @@ func openAuthStore(path string) (*authStore, error) {
 	s := &authStore{path: path, data: authData{
 		Users:   make(map[string]userRecord),
 		Invites: make(map[string]inviteRecord),
+		Tokens:  make(map[string]apiTokenRecord),
 	}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -66,6 +68,9 @@ func openAuthStore(path string) (*authStore, error) {
 	}
 	if s.data.Invites == nil {
 		s.data.Invites = make(map[string]inviteRecord)
+	}
+	if s.data.Tokens == nil {
+		s.data.Tokens = make(map[string]apiTokenRecord)
 	}
 	return s, nil
 }

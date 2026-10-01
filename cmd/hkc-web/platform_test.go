@@ -1,13 +1,91 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestHerokuConfigMasksSecretsAndPreservesOtherKeys(t *testing.T) {
+	s := newTestServer(t)
+	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.configPath(), []byte(`{"custom_setting":"keep"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/config", bytes.NewBufferString(`{"api_id":"12345","api_hash":"0123456789abcdef0123456789abcdef"}`))
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	response := httptest.NewRecorder()
+	s.updateConfig(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", response.Code, response.Body.String())
+	}
+	data, err := os.ReadFile(s.configPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values map[string]any
+	if err := json.Unmarshal(data, &values); err != nil {
+		t.Fatal(err)
+	}
+	if values["api_id"] != float64(12345) || values["custom_setting"] != "keep" {
+		t.Fatalf("config changed unexpectedly: %v", values)
+	}
+	get := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	get.Header.Set("Authorization", "Bearer admin-secret")
+	masked := httptest.NewRecorder()
+	s.adminConfig(masked, get)
+	if masked.Code != http.StatusOK || bytes.Contains(masked.Body.Bytes(), []byte("0123456789abcdef")) || !bytes.Contains(masked.Body.Bytes(), []byte(`"api_hash":true`)) {
+		t.Fatalf("config response leaked data: %s", masked.Body.String())
+	}
+}
+
+func TestDiagnosticCommandRejectsUnknownAction(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/admin/diagnostics/arbitrary", nil)
+	r.SetPathValue("command", "arbitrary")
+	r.Header.Set("Authorization", "Bearer admin-secret")
+	w := httptest.NewRecorder()
+	s.adminDiagnosticCommand(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unexpected code: %d", w.Code)
+	}
+}
+
+func TestAPITokenScopeAndRevocation(t *testing.T) {
+	s := newTestServer(t)
+	view, raw, err := s.auth.createAPIToken("monitor", "read")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(raw, "hkc.") {
+		t.Fatal("invalid token format")
+	}
+	if label, ok := s.auth.useAPIToken(raw, "read"); !ok || label != "monitor" {
+		t.Fatal("read token rejected")
+	}
+	if _, ok := s.auth.useAPIToken(raw, "control"); ok {
+		t.Fatal("read token gained control")
+	}
+	list := s.auth.listAPITokens()
+	encoded, _ := json.Marshal(list)
+	if len(list) != 1 || bytes.Contains(encoded, []byte(raw)) {
+		t.Fatal("token list leaked secret")
+	}
+	if ok, err := s.auth.revokeAPIToken(view.ID); !ok || err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if _, ok := s.auth.useAPIToken(raw, "read"); ok {
+		t.Fatal("revoked token still works")
+	}
+}
 
 func TestViewerCannotControlBot(t *testing.T) {
 	s := newTestServer(t)
