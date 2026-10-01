@@ -1,0 +1,92 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"sync"
+	"time"
+
+	"heroku-console/botproc"
+)
+
+type stateNotifier struct {
+	endpoint    string
+	client      *http.Client
+	mu          sync.Mutex
+	last        bool
+	initialized bool
+}
+
+func (n *stateNotifier) observe(running bool) {
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	changed := n.initialized && n.last != running
+	n.last, n.initialized = running, true
+	n.mu.Unlock()
+	if changed {
+		go n.send(context.Background(), running)
+	}
+}
+
+func newStateNotifier(raw string) *stateNotifier {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		log.Print("HKC_WEBHOOK_URL должен быть HTTPS URL без логина в адресе; уведомления отключены")
+		return nil
+	}
+	return &stateNotifier{endpoint: raw, client: &http.Client{Timeout: 5 * time.Second}}
+}
+
+func (n *stateNotifier) send(ctx context.Context, running bool) {
+	if n == nil {
+		return
+	}
+	status := "stopped"
+	if running {
+		status = "running"
+	}
+	payload, _ := json.Marshal(map[string]any{"service": "Heroku bot", "status": status, "time": time.Now().UTC()})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := n.client.Do(req)
+	if err != nil {
+		log.Printf("webhook: %v", err)
+		return
+	}
+	res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		log.Printf("webhook: HTTP %d", res.StatusCode)
+	}
+}
+
+func watchBotState(ctx context.Context, notifier *stateNotifier) {
+	if notifier == nil {
+		return
+	}
+	notifier.observe(botproc.PID() != 0)
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			notifier.observe(botproc.PID() != 0)
+		}
+	}
+}
+
+func configuredWebhook() *stateNotifier { return newStateNotifier(os.Getenv("HKC_WEBHOOK_URL")) }

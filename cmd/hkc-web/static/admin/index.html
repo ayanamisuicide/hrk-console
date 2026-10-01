@@ -16,6 +16,7 @@
     </div>
     <nav>
       <a href="/">Консоль</a>
+      <button id="admin-theme" class="compact">◐ Тема</button>
       <button id="admin-refresh" class="compact">↻ Обновить</button>
       <button id="admin-logout" class="compact">Закрыть сессию</button>
     </nav>
@@ -52,7 +53,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Пользователь</th><th>Статус</th><th>Регистрация</th><th>Последняя активность</th><th></th></tr></thead>
+          <thead><tr><th>Пользователь</th><th>Роль</th><th>Статус</th><th>Регистрация</th><th>Последняя активность</th><th></th></tr></thead>
           <tbody id="users-body"></tbody>
         </table>
       </div>
@@ -67,11 +68,25 @@
         </div>
         <form id="invite-form" class="invite-form">
           <label>Срок, часов <input id="invite-hours" type="number" min="1" max="720" value="24" required></label>
+          <label>Роль <select id="invite-role"><option value="operator">Оператор</option><option value="viewer">Наблюдатель</option></select></label>
           <button class="primary" type="submit">Создать инвайт</button>
         </form>
       </div>
       <div id="invites-grid" class="invites-grid"></div>
       <p id="invites-empty" class="empty" hidden>Активных инвайтов нет.</p>
+    </section>
+
+    <section class="admin-section audit-section">
+      <div class="section-heading"><div><span class="eyebrow">AUDIT TRAIL</span><h2>История действий</h2></div><span class="muted">Последние 100 событий · сохраняются на сервере</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Время</th><th>Кто</th><th>Действие</th><th>Описание</th><th>IP</th></tr></thead><tbody id="audit-body"></tbody></table></div>
+      <p id="audit-empty" class="empty" hidden>Действий пока нет.</p>
+    </section>
+
+    <section class="admin-section backup-section">
+      <div class="section-heading"><div><span class="eyebrow">RECOVERY</span><h2>Резервные копии доступа</h2></div><button id="create-backup" class="primary">Создать копию</button></div>
+      <p class="backup-note">Копии сохраняются на сервере рядом с базой авторизации. При восстановлении текущая база сначала сохраняется автоматически.</p>
+      <div id="backup-list" class="backup-list"></div>
+      <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
     </section>
 
     <p id="admin-notice" class="notice" hidden></p>

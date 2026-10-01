@@ -39,6 +39,17 @@ func New(herokuDir string) *Manager {
 	}
 }
 
+// VirtualEnv finds the Python environment used by supported Heroku installs.
+func (m *Manager) VirtualEnv() string {
+	for _, name := range []string{".venv", "venv"} {
+		path := filepath.Join(m.HerokuDir, name)
+		if _, err := os.Stat(filepath.Join(path, "bin", "python3")); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 // PIDs возвращает все pid процессов бота (обычно один, но не гарантировано).
 func PIDs() []int {
 	entries, err := os.ReadDir("/proc")

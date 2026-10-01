@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,9 @@ type server struct {
 	auth       *authStore
 	sessions   *sessionStore
 	adminToken string
+	audit      *auditStore
+	metrics    *metricStore
+	notifier   *stateNotifier
 }
 
 type statusResponse struct {
@@ -73,21 +77,35 @@ func main() {
 		log.Print("задайте HKC_ADMIN_TOKEN в окружении для постоянного административного доступа")
 	}
 
-	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken}
+	notifier := configuredWebhook()
+	if notifier != nil {
+		notifier.observe(botproc.PID() != 0)
+	}
+	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
+		audit: newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
+	go watchBotState(context.Background(), notifier)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/auth/me", s.authorize(s.me))
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/logout", s.authorize(s.logout))
 	mux.HandleFunc("GET /api/admin/overview", s.adminOverview)
+	mux.HandleFunc("GET /api/admin/audit", s.adminAudit)
+	mux.HandleFunc("GET /api/admin/backups", s.listBackups)
+	mux.HandleFunc("POST /api/admin/backups", s.createBackup)
+	mux.HandleFunc("POST /api/admin/backups/{name}/restore", s.restoreBackup)
 	mux.HandleFunc("POST /api/admin/invites", s.createInvite)
 	mux.HandleFunc("POST /api/admin/bot/{action}", s.adminBotAction)
 	mux.HandleFunc("DELETE /api/admin/invites/{token}", s.revokeInvite)
 	mux.HandleFunc("DELETE /api/admin/users/{username}", s.deleteUser)
+	mux.HandleFunc("PATCH /api/admin/users/{username}/role", s.changeRole)
 	mux.HandleFunc("GET /api/status", s.authorize(s.status))
+	mux.HandleFunc("GET /api/insights", s.authorize(s.insights))
+	mux.HandleFunc("GET /api/diagnostics", s.authorize(s.diagnostics))
+	mux.HandleFunc("GET /api/public/status", s.publicStatus)
 	mux.HandleFunc("GET /api/logs", s.authorize(s.logs))
 	mux.HandleFunc("GET /api/events", s.authorize(s.events))
-	mux.HandleFunc("POST /api/bot/{action}", s.authorize(s.action))
+	mux.HandleFunc("POST /api/bot/{action}", s.authorizeControl(s.action))
 
 	assets, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -135,7 +153,8 @@ func (s *server) authorize(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "требуется вход"})
 			return
 		}
-		if _, ok := s.sessions.get(cookie.Value); !ok {
+		username, ok := s.sessions.get(cookie.Value)
+		if !ok || s.auth.role(username) == "" {
 			writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "сессия истекла"})
 			return
 		}
@@ -143,10 +162,22 @@ func (s *server) authorize(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *server) authorizeControl(next http.HandlerFunc) http.HandlerFunc {
+	return s.authorize(func(w http.ResponseWriter, r *http.Request) {
+		cookie, _ := r.Cookie(sessionCookie)
+		username, _ := s.sessions.get(cookie.Value)
+		if s.auth.role(username) != "operator" {
+			writeJSON(w, http.StatusForbidden, actionResponse{Message: "недостаточно прав для управления ботом"})
+			return
+		}
+		next(w, r)
+	})
+}
+
 func (s *server) me(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie(sessionCookie)
 	username, _ := s.sessions.get(cookie.Value)
-	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+	writeJSON(w, http.StatusOK, map[string]string{"username": username, "role": s.auth.role(username)})
 }
 
 func (s *server) login(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +199,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, r, token, expires)
+	s.record(r, input.Username, "auth.login", "Вход в панель")
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "вход выполнен"})
 }
 
@@ -191,6 +223,7 @@ func (s *server) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, r, token, expires)
+	s.record(r, input.Username, "auth.register", "Создан аккаунт")
 	writeJSON(w, http.StatusCreated, actionResponse{OK: true, Message: "аккаунт создан"})
 }
 
@@ -199,6 +232,7 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.delete(cookie.Value)
 	}
 	clearSessionCookie(w, r)
+	s.record(r, "user", "auth.logout", "Выход из панели")
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "выход выполнен"})
 }
 
@@ -208,7 +242,8 @@ func (s *server) createInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		ExpiresHours int `json:"expiresHours"`
+		ExpiresHours int    `json:"expiresHours"`
+		Role         string `json:"role"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&input)
 	if input.ExpiresHours == 0 {
@@ -218,9 +253,12 @@ func (s *server) createInvite(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "expiresHours должен быть от 1 до 720"})
 		return
 	}
-	token, expires, err := s.auth.createInvite(time.Duration(input.ExpiresHours) * time.Hour)
+	if input.Role == "" {
+		input.Role = "operator"
+	}
+	token, expires, err := s.auth.createInviteWithRole(time.Duration(input.ExpiresHours)*time.Hour, input.Role)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
 		return
 	}
 	scheme := "http"
@@ -228,9 +266,11 @@ func (s *server) createInvite(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	registrationURL := fmt.Sprintf("%s://%s/?invite=%s", scheme, r.Host, token)
+	s.record(r, "admin", "invite.create", fmt.Sprintf("Инвайт на %d ч", input.ExpiresHours))
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"invite":          token,
 		"expiresAt":       expires,
+		"role":            input.Role,
 		"registrationUrl": registrationURL,
 	})
 }
@@ -250,6 +290,7 @@ func (s *server) adminOverview(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	type userView struct {
 		Username       string     `json:"username"`
+		Role           string     `json:"role"`
 		CreatedAt      time.Time  `json:"createdAt"`
 		Online         bool       `json:"online"`
 		LastSeen       *time.Time `json:"lastSeen,omitempty"`
@@ -257,13 +298,14 @@ func (s *server) adminOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	type inviteView struct {
 		Token           string    `json:"token"`
+		Role            string    `json:"role"`
 		CreatedAt       time.Time `json:"createdAt"`
 		ExpiresAt       time.Time `json:"expiresAt"`
 		RegistrationURL string    `json:"registrationUrl"`
 	}
 	userViews := make([]userView, 0, len(users))
 	for _, user := range users {
-		view := userView{Username: user.Username, CreatedAt: user.CreatedAt}
+		view := userView{Username: user.Username, Role: user.Role, CreatedAt: user.CreatedAt}
 		if p, ok := presenceByUser[user.Username]; ok {
 			lastSeen := p.LastSeen
 			view.LastSeen = &lastSeen
@@ -279,7 +321,7 @@ func (s *server) adminOverview(w http.ResponseWriter, r *http.Request) {
 	inviteViews := make([]inviteView, 0, len(invites))
 	for _, invite := range invites {
 		inviteViews = append(inviteViews, inviteView{
-			Token: invite.Token, CreatedAt: invite.CreatedAt, ExpiresAt: invite.ExpiresAt,
+			Token: invite.Token, Role: invite.Role, CreatedAt: invite.CreatedAt, ExpiresAt: invite.ExpiresAt,
 			RegistrationURL: fmt.Sprintf("%s://%s/?invite=%s", scheme, r.Host, invite.Token),
 		})
 	}
@@ -296,6 +338,12 @@ func (s *server) adminBotAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, status := s.performAction(r.PathValue("action"))
+	if status == http.StatusOK {
+		s.notifier.observe(botproc.PID() != 0)
+	}
+	if status == http.StatusOK {
+		s.record(r, "admin", "bot."+r.PathValue("action"), result.Message)
+	}
 	writeJSON(w, status, result)
 }
 
@@ -313,6 +361,7 @@ func (s *server) revokeInvite(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, actionResponse{Message: "инвайт не найден"})
 		return
 	}
+	s.record(r, "admin", "invite.revoke", "Инвайт отозван")
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "инвайт отозван"})
 }
 
@@ -332,7 +381,34 @@ func (s *server) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions.deleteUser(username)
+	s.record(r, "admin", "user.delete", username)
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "пользователь удалён"})
+}
+
+func (s *server) changeRole(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAuthorized(r) {
+		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
+		return
+	}
+	var input struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректный запрос"})
+		return
+	}
+	username := r.PathValue("username")
+	ok, err := s.auth.setRole(username, input.Role)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, actionResponse{Message: "пользователь не найден"})
+		return
+	}
+	s.record(r, "admin", "user.role", username+" → "+input.Role)
+	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "роль изменена"})
 }
 
 func (s *server) status(w http.ResponseWriter, _ *http.Request) {
@@ -398,6 +474,18 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) action(w http.ResponseWriter, r *http.Request) {
 	result, status := s.performAction(r.PathValue("action"))
+	if status == http.StatusOK {
+		s.notifier.observe(botproc.PID() != 0)
+	}
+	if status == http.StatusOK {
+		actor := "user"
+		if cookie, err := r.Cookie(sessionCookie); err == nil {
+			if username, ok := s.sessions.get(cookie.Value); ok {
+				actor = username
+			}
+		}
+		s.record(r, actor, "bot."+r.PathValue("action"), result.Message)
+	}
 	writeJSON(w, status, result)
 }
 

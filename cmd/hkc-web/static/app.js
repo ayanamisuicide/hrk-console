@@ -14,6 +14,29 @@ let stream;
 let activeLevel = 'ALL';
 let streamPaused = false;
 let pausedLines = [];
+let currentView = 'overview';
+let lastStatus = null;
+let lastInsights = null;
+
+function setView(view) {
+  if (!['overview', 'logs', 'monitor'].includes(view)) return;
+  currentView = view;
+  document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
+  document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
+  $('#view-title').textContent = {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг'}[view];
+  localStorage.setItem('hkc-view', view);
+}
+
+document.querySelectorAll('[data-view], [data-jump]').forEach((item) => item.addEventListener('click', () => setView(item.dataset.view || item.dataset.jump)));
+setView(localStorage.getItem('hkc-view') || 'overview');
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('hkc-theme', theme);
+  $('#theme-toggle span').textContent = theme === 'light' ? 'Тёмная тема' : 'Светлая тема';
+}
+setTheme(localStorage.getItem('hkc-theme') || 'dark');
+$('#theme-toggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
 function lineLevel(raw) {
   return raw.match(/\[([A-Z]+)\]/)?.[1] || 'OTHER';
@@ -46,8 +69,12 @@ function showNotice(message, kind = 'ok') {
 }
 
 document.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault(); openCommands(); return;
+  }
   if (event.key === '/' && document.activeElement !== filterInput && !authDialog.open) {
     event.preventDefault();
+    setView('logs');
     filterInput.focus();
   }
   if (event.key === 'Escape' && document.activeElement === filterInput) {
@@ -65,6 +92,20 @@ function renderLines() {
   logEl.replaceChildren(fragment);
   $('#line-count').textContent = `${visible.length} строк`;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
+  renderRecentEvents();
+}
+
+function renderRecentEvents() {
+  const container = $('#recent-events');
+  const recent = allLines.filter((line) => /\[(INFO|WARNING|ERROR|CRITICAL)\]/.test(line)).slice(-6).reverse();
+  container.replaceChildren();
+  if (!recent.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = 'События появятся после запуска бота.'; container.append(empty); return; }
+  for (const raw of recent) {
+    const row = document.createElement('div'); row.className = 'recent-row';
+    const level = document.createElement('span'); level.className = `recent-level ${lineLevel(raw).toLowerCase()}`; level.textContent = lineLevel(raw);
+    const message = document.createElement('span'); message.textContent = raw.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[A-Z]+\] /, '');
+    row.append(level, message); container.append(row);
+  }
 }
 
 function createLine(raw, live = false) {
@@ -104,6 +145,7 @@ function appendLiveLine(raw) {
     return;
   }
   allLines.push(raw);
+  renderRecentEvents();
   let trimmed = false;
   if (allLines.length > maxLines) {
     allLines.splice(0, allLines.length - maxLines);
@@ -144,6 +186,7 @@ $('#pause-stream').addEventListener('click', () => {
 async function refreshStatus() {
   try {
     const status = await request('/api/status');
+    lastStatus = status;
     $('#status-dot').classList.toggle('online', status.running);
     $('#status-card').classList.toggle('online', status.running);
     $('#status-label').textContent = status.running ? 'бот запущен' : 'бот остановлен';
@@ -154,11 +197,97 @@ async function refreshStatus() {
     document.querySelector('[data-action="stop"]').disabled = !status.running;
     document.querySelector('[data-action="restart"]').disabled = !status.running;
     if (!status.running && status.startupLog) $('#status-meta').title = status.startupLog;
+    $('#metric-process').textContent = status.running ? 'Работает' : 'Остановлен';
+    $('#metric-process-meta').textContent = status.running ? `PID ${status.pid} · ${status.uptime}` : 'Можно запустить из панели';
+    $('#service-description').textContent = status.running ? `Процесс активен ${status.uptime}` : 'Бот сейчас не запущен';
+    $('#service-version').textContent = status.version || 'Не определена';
+    $('#service-pid').textContent = status.pid || '—';
+    $('#service-log').textContent = status.logReady ? 'Доступен' : 'Не найден';
   } catch (error) {
     $('#status-label').textContent = 'сервер недоступен';
     $('#status-meta').textContent = error.message;
   }
 }
+
+function formatMemory(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} МБ` : '—'; }
+
+function renderChart(points) {
+  const values = points.filter((point) => point.rssBytes > 0).slice(-60);
+  $('#chart-empty').hidden = values.length > 1;
+  if (values.length < 2) { $('#memory-area').setAttribute('d', ''); $('#memory-line').setAttribute('d', ''); return; }
+  const max = Math.max(...values.map((point) => point.rssBytes), 1) * 1.15;
+  const coordinates = values.map((point, index) => `${(index / (values.length - 1) * 800).toFixed(1)},${(205 - point.rssBytes / max * 180).toFixed(1)}`);
+  $('#memory-line').setAttribute('d', `M${coordinates.join(' L')}`);
+  $('#memory-area').setAttribute('d', `M${coordinates.join(' L')} L800,220 L0,220 Z`);
+}
+
+async function refreshInsights() {
+  try {
+    const data = await request('/api/insights');
+    lastInsights = data;
+    $('#metric-memory').textContent = formatMemory(data.rssBytes);
+    $('#metric-errors').textContent = data.logCounts.error;
+    $('#metric-warnings').textContent = data.logCounts.warning;
+    $('#monitor-status').textContent = data.running ? 'Работает' : 'Остановлен';
+    $('#monitor-memory').textContent = formatMemory(data.rssBytes);
+    $('#monitor-errors').textContent = data.logCounts.error;
+    $('#monitor-lines').textContent = data.sampledLines;
+    $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
+    renderChart(data.points || []);
+  } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
+}
+
+async function refreshDiagnostics() {
+  try {
+    const data = await request('/api/diagnostics');
+    const container = $('#diagnostic-checks'); container.replaceChildren();
+    for (const check of data.checks || []) {
+      const item = document.createElement('div'); item.className = `diagnostic-item ${check.ok ? 'ok' : 'missing'}`;
+      const symbol = document.createElement('span'); symbol.textContent = check.ok ? '✓' : '!';
+      const copy = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = check.name;
+      const detail = document.createElement('small'); detail.textContent = check.detail;
+      copy.append(title, detail); item.append(symbol, copy); container.append(item);
+    }
+  } catch (error) { $('#diagnostic-checks').textContent = `Проверка недоступна: ${error.message}`; }
+}
+$('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
+
+$('#metrics-refresh').addEventListener('click', refreshInsights);
+$('#export-logs').addEventListener('click', () => {
+  const blob = new Blob([allLines.join('\n') + '\n'], {type: 'text/plain;charset=utf-8'});
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `heroku-log-${new Date().toISOString().slice(0, 10)}.txt`; link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+});
+
+const commands = [
+  {name: 'Открыть обзор', run: () => setView('overview')},
+  {name: 'Открыть журнал', run: () => setView('logs')},
+  {name: 'Открыть мониторинг', run: () => setView('monitor')},
+  {name: 'Найти в журнале', run: () => { setView('logs'); filterInput.focus(); }},
+  {name: 'Открыть админку', run: () => { location.href = '/admin/'; }},
+  {name: 'Сменить тему', run: () => $('#theme-toggle').click()},
+];
+let commandIndex = 0;
+function renderCommands() {
+  const query = $('#command-query').value.trim().toLowerCase();
+  const matches = commands.filter((command) => command.name.toLowerCase().includes(query));
+  commandIndex = Math.min(commandIndex, Math.max(matches.length - 1, 0));
+  const results = $('#command-results'); results.replaceChildren();
+  for (const [index, command] of matches.entries()) {
+    const button = document.createElement('button'); button.className = `command-item ${index === commandIndex ? 'selected' : ''}`; button.textContent = command.name;
+    button.addEventListener('click', () => { $('#command-dialog').close(); command.run(); }); results.append(button);
+  }
+  if (!matches.length) results.textContent = 'Ничего не найдено';
+}
+function openCommands() { $('#command-query').value = ''; commandIndex = 0; renderCommands(); $('#command-dialog').showModal(); $('#command-query').focus(); }
+$('#command-open').addEventListener('click', openCommands);
+$('#command-query').addEventListener('input', () => { commandIndex = 0; renderCommands(); });
+$('#command-query').addEventListener('keydown', (event) => {
+  const items = [...document.querySelectorAll('.command-item')];
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); commandIndex = (commandIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % (items.length || 1); renderCommands(); }
+  if (event.key === 'Enter' && items[commandIndex]) { event.preventDefault(); items[commandIndex].click(); }
+});
 
 async function loadHistory() {
   const data = await request('/api/logs?limit=800');
@@ -261,7 +390,9 @@ async function bootstrap() {
     const me = await request('/api/auth/me');
     authenticated = true;
     $('#username').textContent = me.username;
-    await Promise.all([refreshStatus(), loadHistory()]);
+    const viewer = me.role === 'viewer';
+    document.querySelectorAll('[data-action]').forEach((button) => { if (viewer) { button.hidden = true; } });
+    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshDiagnostics()]);
     connectStream();
   } catch (error) {
     if (!authDialog.open) showNotice(error.message, 'error');
@@ -272,3 +403,5 @@ bootstrap();
 setInterval(() => {
   if (authenticated) refreshStatus();
 }, 1500);
+setInterval(() => { if (authenticated) refreshInsights(); }, 10000);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

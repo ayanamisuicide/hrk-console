@@ -4,7 +4,9 @@
 [![Release](https://img.shields.io/github/v/release/ayanamisuicide/hrk-console?label=release)](https://github.com/ayanamisuicide/hrk-console/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/ayanamisuicide/hrk-console)](go.mod)
 
-**hrk-console 2.0** — веб-панель управления Telegram-юзерботом [Heroku](https://github.com/ZetGoHack/Heroku). Запуск, остановка, перезапуск и живой просмотр лога доступны из браузера.
+**hrk-console** — веб-панель управления Telegram-юзерботом [Heroku](https://github.com/ZetGoHack/Heroku). Запуск, остановка, перезапуск и живой просмотр лога доступны из браузера.
+
+Панель включает обзор сервиса, мониторинг памяти, поиск и фильтры журнала, экспорт лога, диагностику установки, роли пользователей, историю действий администратора, резервные копии базы доступа, светлую тему, палитру быстрых действий (`Ctrl+K`) и установку как PWA. Состояние бота можно отправлять на HTTPS webhook.
 
 Сервер работает рядом с ботом на Linux/WSL, читает `heroku.log` и управляет процессом напрямую. Пользователи работают только через сайт; TUI, нативных окон Linux/Windows и SSH-клиента в проекте больше нет.
 

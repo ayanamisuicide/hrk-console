@@ -1,5 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
 const authDialog = $('#admin-auth');
+document.documentElement.dataset.theme = localStorage.getItem('hkc-theme') || 'dark';
+$('#admin-theme').addEventListener('click', () => {
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('hkc-theme', theme);
+});
 let adminToken = sessionStorage.getItem('hkc-admin-token') || '';
 let refreshTimer;
 
@@ -59,6 +65,24 @@ function renderUsers(users) {
     name.querySelector('strong').textContent = user.username;
     name.querySelector('small').textContent = `${user.activeSessions} активных сессий`;
 
+    const roleCell = document.createElement('td');
+    const role = document.createElement('select');
+    role.className = 'role-select';
+    for (const [value, label] of [['operator', 'Оператор'], ['viewer', 'Наблюдатель']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label; role.append(option);
+    }
+    role.value = user.role || 'operator';
+    role.addEventListener('change', async () => {
+      role.disabled = true;
+      try {
+        await adminRequest(`/api/admin/users/${encodeURIComponent(user.username)}/role`, {method: 'PATCH', body: JSON.stringify({role: role.value})});
+        showNotice(`Роль ${user.username} изменена`);
+        await refresh();
+      } catch (error) { role.value = user.role || 'operator'; showNotice(error.message, 'error'); }
+      role.disabled = false;
+    });
+    roleCell.append(role);
+
     const status = document.createElement('td');
     const badge = document.createElement('span');
     badge.className = `presence ${user.online ? 'online' : ''}`;
@@ -75,7 +99,7 @@ function renderUsers(users) {
     remove.textContent = 'Удалить';
     remove.addEventListener('click', () => deleteUser(user.username));
     actions.append(remove);
-    row.append(name, status, created, seen, actions);
+    row.append(name, roleCell, status, created, seen, actions);
     body.append(row);
   }
 }
@@ -90,7 +114,7 @@ function renderInvites(invites) {
     const token = document.createElement('code');
     token.textContent = invite.token;
     const expiry = document.createElement('p');
-    expiry.textContent = `действует до ${formatDate(invite.expiresAt)}`;
+    expiry.textContent = `${invite.role === 'viewer' ? 'Наблюдатель' : 'Оператор'} · действует до ${formatDate(invite.expiresAt)}`;
     const actions = document.createElement('div');
     const copy = document.createElement('button');
     copy.className = 'compact';
@@ -118,19 +142,54 @@ function renderBot(bot) {
   document.querySelector('[data-bot-action="stop"]').disabled = !bot.running;
 }
 
+function renderAudit(events) {
+  const body = $('#audit-body'); body.replaceChildren();
+  $('#audit-empty').hidden = events.length !== 0;
+  for (const event of events) {
+    const row = document.createElement('tr');
+    for (const value of [formatDate(event.time), event.actor, event.action, event.detail, event.ip]) {
+      const cell = document.createElement('td'); cell.textContent = value || '—'; row.append(cell);
+    }
+    body.append(row);
+  }
+}
+
+function renderBackups(backups) {
+  const list = $('#backup-list'); list.replaceChildren();
+  $('#backup-empty').hidden = backups.length !== 0;
+  for (const backup of backups) {
+    const row = document.createElement('div'); row.className = 'backup-row';
+    const info = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = formatDate(backup.createdAt);
+    const detail = document.createElement('small'); detail.textContent = `${backup.name} · ${(backup.size / 1024).toFixed(1)} КБ`;
+    info.append(title, detail);
+    const restore = document.createElement('button'); restore.className = 'compact'; restore.textContent = 'Восстановить';
+    restore.addEventListener('click', async () => {
+      if (!await confirmAction('Восстановить базу доступа?', `Будут восстановлены пользователи и инвайты из копии ${backup.name}. Все пользовательские сессии завершатся.`)) return;
+      try {
+        const result = await adminRequest(`/api/admin/backups/${encodeURIComponent(backup.name)}/restore`, {method: 'POST'});
+        showNotice(result.message); await refresh();
+      } catch (error) { showNotice(error.message, 'error'); }
+    });
+    row.append(info, restore); list.append(row);
+  }
+}
+
 async function refresh() {
   if (!adminToken) {
     openAuth();
     return;
   }
   try {
-    const data = await adminRequest('/api/admin/overview');
+    const [data, audit, backups] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups')]);
     $('#users-count').textContent = data.users.length;
     $('#online-count').textContent = data.users.filter((user) => user.online).length;
     $('#invites-count').textContent = data.invites.length;
     renderBot(data.bot);
     renderUsers(data.users);
     renderInvites(data.invites);
+    renderAudit(audit.events || []);
+    renderBackups(backups.backups || []);
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
   }
@@ -189,9 +248,10 @@ $('#admin-auth-form').addEventListener('submit', async (event) => {
 $('#invite-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const expiresHours = Number($('#invite-hours').value);
+  const role = $('#invite-role').value;
   try {
     const invite = await adminRequest('/api/admin/invites', {
-      method: 'POST', body: JSON.stringify({expiresHours}),
+      method: 'POST', body: JSON.stringify({expiresHours, role}),
     });
     showNotice(`Инвайт создан до ${formatDate(invite.expiresAt)}`);
     await refresh();
@@ -213,6 +273,13 @@ $('#admin-refresh').addEventListener('click', async (event) => {
   button.textContent = 'Обновление…';
   await refresh();
   button.textContent = '↻ Обновить';
+  button.disabled = false;
+});
+
+$('#create-backup').addEventListener('click', async (event) => {
+  const button = event.currentTarget; button.disabled = true;
+  try { await adminRequest('/api/admin/backups', {method: 'POST'}); showNotice('Резервная копия создана'); await refresh(); }
+  catch (error) { showNotice(error.message, 'error'); }
   button.disabled = false;
 });
 

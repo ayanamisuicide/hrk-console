@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+func TestVirtualEnvFindsSupportedNames(t *testing.T) {
+	dir := t.TempDir()
+	manager := New(dir)
+	if got := manager.VirtualEnv(); got != "" {
+		t.Fatalf("unexpected environment: %s", got)
+	}
+	python := filepath.Join(dir, "venv", "bin", "python3")
+	if err := os.MkdirAll(filepath.Dir(python), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(python, []byte(""), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.VirtualEnv(); got != filepath.Join(dir, "venv") {
+		t.Fatalf("got %s", got)
+	}
+}
+
 // Единственная зависимость remotebot.Client.Uptime от этого пакета — сама
 // проверяется отдельно там же (TestUptimeUsesSharedFormatter), эта — что
 // форматирование само по себе не сломано, без /proc и без SSH.

@@ -26,11 +26,13 @@ var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{3,32}$`)
 type userRecord struct {
 	PasswordHash string    `json:"passwordHash"`
 	CreatedAt    time.Time `json:"createdAt"`
+	Role         string    `json:"role,omitempty"`
 }
 
 type inviteRecord struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	Role      string    `json:"role,omitempty"`
 }
 
 type authData struct {
@@ -69,6 +71,13 @@ func openAuthStore(path string) (*authStore, error) {
 }
 
 func (s *authStore) createInvite(validFor time.Duration) (string, time.Time, error) {
+	return s.createInviteWithRole(validFor, "operator")
+}
+
+func (s *authStore) createInviteWithRole(validFor time.Duration, role string) (string, time.Time, error) {
+	if role != "operator" && role != "viewer" {
+		return "", time.Time{}, errors.New("неизвестная роль")
+	}
 	token, err := randomToken(32)
 	if err != nil {
 		return "", time.Time{}, err
@@ -82,7 +91,7 @@ func (s *authStore) createInvite(validFor time.Duration) (string, time.Time, err
 			delete(s.data.Invites, key)
 		}
 	}
-	s.data.Invites[token] = inviteRecord{CreatedAt: now, ExpiresAt: expires}
+	s.data.Invites[token] = inviteRecord{CreatedAt: now, ExpiresAt: expires, Role: role}
 	if err := s.saveLocked(); err != nil {
 		delete(s.data.Invites, token)
 		return "", time.Time{}, err
@@ -112,7 +121,11 @@ func (s *authStore) register(invite, username, password string) error {
 	if !exists || time.Now().After(record.ExpiresAt) {
 		return errors.New("инвайт недействителен или истёк")
 	}
-	s.data.Users[username] = userRecord{PasswordHash: string(hash), CreatedAt: time.Now().UTC()}
+	role := record.Role
+	if role == "" {
+		role = "operator"
+	}
+	s.data.Users[username] = userRecord{PasswordHash: string(hash), CreatedAt: time.Now().UTC(), Role: role}
 	delete(s.data.Invites, invite)
 	if err := s.saveLocked(); err != nil {
 		delete(s.data.Users, username)
@@ -132,12 +145,14 @@ func (s *authStore) authenticate(username, password string) bool {
 type storedUser struct {
 	Username  string
 	CreatedAt time.Time
+	Role      string
 }
 
 type storedInvite struct {
 	Token     string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	Role      string
 }
 
 func (s *authStore) snapshot() ([]storedUser, []storedInvite) {
@@ -145,7 +160,11 @@ func (s *authStore) snapshot() ([]storedUser, []storedInvite) {
 	defer s.mu.Unlock()
 	users := make([]storedUser, 0, len(s.data.Users))
 	for username, record := range s.data.Users {
-		users = append(users, storedUser{Username: username, CreatedAt: record.CreatedAt})
+		role := record.Role
+		if role == "" {
+			role = "operator"
+		}
+		users = append(users, storedUser{Username: username, CreatedAt: record.CreatedAt, Role: role})
 	}
 	sort.Slice(users, func(i, j int) bool { return users[i].CreatedAt.Before(users[j].CreatedAt) })
 
@@ -153,11 +172,48 @@ func (s *authStore) snapshot() ([]storedUser, []storedInvite) {
 	invites := make([]storedInvite, 0, len(s.data.Invites))
 	for token, record := range s.data.Invites {
 		if now.Before(record.ExpiresAt) {
-			invites = append(invites, storedInvite{Token: token, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt})
+			role := record.Role
+			if role == "" {
+				role = "operator"
+			}
+			invites = append(invites, storedInvite{Token: token, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt, Role: role})
 		}
 	}
 	sort.Slice(invites, func(i, j int) bool { return invites[i].CreatedAt.After(invites[j].CreatedAt) })
 	return users, invites
+}
+
+func (s *authStore) role(username string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.data.Users[username]
+	if !ok {
+		return ""
+	}
+	if record.Role == "" {
+		return "operator"
+	}
+	return record.Role
+}
+
+func (s *authStore) setRole(username, role string) (bool, error) {
+	if role != "operator" && role != "viewer" {
+		return false, errors.New("неизвестная роль")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.data.Users[username]
+	if !ok {
+		return false, nil
+	}
+	previous := record
+	record.Role = role
+	s.data.Users[username] = record
+	if err := s.saveLocked(); err != nil {
+		s.data.Users[username] = previous
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *authStore) revokeInvite(token string) (bool, error) {
@@ -290,6 +346,12 @@ func (s *sessionStore) deleteUser(username string) {
 			delete(s.sessions, token)
 		}
 	}
+}
+
+func (s *sessionStore) clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions = make(map[string]session)
 }
 
 func randomToken(size int) (string, error) {

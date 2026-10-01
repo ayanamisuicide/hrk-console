@@ -1,0 +1,10 @@
+fetch('/api/public/status').then(async (response) => {
+  if (!response.ok) throw new Error('Публичный статус не включён');
+  return response.json();
+}).then((data) => {
+  const card = document.querySelector('#public-state');
+  card.classList.toggle('online', data.running);
+  card.querySelector('.dot').classList.toggle('online', data.running);
+  card.querySelector('strong').textContent = data.running ? 'Сервис работает' : 'Сервис остановлен';
+  document.querySelector('#public-time').textContent = `Проверено ${new Date(data.checkedAt).toLocaleString('ru-RU')}`;
+}).catch((error) => { document.querySelector('#public-state strong').textContent = error.message; });

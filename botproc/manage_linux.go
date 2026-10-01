@@ -57,8 +57,9 @@ func (m *Manager) Start() StartResult {
 		return StartResult{PID: pid}
 	}
 
-	if _, err := os.Stat(filepath.Join(m.HerokuDir, ".venv", "bin", "activate")); err != nil {
-		return StartResult{Err: fmt.Errorf(".venv не найден: %w", err)}
+	venv := m.VirtualEnv()
+	if venv == "" {
+		return StartResult{Err: fmt.Errorf("виртуальное окружение .venv или venv не найдено")}
 	}
 
 	out, err := os.Create(m.StartupLog)
@@ -67,8 +68,9 @@ func (m *Manager) Start() StartResult {
 	}
 	defer out.Close()
 
-	cmd := exec.Command("bash", "-c", "source .venv/bin/activate && exec python3 -m heroku --root")
+	cmd := exec.Command(filepath.Join(venv, "bin", "python3"), "-m", "heroku", "--root")
 	cmd.Dir = m.HerokuDir
+	cmd.Env = append(os.Environ(), "VIRTUAL_ENV="+venv, "PATH="+filepath.Join(venv, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cmd.Stdout = out
 	cmd.Stderr = out
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
