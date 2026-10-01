@@ -35,20 +35,16 @@ jobs:
           tar -czf "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" -C bin hkc-web
           sha256sum "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" > "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz.sha256"
 
-      - name: release notes
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '
-            $0 ~ "^## \\[" v "\\]" { found = 1; next }
-            found && /^## \\[/ { exit }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          test -s release-notes.md
-
       - uses: softprops/action-gh-release@v2
         with:
           name: hrk-console ${{ github.ref_name }}
-          body_path: release-notes.md
+          body: |
+            Web-only релиз hrk-console 2.0.
+
+            - Управление Heroku полностью перенесено в браузерную панель.
+            - Добавлены пользовательские аккаунты, одноразовые инвайты и административная панель.
+            - Удалены TUI, нативные приложения Linux/Windows, Windows bootstrap и SSH-клиент GUI.
+            - В релиз входит один статически собранный Linux-сервер `hkc-web` и его SHA-256 checksum.
           files: |
             hkc-web-*-linux-amd64.tar.gz
             hkc-web-*-linux-amd64.tar.gz.sha256
