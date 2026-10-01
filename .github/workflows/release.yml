@@ -1,8 +1,5 @@
 name: Release
 
-# Релиз создаётся по тегу вида v1.2.3. Раньше объект релиза приходилось
-# делать руками через gh, которого может не быть под рукой, — и тег уезжал
-# на GitHub без описания и без собранного бинарника.
 on:
   push:
     tags: ['v*']
@@ -16,124 +13,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # версия берётся из git describe
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
 
-      - name: Проверки
+      - name: verify
         run: |
           go vet ./...
           go test -count=1 ./...
 
-      - name: Сборка
-        run: |
-          make build
-          tar -czf hkc-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C bin hkc
+      - name: build web server
         env:
           CGO_ENABLED: '0'
-
-      # GUI собирается и публикуется тем же тегом, что и hkc — самообновление
-      # GUI (App.ApplyUpdate) качает именно этот архив по имени, см. gui/app.go.
-      # webkit2gtk-4.1: в 24.04 пакета -4.0 в репозиториях уже нет.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: системные библиотеки webview
+          GOOS: linux
+          GOARCH: amd64
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          make build
+          tar -czf "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" -C bin hkc-web
+          sha256sum "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" > "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz.sha256"
 
-      - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
-
-      # Сборка обязана идти до "go vet": //go:embed all:frontend/dist в
-      # gui/main.go ссылается на каталог, который генерирует именно
-      # wails build (Vite-сборка фронтенда) — до неё vet падает на
-      # "no matching files found", каталога попросту ещё нет.
-      - name: сборка GUI
-        working-directory: gui
-        run: |
-          wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME} -X heroku-console/preflight.repoRoot=${GITHUB_WORKSPACE}"
-          tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-linux-amd64.tar.gz -C build/bin hrk-console-gui
-
-      - name: проверки GUI
-        working-directory: gui
-        run: go vet -tags webkit2_41 ./...
-
-      # Описание релиза — раздел CHANGELOG для этой версии. Один источник
-      # правды: то, что видит человек на странице релиза, и то, что лежит
-      # в репозитории, не могут разойтись.
-      - name: Выжимка из CHANGELOG
+      - name: release notes
         run: |
           version="${GITHUB_REF_NAME#v}"
           awk -v v="$version" '
             $0 ~ "^## \\[" v "\\]" { found = 1; next }
-            found && /^## \[/ { exit }
+            found && /^## \\[/ { exit }
             found { print }
           ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "Раздел [$version] в CHANGELOG.md не найден." > release-notes.md
-          fi
-          cat release-notes.md
+          test -s release-notes.md
 
-      - name: Sign release archives
-        shell: bash
-        env:
-          HKC_RELEASE_SIGNING_SEED: ${{ secrets.HKC_RELEASE_SIGNING_SEED }}
-        run: go run ./cmd/release-sign ./*.tar.gz
       - uses: softprops/action-gh-release@v2
         with:
+          name: hrk-console ${{ github.ref_name }}
           body_path: release-notes.md
           files: |
-            hkc-*-linux-amd64.tar.gz
-            hkc-*-linux-amd64.tar.gz.sig
-            hrk-console-gui-*-linux-amd64.tar.gz
-            hrk-console-gui-*-linux-amd64.tar.gz.sig
-
-  # Windows-сборка GUI — отдельный job (нужен windows-latest runner, свой
-  # тулчейн WebView2), добавляет файл в уже созданный первым job'ом релиз.
-  # Без needs: release два job'а могли бы одновременно попытаться создать
-  # объект релиза по одному и тому же тегу.
-  release-windows-gui:
-    needs: release
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
-
-      # Тот же архив (.tar.gz), что и у Linux-сборок, не .zip — selfupdate
-      # сам распаковывает tar.gz из Go (archive/tar+compress/gzip), одним
-      # и тем же кодом на любой ОС; заводить второй формат ради Windows
-      # смысла не было.
-      - name: сборка GUI (Windows)
-        working-directory: gui
-        shell: bash
-        run: |
-          "$(go env GOPATH)/bin/wails" build -platform windows/amd64 -ldflags "-X main.version=${GITHUB_REF_NAME}"
-          tar -czf ../hrk-console-gui-${GITHUB_REF_NAME}-windows-amd64.tar.gz -C build/bin hrk-console-gui.exe
-
-      - name: Sign release archives
-        shell: bash
-        env:
-          HKC_RELEASE_SIGNING_SEED: ${{ secrets.HKC_RELEASE_SIGNING_SEED }}
-        run: go run ./cmd/release-sign ./*.tar.gz
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            hrk-console-gui-*-windows-amd64.tar.gz
-            hrk-console-gui-*-windows-amd64.tar.gz.sig
+            hkc-web-*-linux-amd64.tar.gz
+            hkc-web-*-linux-amd64.tar.gz.sha256

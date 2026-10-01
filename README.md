@@ -1,28 +1,12 @@
-<p align="center">
-  <img src="./assets/readme/hero.svg" width="100%"
-       alt="hrk-console: слева — сырой heroku.log, сплошной шум от urllib3 и git; справа — тот же момент в hrk-console, разложенный по колонкам с повторами, схлопнутыми в счётчик">
-</p>
-
-<div align="center">
+# hrk-console
 
 [![CI](https://github.com/ayanamisuicide/hrk-console/actions/workflows/ci.yml/badge.svg)](https://github.com/ayanamisuicide/hrk-console/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ayanamisuicide/hrk-console?label=release)](https://github.com/ayanamisuicide/hrk-console/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/ayanamisuicide/hrk-console)](go.mod)
 
-</div>
+**hrk-console 2.0** — веб-панель управления Telegram-юзерботом [Heroku](https://github.com/ZetGoHack/Heroku). Запуск, остановка, перезапуск и живой просмотр лога доступны из браузера.
 
-**hrk-console** — консоль для Telegram-юзербота [Heroku](https://github.com/coddrago/Heroku): запуск, остановка и живой просмотр лога, в терминале или в нативном окне.
-
-## Почему не просто `tail -f`
-
-Бот ничего не знает о консоли — это обычный процесс, который пишет `heroku.log` и живёт своей жизнью. hrk-console лишь читает этот файл и управляет процессом извне, без какого-либо API у бота: значит, работает с любым запущенным ботом сразу, ничего не патча в нём самом.
-
-<p align="center">
-  <img src="./assets/readme/how-it-works.svg" width="100%"
-       alt="Схема: python3 -m heroku пишет heroku.log, logfeed читает файл, парсит и схлопывает повторы, TUI и GUI — две витрины над одним потоком, GUI может смотреть на лог на другой машине по SSH">
-</p>
-
-TUI и GUI — независимые витрины над одними и тем же пакетами (`botproc`, `logfeed`, `state`), поэтому ведут себя одинаково и различаются только тем, как рисуют. Подробнее — в [docs/architecture.md](docs/architecture.md).
+Сервер работает рядом с ботом на Linux/WSL, читает `heroku.log` и управляет процессом напрямую. Пользователи работают только через сайт; TUI, нативных окон Linux/Windows и SSH-клиента в проекте больше нет.
 
 ## Быстрый старт
 
@@ -30,69 +14,30 @@ TUI и GUI — независимые витрины над одними и те
 git clone https://github.com/ayanamisuicide/hrk-console ~/heroku-console
 cd ~/heroku-console
 make build
-./bin/hkc
+
+export HEROKU_DIR=/путь/к/Heroku
+export HKC_ADMIN_TOKEN="$(openssl rand -hex 32)"
+./bin/hkc-web
 ```
 
-Нужен [Go](https://go.dev) — если его ещё нет, команды установки есть в [документации](docs/setup.md#go).
-
-Нативное окно вместо терминала ставится отдельно — с ярлыком в меню приложений и на рабочем столе (нужен [Wails](https://wails.io), см. [подробности](docs/usage.md#gui)):
-
-```sh
-./gui/install.sh
-```
-
-Окно необязательно держать на той же машине, где стоит бот — есть готовая сборка под Windows в [релизах](https://github.com/ayanamisuicide/hrk-console/releases/latest), подключается к боту на Linux по SSH (см. [«Бот на другой машине»](docs/usage.md#бот-на-другой-машине)).
+Откройте <http://localhost:8080/admin/> и введите значение `HKC_ADMIN_TOKEN`. Пользовательские аккаунты создаются по одноразовым инвайтам из админ-панели.
 
 > [!IMPORTANT]
-> Перед первым запуском нужно один раз войти в аккаунт Telegram вручную — консоль запускает бота в фоне и ответить на его вопросы про `api_id` и код из Telegram будет некому. Как это сделать: [docs/setup.md](docs/setup.md#вход-в-аккаунт-telegram).
+> Перед первым запуском нужно один раз войти в аккаунт Telegram вручную: веб-панель запускает бота в фоне и не может ответить на интерактивные вопросы Telegram.
 
 ## Документация
 
 | | |
 | --- | --- |
-| [Установка и первый запуск](docs/setup.md) | Go, сборка, вход в аккаунт, Windows/WSL, ярлык на рабочем столе |
-| [Использование](docs/usage.md) | Режимы, клавиши, GUI, как читается строка лога |
-| [Веб-интерфейс](docs/web.md) | Запуск в браузере, инвайты, регистрация и публикация через HTTPS |
-| [Устройство проекта](docs/architecture.md) | Из чего собрано и почему именно так |
+| [Веб-интерфейс](docs/web.md) | Сборка, запуск, инвайты, администрирование и публикация через HTTPS |
 | [Changelog](CHANGELOG.md) | История версий |
 
 ## Разработка
 
 ```sh
-make test    # тесты
-make vet     # go vet
+make test
+make vet
 make build
-make web     # веб-интерфейс: bin/hkc-web
 ```
 
-### Windows: установка зависимостей и сборка GUI
-
-Из PowerShell можно выполнить единый bootstrap-скрипт. Он установит
-отсутствующие Go и Node.js через `winget`, поставит Wails, скачает зависимости,
-запустит тесты и соберёт Windows GUI:
-
-```powershell
-.\setup.ps1
-```
-
-При запуске GUI теперь открывается единый стартовый экран. Он последовательно
-показывает инициализацию интерфейса, проверку окружения, подготовку зависимостей
-и подключение потока лога. После этого появляются проверки бота и основной экран;
-отдельного ручного запуска тестов для обычного запуска не требуется.
-
-Если чего-то не хватает, экран показывает проблемный шаг и предлагает установить
-недостающее. На Windows GUI работает как клиент и подключается к боту по SSH;
-локальное управление ботом доступно на Linux/WSL.
-
-Новая стабильная версия публикуется в [релизах](https://github.com/ayanamisuicide/hrk-console/releases/latest).
-Dev-канал содержит предварительные сборки и обновляется отдельно.
-
-Если PowerShell запрещает запуск локальных скриптов, разрешение можно дать
-только для текущего окна:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\setup.ps1
-```
-
-Поддерживаемые платформы, проверки и настройка подписанных обновлений: [docs/releases.md](docs/releases.md).
+Стабильные Linux-сборки веб-сервера публикуются в [GitHub Releases](https://github.com/ayanamisuicide/hrk-console/releases/latest). Открывать панель можно браузером с любой операционной системы.

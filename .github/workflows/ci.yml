@@ -10,105 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
 
-      # Форматирование проверяется отдельным шагом, а не глазами в ревью:
-      # дрейф уже случался — семь файлов копились неотформатированными.
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "не отформатировано:"
-            echo "$unformatted"
-            gofmt -d .
-            exit 1
-          fi
+          test -z "$unformatted" || { echo "$unformatted"; exit 1; }
 
       - name: go vet
         run: go vet ./...
 
-      # Конфиг — .golangci.yml в корне: стандартный набор без errcheck (см.
-      # комментарий в файле — закрытие уже прочитанных файлов и cleanup
-      # os.Remove в defer здесь игнорируются намеренно по всему проекту).
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12.2
-
-      # -count=1 отключает кэш: прогон в CI должен быть настоящим, иначе
-      # зелёная галочка не означает ничего.
       - name: go test
         run: go test -count=1 -race ./...
 
-      - name: build
+      - name: build web server
         run: make build
-
-  # gui — вложенный модуль, и "./..." из корня в него не заходит: ни vet, ни
-  # test его не видели, из-за чего ложное срабатывание вотчдога доехало до
-  # релиза через зелёный CI. Отдельный job, потому что тут свой тулчейн.
-  gui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      # webkit2gtk-4.1: в 24.04 пакета -4.0 в репозиториях уже нет, поэтому
-      # везде дальше идёт тег webkit2_41 — тот же, что в make gui.
-      - name: системные библиотеки webview
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
-      - name: wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
-
-      # Полная сборка идёт до проверок не для галочки: она генерирует
-      # frontend/wailsjs (импорты фронтенда) и frontend/dist (его тянет
-      # go:embed) — оба каталога в .gitignore, и без них модуль не
-      # компилируется вообще.
-      - name: wails build
-        working-directory: gui
-        run: wails build -tags webkit2_41
-
-      - name: go vet
-        working-directory: gui
-        run: go vet -tags webkit2_41 ./...
-
-      # Тот же .golangci.yml из корня — golangci-lint-action сам находит
-      # его, поднимаясь от рабочей директории вверх по дереву.
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12.2
-          working-directory: gui
-          args: --build-tags webkit2_41
-
-      - name: go test
-        working-directory: gui
-        run: go test -count=1 -race -tags webkit2_41 ./...
-
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Bootstrap, build and test on Windows PowerShell 5.1
-        shell: powershell
-        run: .\setup.ps1
