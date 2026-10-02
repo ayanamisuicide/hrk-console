@@ -22,6 +22,21 @@ def archive(name="hkc-web", kind=tarfile.REGTYPE, payload=b"\x7fELFtest"):
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_progress_status_retains_bounded_timeline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            update.save_status(directory, "checking", "Начало", progress=3)
+            for index in range(90):
+                update.save_status(directory, "downloading", f"Шаг {index}", progress=40)
+            status = json.loads((directory / "status.json").read_text())
+            self.assertEqual(status["phase"], "downloading")
+            self.assertEqual(status["progress"], 40)
+            self.assertEqual(len(status["events"]), 80)
+            self.assertEqual(status["events"][-1]["message"], "Шаг 89")
+            update.save_status(directory, "checking", "Новая установка", progress=3, reset=True)
+            status = json.loads((directory / "status.json").read_text())
+            self.assertEqual(len(status["events"]), 1)
+
     def verify(self, data):
         checksum = (hashlib.sha256(data).hexdigest() + "  release.tar.gz\n").encode()
         return update.verify_archive(data, checksum, "release.tar.gz")

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"heroku-console/botproc"
 )
@@ -96,5 +97,32 @@ func TestHTTPInviteRegisterLogin(t *testing.T) {
 	s.deleteUser(deleteRes, deleteReq)
 	if deleteRes.Code != http.StatusOK || s.auth.authenticate("alice", "correct-horse-battery") {
 		t.Fatalf("delete user: got %d: %s", deleteRes.Code, deleteRes.Body.String())
+	}
+}
+
+func TestLiveMetricsRequireSession(t *testing.T) {
+	s := newTestServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
+	response := httptest.NewRecorder()
+	s.authorize(s.liveMetrics)(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("metrics without session: got %d", response.Code)
+	}
+	invite, _, err := s.auth.createInvite(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.auth.register(invite, "viewer", "long-enough-password"); err != nil {
+		t.Fatal(err)
+	}
+	user, _, err := s.sessions.create("viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.AddCookie(&http.Cookie{Name: sessionCookie, Value: user})
+	response = httptest.NewRecorder()
+	s.authorize(s.liveMetrics)(response, request)
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"rssBytes"`)) {
+		t.Fatalf("metrics with session: %d %s", response.Code, response.Body.String())
 	}
 }

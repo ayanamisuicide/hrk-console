@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Обновление · HEROKU</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/update.css">
+</head>
+<body class="update-body">
+  <main class="update-shell">
+    <header class="update-header">
+      <div><span class="eyebrow">CONTROL DECK / RELEASE OPERATIONS</span><h1>Центр обновления</h1><p>Живой ход установки без потери окна при перезапуске панели.</p></div>
+      <a class="compact" href="/admin/">← Админка</a>
+    </header>
+
+    <section class="update-hero" aria-labelledby="update-title">
+      <div class="update-hero-top"><span id="update-state" class="update-state" data-phase="idle">ОЖИДАНИЕ</span><span id="update-clock">—</span></div>
+      <h2 id="update-title">Проверяем состояние</h2>
+      <p id="update-message" role="status">Получаем сведения о версиях и службе обновления…</p>
+      <div class="update-progress-track" role="progressbar" aria-label="Ход установки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="update-progress-bar"></span></div>
+      <div class="update-progress-meta"><span id="update-progress-label">0%</span><span id="update-target">Релиз —</span></div>
+    </section>
+
+    <section class="update-versions" aria-label="Сверка версий">
+      <article><span>ЗАПУЩЕННАЯ СБОРКА</span><strong id="version-running">—</strong><code id="commit-running">—</code></article>
+      <article><span>СТАБИЛЬНЫЙ РЕЛИЗ</span><strong id="version-release">—</strong><code id="commit-release">—</code></article>
+      <article><span>КОПИИ ИСХОДНИКОВ</span><strong id="version-copies">—</strong><small id="commit-copies">—</small></article>
+    </section>
+
+    <div class="update-actions">
+      <button id="update-install" class="primary" type="button" disabled>Установить обновление</button>
+      <button id="update-check" type="button">Проверить GitHub</button>
+      <span id="update-connection" role="status">Соединение…</span>
+    </div>
+    <p id="update-readiness" class="update-readiness" role="status">Сверяем возможность установки…</p>
+
+    <section class="update-timeline" aria-labelledby="timeline-title">
+      <div class="update-timeline-heading"><div><span class="eyebrow">LIVE INSTALL LOG</span><h2 id="timeline-title">Этапы установки</h2></div><span id="timeline-count">0 событий</span></div>
+      <ol id="timeline-list"><li class="timeline-empty">Здесь появятся проверка копий, загрузка, контрольная сумма, резервная сборка, перезапуск и итог.</li></ol>
+    </section>
+    <p class="update-footnote">Секреты и содержимое конфигурации здесь не показываются. Окно можно оставить открытым: после перезапуска сервера оно переподключится само.</p>
+    <p id="update-backup" class="update-footnote" hidden></p>
+  </main>
+
+  <dialog id="update-auth"><form method="dialog" id="update-auth-form"><span class="eyebrow">ADMIN ACCESS</span><h2>Доступ к обновлениям</h2><p>Введите административный токен. Он останется только в этой вкладке.</p><input id="update-token" type="password" aria-label="Административный токен" autocomplete="off" required><p id="update-auth-error" class="update-error"></p><button class="primary" type="submit">Открыть</button></form></dialog>
+  <dialog id="update-confirm"><form method="dialog" id="update-confirm-form"><span class="eyebrow">INSTALL RELEASE</span><h2>Начать установку?</h2><p>Предыдущая сборка будет сохранена. Панель перезапустится, а это окно продолжит показывать ход и итог установки.</p><div class="confirm-actions"><button value="cancel">Отмена</button><button class="primary" value="confirm">Установить</button></div></form></dialog>
+  <script src="/admin/update.js" defer></script>
+</body>
+</html>

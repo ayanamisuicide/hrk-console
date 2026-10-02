@@ -267,45 +267,41 @@ async function refreshStatus() {
 function formatMemory(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} МБ` : '—'; }
 
 function renderChart(points) {
-  const values = points.filter((point) => point.rssBytes > 0).slice(-60);
+  const values = points.filter((point) => point.rssBytes > 0).slice(-120);
   $('#chart-empty').hidden = values.length > 1;
   if (values.length < 2) { $('#memory-area').setAttribute('d', ''); $('#memory-line').setAttribute('d', ''); return; }
   const max = Math.max(...values.map((point) => point.rssBytes), 1) * 1.15;
   const coordinates = values.map((point, index) => `${(index / (values.length - 1) * 800).toFixed(1)},${(205 - point.rssBytes / max * 180).toFixed(1)}`);
-  const line = $('#memory-line');
-  const nextLine = `M${coordinates.join(' L')}`;
-  if (line.getAttribute('d') !== nextLine) {
-    line.setAttribute('d', nextLine);
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const length = line.getTotalLength();
-      line.style.strokeDasharray = `${length}`;
-      line.style.strokeDashoffset = `${length}`;
-      line.classList.remove('chart-drawing');
-      void line.getBoundingClientRect();
-      line.classList.add('chart-drawing');
-      line.addEventListener('animationend', () => {
-        line.classList.remove('chart-drawing');
-        line.style.strokeDasharray = 'none';
-        line.style.strokeDashoffset = '0';
-      }, {once: true});
-    }
-  }
+  $('#memory-line').setAttribute('d', `M${coordinates.join(' L')}`);
   $('#memory-area').setAttribute('d', `M${coordinates.join(' L')} L800,220 L0,220 Z`);
+}
+
+let metricsBusy = false;
+async function refreshMetrics() {
+  if (metricsBusy || document.hidden) return;
+  metricsBusy = true;
+  try {
+    const data = await request('/api/metrics');
+    const value = formatMemory(data.rssBytes);
+    $('#metric-memory').textContent = value;
+    $('#monitor-memory').textContent = value;
+    renderChart(data.points || []);
+  } catch (_) {
+    $('#metric-memory').textContent = '—';
+    $('#monitor-memory').textContent = '—';
+  } finally { metricsBusy = false; }
 }
 
 async function refreshInsights() {
   try {
     const data = await request('/api/insights');
     lastInsights = data;
-    animateValue($('#metric-memory'), formatMemory(data.rssBytes));
     animateValue($('#metric-errors'), data.logCounts.error);
     animateValue($('#metric-warnings'), data.logCounts.warning);
     animateValue($('#monitor-status'), data.running ? 'Работает' : 'Остановлен');
-    animateValue($('#monitor-memory'), formatMemory(data.rssBytes));
     animateValue($('#monitor-errors'), data.logCounts.error);
     animateValue($('#monitor-lines'), data.sampledLines);
     $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
-    renderChart(data.points || []);
   } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
 }
 
@@ -325,7 +321,7 @@ async function refreshDiagnostics() {
 }
 $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
-$('#metrics-refresh').addEventListener('click', refreshInsights);
+$('#metrics-refresh').addEventListener('click', () => { refreshMetrics(); refreshInsights(); });
 $('#export-logs').addEventListener('click', () => {
   const query = filterInput.value.trim().toLowerCase();
   const lines = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
@@ -500,7 +496,7 @@ async function bootstrap() {
     $('#username').textContent = me.username;
     const viewer = me.role === 'viewer';
     document.querySelectorAll('[data-action]').forEach((button) => { if (viewer) { button.hidden = true; } });
-    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshDiagnostics()]);
+    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics()]);
     connectStream();
   } catch (error) {
     if (!authDialog.open) showNotice(error.message, 'error');
@@ -512,4 +508,5 @@ setInterval(() => {
   if (authenticated) refreshStatus();
 }, 1500);
 setInterval(() => { if (authenticated) refreshInsights(); }, 10000);
+setInterval(() => { if (authenticated) refreshMetrics(); }, 1000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -70,9 +70,6 @@ button.is-rippling::after { animation: button-ripple 620ms ease-out; }
 .notice { animation: toast-arrive 420ms var(--motion-spring) both; }
 .line.live { animation: log-arrive 460ms var(--motion-spring) both; }
 .value-change { animation: value-pop 480ms var(--motion-spring); transform-origin: left center; }
-#memory-line { stroke-dasharray: 1400; stroke-dashoffset: 1400; }
-#memory-line.chart-drawing { animation: chart-draw 900ms var(--motion-spring) forwards; }
-#memory-area { animation: area-arrive 850ms ease-out both; }
 
 [data-reveal="waiting"] { opacity: 0; transform: translateY(18px) scale(.99); }
 [data-reveal="shown"] { opacity: 1; transform: translateY(0) scale(1); transition: opacity 680ms var(--motion-spring), transform 680ms var(--motion-spring); }
@@ -91,8 +88,6 @@ button.is-rippling::after { animation: button-ripple 620ms ease-out; }
 @keyframes toast-arrive { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes log-arrive { from { opacity: 0; transform: translateX(12px); background: rgba(97, 242, 202, .13); } to { opacity: 1; transform: translateX(0); background: transparent; } }
 @keyframes value-pop { 0% { opacity: .55; transform: translateY(5px) scale(.96); filter: blur(2px); } 70% { opacity: 1; transform: translateY(-2px) scale(1.035); filter: blur(0); } 100% { transform: translateY(0) scale(1); } }
-@keyframes chart-draw { to { stroke-dashoffset: 0; } }
-@keyframes area-arrive { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

@@ -203,14 +203,27 @@ func (s *server) updateStatus(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	source := inspectSource(ctx, os.Getenv("HKC_SOURCE_DIR"))
 	local := inspectSource(ctx, os.Getenv("HKC_LOCAL_SOURCE_DIR"))
+	job := readUpdateJob()
+	canInstall := runtime.GOOS == "linux" && os.Getenv("HKC_UPDATE_ENABLED") == "1"
+	writeJSON(w, 200, map[string]any{"installed": currentVersion(), "source": source, "local": local, "github": remote, "enabled": canInstall, "job": job})
+}
+
+func readUpdateJob() map[string]any {
 	var job map[string]any
 	if dir := os.Getenv("HKC_UPDATE_DIR"); dir != "" {
 		if data, err := os.ReadFile(filepath.Join(dir, "status.json")); err == nil {
 			_ = json.Unmarshal(data, &job)
 		}
 	}
-	canInstall := runtime.GOOS == "linux" && os.Getenv("HKC_UPDATE_ENABLED") == "1"
-	writeJSON(w, 200, map[string]any{"installed": currentVersion(), "source": source, "local": local, "github": remote, "enabled": canInstall, "job": job})
+	return job
+}
+
+func (s *server) updateProgress(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAuthorized(r) {
+		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "требуется административный токен"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": readUpdateJob(), "installed": currentVersion()})
 }
 
 func (s *server) installUpdate(w http.ResponseWriter, r *http.Request) {

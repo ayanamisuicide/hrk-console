@@ -164,6 +164,26 @@ func TestAuditRetentionKeepsNewestEvents(t *testing.T) {
 	}
 }
 
+func TestMetricHistorySamplesEverySecondAndKeepsTwoMinutes(t *testing.T) {
+	store := newMetricStore()
+	start := time.Now().UTC()
+	store.append(metricPoint{Time: start, RSS: 1})
+	if points := store.append(metricPoint{Time: start.Add(500 * time.Millisecond), RSS: 2}); len(points) != 1 {
+		t.Fatalf("sampled too early: %d points", len(points))
+	}
+	for i := 1; i <= 125; i++ {
+		store.append(metricPoint{Time: start.Add(time.Duration(i) * time.Second), RSS: uint64(i + 1)})
+	}
+	points := store.append(metricPoint{Time: start.Add(125*time.Second + 500*time.Millisecond), RSS: 999})
+	if len(points) != 120 || points[0].RSS != 7 || points[len(points)-1].RSS != 126 {
+		t.Fatalf("unexpected metric window: %d points, first=%d last=%d", len(points), points[0].RSS, points[len(points)-1].RSS)
+	}
+	points = store.append(metricPoint{Time: start.Add(126 * time.Second), RSS: 40, PID: 123})
+	if len(points) != 1 || points[0].RSS != 40 {
+		t.Fatal("metric history was not reset after process change")
+	}
+}
+
 func TestBackupRestorePreservesCurrentState(t *testing.T) {
 	s := newTestServer(t)
 	invite, _, err := s.auth.createInvite(time.Hour)

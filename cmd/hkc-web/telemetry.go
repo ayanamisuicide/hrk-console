@@ -156,11 +156,13 @@ func (s *server) adminAudit(w http.ResponseWriter, r *http.Request) {
 type metricPoint struct {
 	Time time.Time `json:"time"`
 	RSS  uint64    `json:"rssBytes"`
+	PID  int       `json:"-"`
 }
 
 type metricStore struct {
 	mu     sync.Mutex
 	points []metricPoint
+	pid    int
 }
 
 func newMetricStore() *metricStore { return &metricStore{} }
@@ -168,7 +170,11 @@ func newMetricStore() *metricStore { return &metricStore{} }
 func (m *metricStore) append(point metricPoint) []metricPoint {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.points) == 0 || point.Time.Sub(m.points[len(m.points)-1].Time) >= 5*time.Second {
+	if point.PID != m.pid {
+		m.points = nil
+		m.pid = point.PID
+	}
+	if len(m.points) == 0 || point.Time.Sub(m.points[len(m.points)-1].Time) >= time.Second {
 		m.points = append(m.points, point)
 		if len(m.points) > 120 {
 			m.points = m.points[len(m.points)-120:]
@@ -197,8 +203,25 @@ func processRSS(pid int) uint64 {
 	return 0
 }
 
-func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
+func (s *server) sampleMetrics() (int, uint64, []metricPoint) {
 	pid := botproc.PID()
+	rss := processRSS(pid)
+	points := []metricPoint{}
+	if s.metrics != nil {
+		points = s.metrics.append(metricPoint{Time: time.Now().UTC(), RSS: rss, PID: pid})
+	}
+	return pid, rss, points
+}
+
+func (s *server) liveMetrics(w http.ResponseWriter, _ *http.Request) {
+	pid, rss, points := s.sampleMetrics()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"running": pid != 0, "pid": pid, "rssBytes": rss, "points": points,
+	})
+}
+
+func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
+	pid, rss, points := s.sampleMetrics()
 	lines := logfeed.TailLines(s.bot.LogFile, 1000)
 	counts := map[string]int{"info": 0, "warning": 0, "error": 0}
 	for _, line := range lines {
@@ -210,11 +233,6 @@ func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
 		case strings.Contains(line, "[INFO]"):
 			counts["info"]++
 		}
-	}
-	rss := processRSS(pid)
-	points := []metricPoint{}
-	if s.metrics != nil {
-		points = s.metrics.append(metricPoint{Time: time.Now().UTC(), RSS: rss})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"running": pid != 0, "pid": pid, "rssBytes": rss, "points": points,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,22 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+func TestUpdateProgressReturnsRecordedSteps(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HKC_UPDATE_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"phase":"downloading","progress":48,"events":[{"message":"SHA-256 подтверждена"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t)
+	r := httptest.NewRequest("GET", "/api/admin/updates/progress", nil)
+	r.Header.Set("Authorization", "Bearer admin-secret")
+	w := httptest.NewRecorder()
+	s.updateProgress(w, r)
+	if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte("SHA-256 подтверждена")) {
+		t.Fatalf("progress: %d %s", w.Code, w.Body.String())
+	}
+}
 
 func TestUpdateEndpointsRequireAdministrator(t *testing.T) {
 	s := newTestServer(t)
@@ -17,6 +34,9 @@ func TestUpdateEndpointsRequireAdministrator(t *testing.T) {
 		},
 		func(w *httptest.ResponseRecorder) {
 			s.installUpdate(w, httptest.NewRequest("POST", "/api/admin/updates/install", nil))
+		},
+		func(w *httptest.ResponseRecorder) {
+			s.updateProgress(w, httptest.NewRequest("GET", "/api/admin/updates/progress", nil))
 		},
 	} {
 		w := httptest.NewRecorder()

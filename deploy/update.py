@@ -111,8 +111,19 @@ def await_health(url, expected, attempts=30):
 
 
 def save_status(directory, phase, message, **extra):
-    content = {"phase": phase, "message": message,
-               "updatedAt": datetime.now(timezone.utc).isoformat(), **extra}
+    now = datetime.now(timezone.utc).isoformat()
+    previous = {}
+    reset = extra.pop("reset", False)
+    if not reset:
+        with contextlib.suppress(OSError, ValueError):
+            previous = json.loads((directory / "status.json").read_text(encoding="utf-8"))
+    events = previous.get("events", [])
+    progress = extra.pop("progress", previous.get("progress", 0))
+    events.append({"at": now, "phase": phase, "message": message, "progress": progress})
+    content = {"phase": phase, "message": message, "progress": progress,
+               "startedAt": previous.get("startedAt", now), "updatedAt": now,
+               "events": events[-80:], **{key: value for key, value in previous.items()
+                                         if key in ("version", "backup")}, **extra}
     fd, name = tempfile.mkstemp(prefix=".status-", dir=directory)
     try:
         with os.fdopen(fd, "w") as handle:
@@ -139,7 +150,7 @@ def install():
         executable = source / "bin" / "hkc-web"
         old_commit = ""
         try:
-            save_status(state, "checking", "Проверяем релиз и локальные изменения.")
+            save_status(state, "checking", "Запуск установки: проверяем окружение.", progress=3, reset=True)
             if os.uname().machine != "x86_64":
                 raise RuntimeError("Only Linux amd64 releases are currently available")
             if executable.is_symlink():
@@ -147,12 +158,15 @@ def install():
             copies = [source] + ([local] if local and local != source else [])
             for copy in copies:
                 require_clean(copy)
+            save_status(state, "checking", "Исходники чистые и находятся на main.", progress=10)
             tag = stable_release()
+            save_status(state, "checking", f"Найден стабильный релиз {tag}.", progress=16, version=tag)
             for copy in copies:
                 # Only the trusted project is fetched; no user-supplied URL or command.
                 git(copy, "fetch", "--no-tags", REPOSITORY + ".git",
                     "refs/heads/main:refs/remotes/origin/main", f"refs/tags/{tag}:refs/tags/{tag}")
             commit = git(source, "rev-parse", f"{tag}^{{commit}}")
+            save_status(state, "checking", f"Сверены GitHub refs и коммит {commit[:12]}.", progress=24)
             for copy in copies:
                 git(copy, "merge-base", "--is-ancestor", "HEAD", commit)
             current = json.loads(run([str(executable), "--version-json"], timeout=10))
@@ -160,17 +174,19 @@ def install():
             if current.get("modified"):
                 raise RuntimeError("The installed binary was built with local changes")
             if old_commit == commit:
+                save_status(state, "checking", "Сборка уже актуальна; сверяем копии исходников.", progress=82)
                 for copy in copies:
                     require_clean(copy)
                     git(copy, "merge", "--ff-only", commit)
-                save_status(state, "complete", "Установлена актуальная версия. Локальные копии сверены.", version=tag)
+                save_status(state, "complete", "Установлена актуальная версия. Локальные копии сверены.", progress=100, version=tag)
                 return
 
-            save_status(state, "downloading", "Скачиваем релиз и проверяем SHA-256.", version=tag)
+            save_status(state, "downloading", "Загружаем архив релиза и контрольную сумму.", progress=32, version=tag)
             name = f"hkc-web-{tag}-linux-amd64.tar.gz"
             base = f"{REPOSITORY}/releases/download/{tag}/"
             binary = verify_archive(download(base + name, MAX_ARCHIVE),
                                     download(base + name + ".sha256", 1024), name)
+            save_status(state, "downloading", "Архив скачан; SHA-256 и содержимое подтверждены.", progress=48)
             # Verify the embedded revision before touching the installed executable.
             with tempfile.TemporaryDirectory(prefix="hkc-verify-") as temporary:
                 staged = Path(temporary) / "hkc-web"
@@ -179,6 +195,7 @@ def install():
                 metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
                 if metadata.get("commit") != commit or metadata.get("version") != tag or metadata.get("modified"):
                     raise RuntimeError("Binary metadata does not match the published Git tag")
+            save_status(state, "checking", "Встроенная версия бинарника совпадает с тегом и коммитом.", progress=58)
 
             for copy in copies:
                 require_clean(copy)
@@ -188,29 +205,32 @@ def install():
             backup.mkdir(mode=0o700, parents=True)
             shutil.copy2(executable, backup / "hkc-web")
             (backup / "version.json").write_text(json.dumps(current), encoding="utf-8")
-            save_status(state, "restarting", "Предыдущая сборка сохранена. Перезапускаем панель.", version=tag, backup=str(backup))
+            save_status(state, "restarting", "Предыдущая сборка сохранена для отката.", progress=68, version=tag, backup=str(backup))
             replace_binary(executable, binary)
             switched = True
+            save_status(state, "restarting", "Новый бинарник установлен; перезапускаем службу.", progress=74)
             run(["systemctl", "restart", "hkc-web.service"], timeout=40)
             health_url = os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080")
+            save_status(state, "restarting", "Служба поднята; проверяем HTTP и номер коммита.", progress=82)
             await_health(health_url, commit)
+            save_status(state, "restarting", "Новая сборка отвечает корректно; синхронизируем исходники.", progress=90)
             # Source copies advance only after the new process is healthy.
             # Each is rechecked immediately before merge; user edits are never reset.
             for copy in copies:
                 require_clean(copy)
                 git(copy, "merge", "--ff-only", commit)
-            save_status(state, "complete", "Обновление установлено; сборка и локальные копии совпадают с релизом.", version=tag, backup=str(backup))
+            save_status(state, "complete", "Обновление установлено; сборка и локальные копии совпадают с релизом.", progress=100, version=tag, backup=str(backup))
         except Exception as error:
             if switched and backup:
                 try:
                     replace_binary(executable, (backup / "hkc-web").read_bytes())
                     run(["systemctl", "restart", "hkc-web.service"], timeout=40)
                     await_health(os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080"), old_commit)
-                    save_status(state, "rolled_back", f"Возвращена предыдущая сборка: {error}", backup=str(backup))
+                    save_status(state, "rolled_back", f"Возвращена предыдущая сборка: {error}", progress=100, backup=str(backup))
                 except Exception as rollback_error:
-                    save_status(state, "failed", f"Обновление: {error}; откат: {rollback_error}", backup=str(backup))
+                    save_status(state, "failed", f"Обновление: {error}; откат: {rollback_error}", progress=100, backup=str(backup))
             else:
-                save_status(state, "failed", str(error))
+                save_status(state, "failed", str(error), progress=100)
             raise
 
 

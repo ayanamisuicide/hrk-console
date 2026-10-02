@@ -18,6 +18,17 @@ $('#admin-theme').addEventListener('click', () => {
 });
 let adminToken = sessionStorage.getItem('hkc-admin-token') || '';
 let refreshTimer;
+let usersSignature = '';
+let invitesSignature = '';
+let backupsSignature = '';
+try {
+  const openBranches = JSON.parse(localStorage.getItem('hkc-admin-tree') || 'null');
+  if (Array.isArray(openBranches)) document.querySelectorAll('.admin-tree-group').forEach((branch) => { branch.open = openBranches.includes(branch.dataset.tree); });
+} catch (_) { localStorage.removeItem('hkc-admin-tree'); }
+document.querySelectorAll('.admin-tree-group').forEach((branch) => branch.addEventListener('toggle', () => {
+  const open = [...document.querySelectorAll('.admin-tree-group[open]')].map((item) => item.dataset.tree);
+  localStorage.setItem('hkc-admin-tree', JSON.stringify(open));
+}));
 
 function confirmAction(title, message) {
   const dialog = $('#confirm-dialog');
@@ -65,6 +76,9 @@ function showNotice(message, kind = 'ok') {
 }
 
 function renderUsers(users) {
+  const signature = JSON.stringify(users);
+  if (signature === usersSignature) return;
+  usersSignature = signature;
   const body = $('#users-body');
   body.replaceChildren();
   $('#users-empty').hidden = users.length !== 0;
@@ -115,6 +129,9 @@ function renderUsers(users) {
 }
 
 function renderInvites(invites) {
+  const signature = JSON.stringify(invites);
+  if (signature === invitesSignature) return;
+  invitesSignature = signature;
   const grid = $('#invites-grid');
   grid.replaceChildren();
   $('#invites-empty').hidden = invites.length !== 0;
@@ -152,19 +169,79 @@ function renderBot(bot) {
   document.querySelector('[data-bot-action="stop"]').disabled = !bot.running;
 }
 
-function renderAudit(events) {
-  const body = $('#audit-body'); body.replaceChildren();
-  $('#audit-empty').hidden = events.length !== 0;
+let auditVisible = 12;
+let auditSignature = '';
+let auditEvents = [];
+const auditOpen = new Set();
+function auditGroups(events) {
+  const groups = [];
+  const byIdentity = new Map();
   for (const event of events) {
-    const row = document.createElement('tr');
-    for (const value of [formatDate(event.time), event.actor, event.action, event.detail, event.ip]) {
-      const cell = document.createElement('td'); cell.textContent = value || '—'; row.append(cell);
-    }
-    body.append(row);
+    const identity = JSON.stringify([event.actor, event.action, event.detail, event.ip]);
+    if (byIdentity.has(identity)) byIdentity.get(identity).events.push(event);
+    else { const group = {identity, events: [event]}; groups.push(group); byIdentity.set(identity, group); }
   }
+  return groups;
 }
 
+function repetitionLabel(count) {
+  const suffix = count % 100 >= 11 && count % 100 <= 14 ? 'раз' : count % 10 >= 2 && count % 10 <= 4 ? 'раза' : 'раз';
+  return `${count} ${suffix}`;
+}
+
+function drawAudit() {
+  const groups = auditGroups(auditEvents);
+  const list = $('#audit-groups'); list.replaceChildren();
+  $('#audit-empty').hidden = groups.length !== 0;
+  groups.slice(0, auditVisible).forEach((group, index) => {
+    const event = group.events[0];
+    const key = group.identity;
+    const card = document.createElement('article'); card.className = 'audit-group';
+    const head = document.createElement('div'); head.className = 'audit-group-head';
+    const action = document.createElement('strong'); action.textContent = event.action || 'Действие';
+    const detail = document.createElement('p'); detail.textContent = event.detail || 'Без описания';
+    const meta = document.createElement('span'); meta.textContent = `${event.actor || '—'} · ${formatDate(event.time)} · ${event.ip || '—'}`;
+    const main = document.createElement('div'); main.append(action, detail, meta); head.append(main);
+    if (group.events.length > 1) {
+      const button = document.createElement('button'); button.className = 'compact audit-toggle';
+      const panel = document.createElement('div'); panel.className = 'audit-expander'; panel.id = `audit-detail-${index}`;
+      const inner = document.createElement('div'); inner.className = 'audit-expander-inner';
+      for (const occurrence of group.events) {
+        const row = document.createElement('div'); row.className = 'audit-occurrence';
+        const time = document.createElement('time'); time.textContent = formatDate(occurrence.time);
+        const copy = document.createElement('span'); copy.textContent = `${occurrence.actor || '—'} · ${occurrence.ip || '—'}`;
+        row.append(time, copy); inner.append(row);
+      }
+      panel.append(inner);
+      const toggle = (open) => {
+        card.classList.toggle('open', open); button.setAttribute('aria-expanded', String(open));
+        button.textContent = `${repetitionLabel(group.events.length)} ${open ? '▴' : '▾'}`;
+        panel.inert = !open;
+        if (open) auditOpen.add(key); else auditOpen.delete(key);
+      };
+      button.setAttribute('aria-controls', panel.id);
+      button.addEventListener('click', () => toggle(!card.classList.contains('open')));
+      head.append(button); card.append(head, panel); toggle(auditOpen.has(key));
+    } else card.append(head);
+    list.append(card);
+  });
+  $('#audit-more').hidden = auditVisible >= groups.length;
+  $('#audit-more').textContent = `Показать ещё · ${Math.min(12, groups.length - auditVisible)}`;
+}
+
+function renderAudit(events) {
+  const signature = JSON.stringify(events);
+  if (signature === auditSignature) return;
+  auditSignature = signature;
+  auditEvents = events;
+  drawAudit();
+}
+$('#audit-more').addEventListener('click', () => { auditVisible += 12; drawAudit(); });
+
 function renderBackups(backups) {
+  const signature = JSON.stringify(backups);
+  if (signature === backupsSignature) return;
+  backupsSignature = signature;
   const list = $('#backup-list'); list.replaceChildren();
   $('#backup-empty').hidden = backups.length !== 0;
   for (const backup of backups) {
@@ -274,7 +351,6 @@ $('#invite-form').addEventListener('submit', async (event) => {
 $('#admin-logout').addEventListener('click', () => {
   sessionStorage.removeItem('hkc-admin-token');
   adminToken = '';
-  clearInterval(refreshTimer);
   openAuth();
 });
 
@@ -327,7 +403,7 @@ async function refreshUpdates() {
     $('#update-summary').textContent = message;
     $('#update-job').textContent = data.job ? data.job.message + (data.job.updatedAt ? ' · ' + formatDate(data.job.updatedAt) : '') : '';
     const syncNeeded = [data.source, data.local].some(copy => copy.configured && copy.commit !== remote.commit);
-    $('#updates-install').textContent = remote.commit === installed.commit && syncNeeded ? 'Синхронизировать копии' : 'Установить обновление';
+    $('#updates-install').textContent = remote.commit === installed.commit && syncNeeded ? 'Открыть синхронизацию' : 'Открыть окно обновления';
     $('#updates-install').disabled = !data.enabled || blocked || busy || !!remote.error || remote.checking || !remote.commit || (remote.commit === installed.commit && !syncNeeded) || installed.modified;
   } catch (error) {
     $('#update-summary').textContent = 'Не удалось получить состояние обновлений: ' + error.message;
@@ -340,12 +416,12 @@ $('#updates-check').addEventListener('click', async () => {
   catch (error) { showNotice(error.message, 'error'); }
   finally { $('#updates-check').disabled = false; }
 });
-$('#updates-install').addEventListener('click', async () => {
-  if (!await confirmAction('Установить обновление панели?', 'Сохраним предыдущую сборку, проверим контрольную сумму и перезапустим панель. При неудачном запуске вернём предыдущую сборку. После перезапуска потребуется войти заново.')) return;
-  $('#updates-install').disabled = true;
-  try { const result = await adminRequest('/api/admin/updates/install', {method: 'POST'}); $('#update-job').textContent = result.message; }
-  catch (error) { showNotice(error.message, 'error'); }
-});
+function openUpdateWindow() {
+  const progress = window.open('/admin/update.html', 'hkc-update-progress', 'width=980,height=780');
+  if (progress) progress.focus();
+  else showNotice('Разрешите всплывающие окна для панели обновления', 'error');
+}
+$('#updates-install').addEventListener('click', openUpdateWindow);
 
 refresh();
 refreshTimer = setInterval(refresh, 10000);
