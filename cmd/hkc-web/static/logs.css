@@ -141,20 +141,42 @@
 .line:hover { background-color: rgba(97, 242, 202, .045); }
 .line.live {
   z-index: 1;
-  animation: log-record-enter 500ms cubic-bezier(.2, .75, .25, 1) both;
+  --arrival-rgb: 97, 242, 202;
+  --arrival-accent: var(--mint);
+  isolation: isolate;
+  overflow: hidden;
+  border-left-color: var(--arrival-accent);
+  box-shadow: inset 3px 0 0 var(--arrival-accent), 0 0 22px rgba(var(--arrival-rgb), .12);
+  animation: log-record-impact 1050ms cubic-bezier(.16, 1, .3, 1) both;
 }
+.line.live::before,
+.line.live::after { content: ""; position: absolute; inset-block: 0; pointer-events: none; }
+.line.live::before {
+  z-index: 0;
+  inset-inline: 0;
+  background: linear-gradient(90deg, rgba(var(--arrival-rgb), .24), rgba(var(--arrival-rgb), .1) 28%, transparent 78%);
+  animation: log-arrival-glow 1050ms ease-out both;
+}
+.line.live::after {
+  z-index: 0;
+  left: -48%;
+  width: 48%;
+  background: linear-gradient(100deg, transparent, rgba(231, 255, 248, .36), rgba(var(--arrival-rgb), .28), transparent);
+  animation: log-arrival-sweep 820ms cubic-bezier(.2, .7, .2, 1) both;
+}
+.line.live > * { position: relative; z-index: 1; }
 .line.live time,
 .line.live .level,
 .line.live .module,
 .line.live .message {
-  animation: log-field-enter 370ms cubic-bezier(.2, .75, .25, 1) both;
+  animation: log-field-enter 420ms cubic-bezier(.16, 1, .3, 1) both;
 }
 .line.live .level { animation-delay: 35ms; }
-.line.live .module { animation-delay: 70ms; }
-.line.live .message { animation-delay: 105ms; }
-.line[data-level="WARNING"].live .level,
-.line[data-level="ERROR"].live .level,
-.line[data-level="CRITICAL"].live .level { animation-name: log-level-enter; }
+.line.live .module { animation-delay: 65ms; }
+.line.live .message { animation-delay: 90ms; }
+.line[data-level="WARNING"].live { --arrival-rgb: 242, 191, 98; --arrival-accent: var(--amber); }
+.line[data-level="ERROR"].live,
+.line[data-level="CRITICAL"].live { --arrival-rgb: 255, 107, 117; --arrival-accent: var(--red); }
 #stream-state.online i { position: relative; animation: signal-breathe 2.4s ease-in-out infinite; }
 #stream-state.online i::after {
   content: "";
@@ -165,9 +187,10 @@
   animation: signal-ring 2.4s ease-out infinite;
 }
 .line-count b.value-change { animation-duration: 360ms; }
-@keyframes log-record-enter { from { opacity: .35; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes log-field-enter { from { opacity: .42; transform: translateX(-3px); filter: blur(.4px); } to { opacity: 1; transform: translateX(0); filter: blur(0); } }
-@keyframes log-level-enter { from { opacity: .4; transform: translateX(-2px) scale(.94); } to { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes log-record-impact { 0% { opacity: 0; transform: translateX(19px) scale(.99); } 68% { opacity: 1; transform: translateX(-2px) scale(1); } 100% { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes log-field-enter { from { opacity: .38; transform: translateX(7px); filter: blur(.8px); } to { opacity: 1; transform: translateX(0); filter: blur(0); } }
+@keyframes log-arrival-glow { 0% { opacity: 0; } 24% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes log-arrival-sweep { 0% { opacity: 0; transform: translateX(0) skewX(-12deg); } 18% { opacity: 1; } 100% { opacity: 0; transform: translateX(420%) skewX(-12deg); } }
 @keyframes signal-breathe { 50% { box-shadow: 0 0 11px currentColor; transform: scale(1.14); } }
 @keyframes signal-ring { 0% { opacity: .55; transform: scale(.65); } 100% { opacity: 0; transform: scale(2.5); } }
 footer .footer-separator { padding: 0 7px; color: var(--mint); }
@@ -202,6 +225,8 @@ footer .footer-separator { padding: 0 7px; color: var(--mint); }
 @media (prefers-reduced-motion: reduce) {
   .log-advanced summary i { transition: none; }
   .line.live,
+  .line.live::before,
+  .line.live::after,
   .line.live time,
   .line.live .level,
   .line.live .module,
