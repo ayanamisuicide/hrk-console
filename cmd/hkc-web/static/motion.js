@@ -12,7 +12,7 @@
     const root = document.documentElement;
     clearTimeout(root.motionThemeTimer);
     root.classList.add('theme-transition');
-    root.motionThemeTimer = setTimeout(() => root.classList.remove('theme-transition'), 220);
+    root.motionThemeTimer = setTimeout(() => root.classList.remove('theme-transition'), 480);
   };
   window.motionValue = (element, value) => {
     const next = String(value);
@@ -22,7 +22,7 @@
     if (reducedMotion() || document.hidden || ['—', '-', '', '0'].includes(previous)) return;
 
     const now = performance.now();
-    if (lastValueMotion.has(element) && now - lastValueMotion.get(element) < 220) return;
+    if (lastValueMotion.has(element) && now - lastValueMotion.get(element) < 440) return;
     lastValueMotion.set(element, now);
     element.classList.remove('value-change');
     void element.offsetWidth;
@@ -43,7 +43,7 @@
       element.motionHideTimer = setTimeout(() => {
         element.hidden = true;
         element.classList.remove('is-leaving');
-      }, 170);
+      }, 300);
     }, duration);
   };
 
@@ -83,7 +83,7 @@
         if (!disclosure.classList.contains('is-closing')) return;
         disclosure.open = false;
         disclosure.classList.remove('is-closing');
-      }, 180);
+      }, 360);
     });
   });
 
@@ -98,6 +98,26 @@
     revealTargets.forEach((element) => {
       element.dataset.reveal = 'waiting';
       observer.observe(element);
+    });
+
+    document.addEventListener('pointermove', (event) => {
+      const card = event.target.closest?.('.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card');
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty('--pointer-x', `${event.clientX - rect.left}px`);
+      card.style.setProperty('--pointer-y', `${event.clientY - rect.top}px`);
+    }, {passive: true});
+
+    document.addEventListener('pointerdown', (event) => {
+      const button = event.target.closest?.('button:not(:disabled)');
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      button.style.setProperty('--ripple-x', `${event.clientX - rect.left}px`);
+      button.style.setProperty('--ripple-y', `${event.clientY - rect.top}px`);
+      button.classList.remove('is-rippling');
+      void button.offsetWidth;
+      button.classList.add('is-rippling');
+      button.addEventListener('animationend', () => button.classList.remove('is-rippling'), {once: true});
     });
 
     const handleMotionPreference = (event) => {

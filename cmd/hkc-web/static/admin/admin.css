@@ -123,14 +123,15 @@ td:last-child { text-align: right; }
 @media (prefers-reduced-motion:reduce) { .admin-tree-clip,.audit-expander,.admin-tree-group > summary,.admin-tree-group > summary::after,.audit-group { transition:none; } }
 
 /* Keep admin-specific states on the shared motion scale above. */
-.admin-header { animation:motion-enter 300ms var(--motion-enter-ease) both; }
-.summary article { animation:none; transition:transform var(--motion-base) var(--motion-ease),border-color var(--motion-base) ease,background-color var(--motion-base) ease,box-shadow var(--motion-base) ease; }
-.admin-main [data-reveal="shown"] { transition:opacity 260ms var(--motion-ease) var(--reveal-delay,0ms),transform 300ms var(--motion-enter-ease) var(--reveal-delay,0ms),border-color var(--motion-base) ease,background-color var(--motion-base) ease,box-shadow var(--motion-base) ease; }
+.admin-header { animation:motion-enter 520ms var(--motion-enter-ease) both; }
+.summary article { animation:none; transition:transform 420ms var(--motion-spring),border-color 380ms var(--motion-ease),background-color 420ms var(--motion-ease),box-shadow 460ms var(--motion-ease); }
+.admin-main [data-reveal="shown"] { transition:opacity 540ms var(--motion-enter-ease) var(--reveal-delay,0ms),transform 620ms var(--motion-spring) var(--reveal-delay,0ms),border-color var(--motion-base) var(--motion-ease),background-color var(--motion-base) var(--motion-ease),box-shadow var(--motion-base) var(--motion-ease); }
 .summary article:hover,.invite-card:hover { transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.18); }
 .admin-section { animation:none; }
-.invite-card { animation:motion-enter 220ms var(--motion-enter-ease) both; }
+.invite-card { animation:motion-enter 440ms var(--motion-enter-ease) both; }
 .bot-deck::after { filter:none; }
-.bot-orbit::before,.bot-orbit::after { animation:none; }
+.bot-orbit::before { animation:orbital-drift 12s ease-in-out infinite alternate; }
+.bot-orbit::after { animation:orbital-drift 9s ease-in-out infinite alternate-reverse; }
 .bot-orbit span { transition:background-color var(--motion-base) ease,box-shadow var(--motion-base) ease; }
 .admin-header a { transition:color var(--motion-fast) ease,border-color var(--motion-fast) ease,background-color var(--motion-fast) ease; }
 .table-wrap tr { transition:background-color var(--motion-fast) ease; }
