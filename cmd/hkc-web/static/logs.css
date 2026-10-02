@@ -130,7 +130,12 @@
 }
 .log-head,
 .line { min-width: 0; }
-.line .message { min-width: 0; }
+.line .message { min-width: 0; overflow-wrap: anywhere; }
+.line.continuation {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .line { border-left-width: 2px; }
 .line:nth-child(even) { background-color: rgba(255, 255, 255, .012); }
 .line:hover { background-color: rgba(97, 242, 202, .045); }
