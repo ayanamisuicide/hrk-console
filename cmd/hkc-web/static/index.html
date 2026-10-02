@@ -89,37 +89,45 @@
         <article class="surface-card chart-card"><div class="card-heading"><div><span class="eyebrow">MEMORY HISTORY</span><h3>Использование RAM</h3></div><span class="muted">Последние измерения · шаг 5 секунд</span></div><svg id="memory-chart" viewBox="0 0 800 220" preserveAspectRatio="none" role="img" aria-label="График использования памяти"><path id="memory-area"></path><path id="memory-line"></path></svg><p id="chart-empty" class="muted">Ожидаем данные процесса.</p></article>
       </section>
       <section id="logs-view" class="workspace-view logs-view" hidden>
-      <div class="logs-controls">
-      <div class="logs-actions"><div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Поиск по журналу"><kbd>/</kbd></div><button id="export-logs" class="compact">↓ Экспорт</button><button id="clear" class="compact">Очистить экран</button></div>
-      <section class="log-toolbar" aria-label="Фильтры журнала">
-        <div class="level-filters" role="group" aria-label="Уровень событий">
+        <div class="logs-controls">
+          <div class="log-console-bar">
+            <span id="stream-state"><i></i> подключение к потоку</span>
+            <span class="line-count"><b id="line-count">0</b> строк</span>
+            <div class="log-actions">
+              <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
+              <button id="export-logs" class="compact" title="Экспорт журнала">↓ <span>Экспорт</span></button>
+              <button id="clear" class="compact" title="Очистить экран">⌫ <span>Очистить</span></button>
+            </div>
+          </div>
+          <div class="log-filterbar">
+            <div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Найти в журнале…"><kbd>/</kbd></div>
+            <div class="level-filters" role="group" aria-label="Уровень событий">
           <button class="filter-chip active" data-level="ALL">Все</button>
           <button class="filter-chip" data-level="INFO">Info</button>
           <button class="filter-chip warning" data-level="WARNING">Warning</button>
           <button class="filter-chip error" data-level="ERROR">Error</button>
+            </div>
+            <details class="log-advanced">
+              <summary>Ещё фильтры <i>⌄</i></summary>
+              <div class="log-advanced-grid">
+                <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
+                <label>С <input id="time-from" type="datetime-local"></label>
+                <label>По <input id="time-to" type="datetime-local"></label>
+                <label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label>
+                <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
+                <button id="preset-save" class="compact">Сохранить</button>
+                <button id="preset-delete" class="compact" title="Удалить выбранный пресет" aria-label="Удалить выбранный фильтр">×</button>
+              </div>
+            </details>
+          </div>
         </div>
-        <div class="stream-actions"><span id="line-count" class="line-count">0 строк</span><button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button></div>
-      </section>
-      <details class="log-advanced">
-        <summary><span>Фильтры и пресеты</span><small>Модуль, период и сохранённые наборы</small><i>⌄</i></summary>
-        <div class="log-advanced-grid">
-          <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
-          <label>С <input id="time-from" type="datetime-local"></label>
-          <label>По <input id="time-to" type="datetime-local"></label>
-          <label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label>
-          <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
-          <button id="preset-save" class="compact">Сохранить</button>
-          <button id="preset-delete" class="compact" title="Удалить выбранный пресет" aria-label="Удалить выбранный фильтр">×</button>
-        </div>
-      </details>
-      </div>
-      <section class="log-frame">
+        <section class="log-frame">
         <div class="log-head" aria-hidden="true"><span>ВРЕМЯ</span><span>УРОВЕНЬ</span><span>МОДУЛЬ</span><span>СООБЩЕНИЕ</span></div>
         <section id="log" class="log" aria-live="polite"></section>
       </section>
       </section>
       <footer>
-        <span id="stream-state"><i></i> подключение к потоку</span>
+        <span>Журнал событий <span class="footer-separator">/</span> Поток обновляется автоматически</span>
       </footer>
     </main>
   </div>

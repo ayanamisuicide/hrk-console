@@ -1,96 +1,97 @@
+/* Logs use a compact operator-console layout: one control rail and one uninterrupted feed. */
 .logs-view {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 0;
   min-height: 0;
-  padding: 14px 18px 16px;
+  padding: 0 20px 14px;
 }
 
 .logs-controls {
   display: grid;
-  gap: 9px;
+  gap: 0;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  background: linear-gradient(145deg, rgba(18, 29, 25, .92), rgba(9, 15, 13, .88));
-  box-shadow: 0 12px 35px rgba(0, 0, 0, .15);
+  padding-bottom: 10px;
 }
 
-.logs-actions {
+.log-console-bar,
+.log-filterbar {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
 }
 
-.logs-actions .search-wrap { flex: 1; min-width: 120px; }
-.logs-actions input { width: 100%; min-width: 0; }
-
-.log-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  padding: 9px 0 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-  background: transparent;
+.log-console-bar {
+  min-height: 42px;
+  gap: 13px;
+  border-bottom: 1px solid var(--line);
 }
 
-.level-filters { display: flex; flex-wrap: wrap; gap: 6px; }
-.stream-actions { display: flex; align-items: center; gap: 9px; }
-.line-count { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#stream-state { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; letter-spacing: .035em; }
+#stream-state.online { color: var(--mint); }
+#stream-state i { flex: 0 0 6px; width: 6px; height: 6px; }
+.line-count { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.line-count b { color: var(--text); font: 600 11px "Cascadia Mono", Consolas, monospace; }
+.log-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.log-actions button { min-height: 29px; padding: 5px 8px; color: var(--muted); font-size: 9px; }
+.log-actions button span { color: inherit; }
+.log-actions .stream-control { min-width: 0; justify-content: center; }
 
-details.log-advanced {
-  display: block;
-  margin: 0 -12px -12px;
-  padding: 0 12px;
-  border-top: 1px solid var(--line);
-}
+.log-filterbar { gap: 12px; min-height: 48px; padding-top: 8px; }
+.log-filterbar > .search-wrap { flex: 0 1 310px; min-width: 150px; }
+.log-filterbar input[type="search"] { width: 100%; min-width: 0; min-height: 34px; padding-top: 8px; padding-bottom: 8px; }
+.level-filters { display: flex; align-items: center; gap: 3px; }
+.filter-chip { min-height: 28px; padding: 5px 10px; border-color: transparent; background: transparent; color: var(--muted); font-size: 9px; }
+.filter-chip:hover:not(:disabled) { box-shadow: none; }
+.filter-chip.active { color: #06110e; background: var(--mint); box-shadow: none; }
+.filter-chip.warning:not(.active) { color: var(--amber); }
+.filter-chip.error:not(.active) { color: var(--red); }
 
+.log-advanced { position: relative; margin-left: auto; }
 .log-advanced summary {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 36px;
-  list-style: none;
-  color: var(--text);
-  cursor: pointer;
-  user-select: none;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.log-advanced summary::-webkit-details-marker { display: none; }
-.log-advanced summary small { color: var(--muted); font-size: 10px; font-weight: 400; }
-.log-advanced summary i { margin-left: auto; color: var(--muted); font-style: normal; transition: transform .2s ease; }
-.log-advanced[open] summary { border-bottom: 1px solid var(--line); }
-.log-advanced[open] summary i { transform: rotate(180deg); }
-
-.log-advanced-grid {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(145px, 1fr) minmax(145px, 1fr) minmax(155px, 1.15fr) minmax(115px, .8fr) auto auto;
-  align-items: end;
   gap: 8px;
-  padding: 11px 0 12px;
+  min-height: 32px;
+  padding: 0 9px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  white-space: nowrap;
 }
-
+.log-advanced summary::-webkit-details-marker { display: none; }
+.log-advanced summary i { color: var(--mint); font-style: normal; transition: transform .2s ease; }
+.log-advanced[open] summary i { transform: rotate(180deg); }
+.log-advanced-grid {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(145px, 1fr));
+  align-items: end;
+  gap: 9px;
+  width: min(440px, calc(100vw - 40px));
+  padding: 13px;
+  border: 1px solid rgba(97, 242, 202, .22);
+  border-radius: 12px;
+  background: #101916;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, .5);
+}
 .log-advanced-grid label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; }
 .log-advanced-grid select,
 .log-advanced-grid input {
   width: 100%;
   min-width: 0;
   max-width: none;
-  min-height: 35px;
+  min-height: 34px;
   padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg);
+  border-radius: 8px;
+  background: #080d0b;
   color: var(--text);
   font-size: 10px;
 }
@@ -104,45 +105,49 @@ details.log-advanced {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(7, 12, 10, .84);
-  box-shadow: 0 14px 42px rgba(0, 0, 0, .16);
+  border-radius: 10px;
+  background: rgba(5, 9, 8, .7);
+  box-shadow: none;
 }
-
 .log-head {
   position: relative;
   z-index: 1;
-  background: rgba(17, 27, 23, .97);
+  background: #0d1411;
   border-bottom: 1px solid var(--line);
 }
-
 .log { min-height: 0; padding: 5px 0; scrollbar-color: rgba(97, 242, 202, .2) transparent; }
+.line { border-left-width: 2px; }
+.line:nth-child(even) { background-color: rgba(255, 255, 255, .012); }
+.line:hover { background-color: rgba(97, 242, 202, .045); }
+footer .footer-separator { padding: 0 7px; color: var(--mint); }
 
-@media (max-width: 1120px) {
-  .log-advanced-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .logs-view { padding-inline: 14px; }
+  .log-filterbar { gap: 7px; flex-wrap: wrap; }
+  .log-filterbar > .search-wrap { flex: 1 1 220px; }
+  .log-advanced { margin-left: 0; }
 }
 
-@media (max-width: 760px) {
-  .logs-view { height: 65vh; padding: 10px; gap: 9px; }
-  .logs-controls { padding: 9px; border-radius: 13px; }
-  .logs-actions { flex-wrap: wrap; }
-  .logs-actions .search-wrap { flex-basis: 100%; }
-  .logs-actions button { flex: 1; justify-content: center; }
-  .log-toolbar { align-items: flex-start; }
-  .level-filters { gap: 4px; }
-  .filter-chip { padding-inline: 8px; }
-  .stream-actions { gap: 6px; }
-  .line-count { display: none; }
-  details.log-advanced { margin: 0 -9px -9px; padding: 0 9px; }
-  .log-advanced summary { gap: 6px; }
-  .log-advanced summary small { font-size: 9px; }
-  .log-advanced-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 600px) {
+  .logs-view { height: 65vh; padding: 0 10px 10px; }
+  .logs-controls { padding-bottom: 8px; }
+  .log-console-bar { gap: 8px; }
+  .log-actions { gap: 3px; }
+  .log-actions button { min-height: 28px; padding-inline: 6px; }
+  .log-actions button span { display: none; }
+  .log-filterbar { align-items: center; }
+  .log-filterbar > .search-wrap { flex: 1 1 100%; }
+  .level-filters { flex: 1; gap: 0; }
+  .filter-chip { flex: 1; padding-inline: 5px; }
+  .log-advanced { margin-left: auto; }
+  .log-advanced-grid { position: static; width: min(100%, 440px); margin-top: 7px; }
+  .log-head { display: none; }
+  .line { grid-template-columns: 58px 58px 1fr; padding-inline: 12px; gap: 8px; font-size: 10px; }
+  .line .module { display: none; }
+  .line.continuation { padding-left: 12px; }
+  footer { padding: 9px 12px; }
 }
 
-@media (max-width: 460px) {
-  .logs-view { height: 68vh; }
-  .log-advanced summary small { display: none; }
-  .log-advanced-grid { grid-template-columns: 1fr; }
-  .log-toolbar { flex-wrap: wrap; }
-  .stream-actions { margin-left: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .log-advanced summary i { transition: none; }
 }
