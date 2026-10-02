@@ -77,14 +77,6 @@ function setView(view) {
 }
 
 document.querySelectorAll('[data-view], [data-jump]').forEach((item) => item.addEventListener('click', () => setView(item.dataset.view || item.dataset.jump)));
-$('#copy-console-link').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(`${location.origin}/`);
-    $('#copy-link-status').textContent = 'Ссылка скопирована.';
-  } catch (_) {
-    $('#copy-link-status').textContent = `Скопируйте адрес вручную: ${location.origin}/`;
-  }
-});
 setView(localStorage.getItem('hkc-view') || 'overview');
 
 function setTheme(theme) {
@@ -284,6 +276,19 @@ function renderChart(points) {
   const nextLine = `M${coordinates.join(' L')}`;
   if (line.getAttribute('d') !== nextLine) {
     line.setAttribute('d', nextLine);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const length = line.getTotalLength();
+      line.style.strokeDasharray = `${length}`;
+      line.style.strokeDashoffset = `${length}`;
+      line.classList.remove('chart-drawing');
+      void line.getBoundingClientRect();
+      line.classList.add('chart-drawing');
+      line.addEventListener('animationend', () => {
+        line.classList.remove('chart-drawing');
+        line.style.strokeDasharray = 'none';
+        line.style.strokeDashoffset = '0';
+      }, {once: true});
+    }
   }
   $('#memory-area').setAttribute('d', `M${coordinates.join(' L')} L800,220 L0,220 Z`);
 }
@@ -475,6 +480,17 @@ $('#logout').addEventListener('click', async () => {
   authenticated = false;
   if (stream) stream.close();
   openAuth('login');
+});
+
+$('#copy-console-link').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  try {
+    await navigator.clipboard.writeText(location.origin + '/');
+    button.textContent = 'Ссылка скопирована';
+    setTimeout(() => { button.textContent = 'Скопировать ссылку'; }, 2000);
+  } catch (_) {
+    showNotice('Не удалось скопировать ссылку', 'error');
+  }
 });
 
 async function bootstrap() {
