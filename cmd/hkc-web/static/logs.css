@@ -141,40 +141,20 @@
 .line:hover { background-color: rgba(97, 242, 202, .045); }
 .line.live {
   z-index: 1;
-  transform-origin: left center;
-  animation: event-arrive 720ms cubic-bezier(.18, .82, .22, 1) both;
+  animation: log-record-enter 500ms cubic-bezier(.2, .75, .25, 1) both;
 }
-.line.live::before {
-  content: "";
-  position: absolute;
-  inset: 2px auto 2px 0;
-  width: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  box-shadow: 0 0 14px currentColor;
-  transform: scaleY(.12);
-  transform-origin: center;
-  opacity: 0;
-  animation: event-marker 620ms cubic-bezier(.16, 1, .3, 1) both;
-  pointer-events: none;
+.line.live time,
+.line.live .level,
+.line.live .module,
+.line.live .message {
+  animation: log-field-enter 370ms cubic-bezier(.2, .75, .25, 1) both;
 }
-.line.live::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 -45%;
-  width: 38%;
-  background: linear-gradient(90deg, transparent, rgba(210, 255, 239, .075), transparent);
-  transform: skewX(-16deg);
-  animation: event-glint 780ms ease-out both;
-  pointer-events: none;
-}
-.line[data-level="INFO"].live { color: var(--mint); }
-.line[data-level="WARNING"].live { color: var(--amber); animation-name: warning-arrive; }
-.line[data-level="ERROR"].live,
-.line[data-level="CRITICAL"].live { color: var(--red); animation-name: error-arrive; }
-.line.live .message { color: var(--text); }
-.line.live .module { color: #a9c2b8; }
-.line.live .level { color: currentColor; }
+.line.live .level { animation-delay: 35ms; }
+.line.live .module { animation-delay: 70ms; }
+.line.live .message { animation-delay: 105ms; }
+.line[data-level="WARNING"].live .level,
+.line[data-level="ERROR"].live .level,
+.line[data-level="CRITICAL"].live .level { animation-name: log-level-enter; }
 #stream-state.online i { position: relative; animation: signal-breathe 2.4s ease-in-out infinite; }
 #stream-state.online i::after {
   content: "";
@@ -185,23 +165,9 @@
   animation: signal-ring 2.4s ease-out infinite;
 }
 .line-count b.value-change { animation-duration: 360ms; }
-@keyframes event-arrive {
-  0% { opacity: 0; transform: translateY(8px) scale(.995); filter: blur(2px); background-color: rgba(97, 242, 202, .1); }
-  55% { opacity: 1; filter: blur(0); background-color: rgba(97, 242, 202, .045); }
-  100% { opacity: 1; transform: translateY(0) scale(1); background-color: transparent; }
-}
-@keyframes warning-arrive {
-  0% { opacity: 0; transform: translateY(7px); filter: blur(1.5px); background-color: rgba(242, 191, 98, .18); }
-  45% { opacity: 1; filter: blur(0); background-color: rgba(242, 191, 98, .09); }
-  100% { opacity: 1; transform: translateY(0); background-color: transparent; }
-}
-@keyframes error-arrive {
-  0% { opacity: 0; transform: translateY(6px) scale(.998); filter: blur(1px); background-color: rgba(255, 107, 117, .22); }
-  35% { opacity: 1; filter: blur(0); background-color: rgba(255, 107, 117, .12); }
-  100% { opacity: 1; transform: translateY(0) scale(1); background-color: rgba(255, 107, 117, .035); }
-}
-@keyframes event-marker { 0% { opacity: 0; transform: scaleY(.12); } 28% { opacity: 1; } 100% { opacity: .86; transform: scaleY(1); } }
-@keyframes event-glint { 0% { opacity: 0; transform: translateX(0) skewX(-16deg); } 18% { opacity: 1; } 100% { opacity: 0; transform: translateX(390%) skewX(-16deg); } }
+@keyframes log-record-enter { from { opacity: .35; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes log-field-enter { from { opacity: .42; transform: translateX(-3px); filter: blur(.4px); } to { opacity: 1; transform: translateX(0); filter: blur(0); } }
+@keyframes log-level-enter { from { opacity: .4; transform: translateX(-2px) scale(.94); } to { opacity: 1; transform: translateX(0) scale(1); } }
 @keyframes signal-breathe { 50% { box-shadow: 0 0 11px currentColor; transform: scale(1.14); } }
 @keyframes signal-ring { 0% { opacity: .55; transform: scale(.65); } 100% { opacity: 0; transform: scale(2.5); } }
 footer .footer-separator { padding: 0 7px; color: var(--mint); }
@@ -236,8 +202,10 @@ footer .footer-separator { padding: 0 7px; color: var(--mint); }
 @media (prefers-reduced-motion: reduce) {
   .log-advanced summary i { transition: none; }
   .line.live,
-  .line.live::before,
-  .line.live::after,
+  .line.live time,
+  .line.live .level,
+  .line.live .module,
+  .line.live .message,
   #stream-state.online i,
   #stream-state.online i::after { animation: none; }
 }

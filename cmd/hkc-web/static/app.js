@@ -161,7 +161,7 @@ function createLine(raw, live = false) {
   const row = document.createElement('div');
   row.className = `line${live ? ' live' : ''}`;
   if (live) row.addEventListener('animationend', (event) => {
-    if (!event.pseudoElement) row.classList.remove('live');
+    if (event.target === row && !event.pseudoElement) row.classList.remove('live');
   });
   const match = raw.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^:]+):\s?(.*)$/);
   if (!match) {
