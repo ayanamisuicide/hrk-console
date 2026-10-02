@@ -77,9 +77,6 @@ def main():
         for key, value in env.items():
             handle.write(key + "=" + json.dumps(value, ensure_ascii=False) + "\n")
     scripts = Path(__file__).resolve().parent
-    helper = Path("/opt/hkc-updater")
-    helper.mkdir(mode=0o700, exist_ok=True)
-    shutil.copy2(scripts / "update.py", helper / "update.py")
     for name in ("hkc-web.service", "hkc-update.service"):
         destination = Path("/etc/systemd/system") / name
         if destination.exists():
@@ -91,7 +88,11 @@ def main():
         # Validate exact process identity again before stopping the old panel.
         if Path(f"/proc/{pid}/exe").resolve().as_posix().removesuffix(" (deleted)") != str(executable):
             raise RuntimeError("Panel process identity changed")
-        os.kill(pid, signal.SIGTERM)
+        managed_pid = update.run(["systemctl", "show", "hkc-web.service", "--property=MainPID", "--value"])
+        if managed_pid == str(pid):
+            update.run(["systemctl", "stop", "hkc-web.service"])
+        else:
+            os.kill(pid, signal.SIGTERM)
         for _ in range(50):
             if not Path(f"/proc/{pid}").exists():
                 break
@@ -105,10 +106,23 @@ def main():
         update.save_status(state, "complete", "Служба обновлений подключена; предыдущая сборка сохранена.",
                            version=metadata["version"], backup=str(backup))
         print("WSL panel upgraded, health verified, local copies synchronized; previous binary:", backup)
-    except Exception:
+    except Exception as error:
         update.replace_binary(executable, (backup / "hkc-web").read_bytes())
         update.run(["systemctl", "restart", "hkc-web.service"])
-        update.save_status(state, "rolled_back", "Начальная установка не прошла; возвращена предыдущая сборка.", backup=str(backup))
+        # Pre-updater binaries do not expose /api/version; check the old HTTP entry point.
+        restored = False
+        for _ in range(30):
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:8080/", timeout=2) as response:
+                    restored = response.status == 200
+                if restored:
+                    break
+            except OSError:
+                pass
+            time.sleep(1)
+        phase = "rolled_back" if restored else "failed"
+        message = "Возвращена предыдущая сборка." if restored else "Предыдущая сборка восстановлена на диске, но сервер не отвечает."
+        update.save_status(state, phase, f"{message} Причина: {error}", backup=str(backup))
         raise
 
 if __name__ == "__main__":

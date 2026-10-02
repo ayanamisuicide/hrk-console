@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=root
 EnvironmentFile=/etc/hkc/hkc.env
 WorkingDirectory=/root/heroku-console
 ExecStart=/root/heroku-console/bin/hkc-web
