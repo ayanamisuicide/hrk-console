@@ -30,6 +30,8 @@ type auditStore struct {
 	path string
 }
 
+const auditRetention = 1000
+
 func newAuditStore(path string) *auditStore { return &auditStore{path: path} }
 
 func (a *auditStore) add(event auditEvent) error {
@@ -42,24 +44,65 @@ func (a *auditStore) add(event auditEvent) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(event)
+	if err := json.NewEncoder(f).Encode(event); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	events, count, err := a.readRecent(auditRetention)
+	if err != nil || count <= auditRetention {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(a.path), ".audit-*.jsonl")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	encoder := json.NewEncoder(tmp)
+	for i := len(events) - 1; i >= 0; i-- {
+		if err := encoder.Encode(events[i]); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), a.path)
 }
 
 func (a *auditStore) recent(limit int) ([]auditEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	events, _, err := a.readRecent(limit)
+	return events, err
+}
+
+func (a *auditStore) readRecent(limit int) ([]auditEvent, int, error) {
 	f, err := os.Open(a.path)
 	if os.IsNotExist(err) {
-		return []auditEvent{}, nil
+		return []auditEvent{}, 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer f.Close()
 	result := make([]auditEvent, 0, limit)
+	count := 0
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	for scanner.Scan() {
+		count++
 		var event auditEvent
 		if json.Unmarshal(scanner.Bytes(), &event) != nil {
 			continue
@@ -72,12 +115,12 @@ func (a *auditStore) recent(limit int) ([]auditEvent, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
 		result[i], result[j] = result[j], result[i]
 	}
-	return result, nil
+	return result, count, nil
 }
 
 func (s *server) record(r *http.Request, actor, action, detail string) {

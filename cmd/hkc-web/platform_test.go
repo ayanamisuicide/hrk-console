@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -136,6 +137,30 @@ func TestAuditPersistsAndInsightsUseLog(t *testing.T) {
 	}
 	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &body) != nil || body.LogCounts["error"] != 0 {
 		t.Fatalf("insights: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAuditRetentionKeepsNewestEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	audit := newAuditStore(path)
+	for i := 0; i < auditRetention+3; i++ {
+		if err := audit.add(auditEvent{Actor: fmt.Sprintf("actor-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.recent(auditRetention + 10)
+	if err != nil || len(events) != auditRetention {
+		t.Fatalf("retained %d events: %v", len(events), err)
+	}
+	if events[0].Actor != fmt.Sprintf("actor-%d", auditRetention+2) || events[len(events)-1].Actor != "actor-3" {
+		t.Fatalf("unexpected retained range: first=%s last=%s", events[0].Actor, events[len(events)-1].Actor)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := bytes.Count(data, []byte("\n")); lines != auditRetention {
+		t.Fatalf("audit file has %d lines, want %d", lines, auditRetention)
 	}
 }
 

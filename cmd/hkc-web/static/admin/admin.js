@@ -185,42 +185,13 @@ function renderBackups(backups) {
   }
 }
 
-function renderConfig(config) {
-  $('#config-path').textContent = config.path;
-  for (const [key, configured] of Object.entries(config.configured || {})) {
-    const status = document.querySelector(`[data-config-state="${key}"]`);
-    if (status) { status.textContent = configured ? '● задано' : '○ не задано'; status.classList.toggle('configured', configured); }
-    const remove = document.querySelector(`[data-delete-config="${key}"]`);
-    if (remove) remove.hidden = !configured;
-  }
-}
-
-function renderTokens(tokens) {
-  const list = $('#token-list'); list.replaceChildren();
-  $('#tokens-empty').hidden = tokens.length !== 0;
-  for (const token of tokens) {
-    const row = document.createElement('div'); row.className = 'token-row';
-    const info = document.createElement('div');
-    const title = document.createElement('strong'); title.textContent = token.label;
-    const meta = document.createElement('small'); meta.textContent = `${token.scope === 'control' ? 'Управление' : 'Чтение'} · создан ${formatDate(token.createdAt)} · использован ${formatDate(token.lastUsed)}`;
-    info.append(title, meta);
-    const revoke = document.createElement('button'); revoke.className = 'danger compact'; revoke.textContent = 'Отозвать';
-    revoke.addEventListener('click', async () => {
-      if (!await confirmAction('Отозвать API-токен?', `Интеграция «${token.label}» сразу потеряет доступ.`)) return;
-      try { await adminRequest(`/api/admin/tokens/${encodeURIComponent(token.id)}`, {method: 'DELETE'}); showNotice('Токен отозван'); await refresh(); }
-      catch (error) { showNotice(error.message, 'error'); }
-    });
-    row.append(info, revoke); list.append(row);
-  }
-}
-
 async function refresh() {
   if (!adminToken) {
     openAuth();
     return;
   }
   try {
-    const [data, audit, backups, config, tokens] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups'), adminRequest('/api/admin/config'), adminRequest('/api/admin/tokens')]);
+    const [data, audit, backups] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups')]);
     animateValue($('#users-count'), data.users.length);
     animateValue($('#online-count'), data.users.filter((user) => user.online).length);
     animateValue($('#invites-count'), data.invites.length);
@@ -229,8 +200,6 @@ async function refresh() {
     renderInvites(data.invites);
     renderAudit(audit.events || []);
     renderBackups(backups.backups || []);
-    renderConfig(config);
-    renderTokens(tokens.tokens || []);
     await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
@@ -325,31 +294,6 @@ $('#create-backup').addEventListener('click', async (event) => {
   button.disabled = false;
 });
 
-$('#config-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const values = {};
-  for (const input of form.querySelectorAll('input[name]')) if (input.value.trim()) values[input.name] = input.value.trim();
-  if (!Object.keys(values).length) { showNotice('Введите хотя бы одно новое значение', 'error'); return; }
-  const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
-  try {
-    const result = await adminRequest('/api/admin/config', {method: 'PATCH', body: JSON.stringify(values)});
-    form.reset(); showNotice(result.message); await refresh();
-  } catch (error) { showNotice(error.message, 'error'); }
-  submit.disabled = false;
-});
-
-document.querySelectorAll('[data-delete-config]').forEach((button) => button.addEventListener('click', async () => {
-  const key = button.dataset.deleteConfig;
-  if (!await confirmAction('Удалить параметр?', `Параметр ${key} будет удалён из config.json. Для применения потребуется перезапуск бота.`)) return;
-  button.disabled = true;
-  try {
-    const result = await adminRequest(`/api/admin/config/${encodeURIComponent(key)}`, {method: 'DELETE'});
-    showNotice(result.message); await refresh();
-  } catch (error) { showNotice(error.message, 'error'); }
-  button.disabled = false;
-}));
-
 document.querySelectorAll('[data-diagnostic]').forEach((button) => button.addEventListener('click', async () => {
   button.disabled = true; $('#diagnostic-output').textContent = 'Выполняется проверка…';
   try {
@@ -358,22 +302,6 @@ document.querySelectorAll('[data-diagnostic]').forEach((button) => button.addEve
   } catch (error) { $('#diagnostic-output').textContent = error.message; }
   button.disabled = false;
 }));
-
-$('#token-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const button = event.currentTarget.querySelector('[type="submit"]'); button.disabled = true;
-  try {
-    const result = await adminRequest('/api/admin/tokens', {method: 'POST', body: JSON.stringify({label: $('#token-label').value.trim(), scope: $('#token-scope').value})});
-    $('#token-form').reset(); $('#new-api-token').textContent = result.token; $('#token-dialog').showModal(); await refresh();
-  } catch (error) { showNotice(error.message, 'error'); }
-  button.disabled = false;
-});
-$('#copy-api-token').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('#new-api-token').textContent); showNotice('API-токен скопирован'); }
-  catch (error) { showNotice('Не удалось скопировать токен', 'error'); }
-});
-$('#close-api-token').addEventListener('click', () => $('#token-dialog').close());
-$('#token-dialog').addEventListener('close', () => { $('#new-api-token').textContent = ''; });
 
 async function refreshUpdates() {
   try {
