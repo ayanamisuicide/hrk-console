@@ -38,12 +38,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: hrk-console ${{ github.ref_name }}
+          generate_release_notes: true
           body: |
-            Web-only релиз hrk-console 2.0.
+            Релиз веб-панели hrk-console ${{ github.ref_name }}.
 
-            - Управление Heroku полностью перенесено в браузерную панель.
-            - Добавлены пользовательские аккаунты, одноразовые инвайты и административная панель.
-            - Удалены TUI, нативные приложения Linux/Windows, Windows bootstrap и SSH-клиент GUI.
+            - Полный список изменений: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md).
             - В релиз входит один статически собранный Linux-сервер `hkc-web` и его SHA-256 checksum.
           files: |
             hkc-web-*-linux-amd64.tar.gz

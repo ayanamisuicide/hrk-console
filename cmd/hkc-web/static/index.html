@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/motion.css">
   <link rel="stylesheet" href="/logs.css">
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#080d0c">
+  <meta name="theme-color" content="#1B1914">
 </head>
 <body>
   <div class="shell">
@@ -16,7 +16,7 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><span></span></div>
         <div>
-          <span class="eyebrow">CONTROL DECK</span>
+          <span class="eyebrow">THE PROCESS OBSERVATORY</span>
           <h1>HEROKU</h1>
           <p id="version">версия —</p>
         </div>
@@ -56,6 +56,7 @@
     </aside>
 
     <main>
+      <div class="exhibit-label" aria-label="Паспорт экспозиции"><span>EXHIBIT № 001 / HEROKU</span><span>OPENING / 02 OCTOBER 2026</span><span>RUNNING TIME / LIVE</span><span>GALLERY / PROCESS STUDIES</span></div>
       <header>
         <div>
           <span class="eyebrow">HEROKU / CONTROL CENTER</span>
@@ -70,18 +71,33 @@
 
       <section id="notice" class="notice" hidden></section>
       <section id="overview-view" class="workspace-view overview-view">
-        <div class="view-intro"><div><span class="eyebrow">SYSTEM SNAPSHOT</span><h3>Всё важное на одном экране</h3><p>Состояние бота и данные из последних записей журнала.</p></div><span id="overview-updated" class="muted">Обновление…</span></div>
+        <section class="exhibition-hero" aria-labelledby="exhibition-title">
+          <div class="hero-kicker"><span class="eyebrow">A STUDY OF CONTINUOUS OPERATION</span><span class="mono">SERIES 01 — ∞</span></div>
+          <h2 id="exhibition-title">IN CONSTANT<br><span>MOTION.</span></h2>
+          <div class="hero-deck"><p>Каждое движение оставляет след.<br>Наблюдайте за жизнью Heroku — кадр за кадром.</p><span class="hero-index" aria-hidden="true">FIG.<br>001</span></div>
+          <figure class="motion-plate"><div class="plate-mount"><img src="/motion-study.svg" alt="Хронофотографический этюд: шесть последовательных фаз бега, размеченных равными временными интервалами." width="1200" height="270"></div><figcaption><span>PLATE 00 · LOCOMOTION STUDY</span><span>SIX EXPOSURES / EQUAL INTERVALS</span><span>HEROKU OBSERVATORY ↗</span></figcaption></figure>
+        </section>
+        <div class="plate-heading"><span class="mono">PLATE 01</span><h3>Состояние системы</h3><span class="tick-band" aria-hidden="true"></span></div>
+        <div class="view-intro"><p>Процесс, память и события в одном срезе наблюдения.</p><span id="overview-updated" class="muted">Обновление…</span></div>
         <div class="dashboard-grid">
           <article class="metric-card metric-primary"><span>ПРОЦЕСС</span><strong id="metric-process">—</strong><small id="metric-process-meta">Проверка состояния</small></article>
           <article class="metric-card"><span>ПАМЯТЬ БОТА</span><strong id="metric-memory">—</strong><small>Фактическое потребление RAM</small></article>
           <article class="metric-card"><span>ОШИБКИ</span><strong id="metric-errors">—</strong><small>В последних 1000 строках</small></article>
           <article class="metric-card"><span>ПРЕДУПРЕЖДЕНИЯ</span><strong id="metric-warnings">—</strong><small>В последних 1000 строках</small></article>
         </div>
+        <div class="plate-heading"><span class="mono">PLATE 02</span><h3>Журнал наблюдений</h3><span class="tick-band" aria-hidden="true"></span></div>
         <div class="dashboard-columns">
           <article class="surface-card"><div class="card-heading"><div><span class="eyebrow">ACTIVITY</span><h3>Последние события</h3></div><button data-jump="logs" class="compact">Весь журнал →</button></div><div id="recent-events" class="recent-events"></div></article>
           <article class="surface-card service-card"><span class="eyebrow">SERVICE</span><h3>Heroku bot</h3><p id="service-description">Получаем сведения о процессе…</p><div class="service-details"><span>Версия</span><strong id="service-version">—</strong><span>PID</span><strong id="service-pid">—</strong><span>Лог</span><strong id="service-log">—</strong></div><button data-jump="monitor" class="compact">Подробнее о состоянии →</button></article>
         </div>
         <article class="surface-card diagnostics-card"><div class="card-heading"><div><span class="eyebrow">SETUP CHECK</span><h3>Готовность к запуску</h3></div><button id="diagnostics-refresh" class="compact">↻ Проверить</button></div><div id="diagnostic-checks" class="diagnostic-checks"></div></article>
+        <div class="plate-heading"><span class="mono">PLATE 03</span><h3>Метод наблюдения</h3><span class="tick-band" aria-hidden="true"></span></div>
+        <div class="study-grid">
+          <article><span class="mono">FRAME 001 / RECORD</span><h3><a href="#logs-view" data-jump="logs">Прочитать след →</a></h3><p>Каждое событие становится записью в журнале. Поиск и фильтры помогают найти нужный момент.</p></article>
+          <article><span class="mono">FRAME 002 / MEASURE</span><h3><a href="#monitor-view" data-jump="monitor">Увидеть ритм →</a></h3><p>Измерения памяти складываются в историю процесса. Сопоставляйте нагрузку с событиями журнала.</p></article>
+          <article><span class="mono">FRAME 003 / ARRANGE</span><h3><a href="/admin/">Настроить среду →</a></h3><p>Доступ и настройки собраны в отдельной коллекции. Администратор управляет участниками и процессом.</p></article>
+        </div>
+        <aside class="pattern-note"><div><span class="eyebrow">FIELD NOTE / REUSABLE PATTERN</span><h3>Сохраните точку наблюдения.</h3><p>Скопируйте ссылку на консоль, чтобы вернуться к наблюдению. Для доступа потребуется вход в аккаунт.</p></div><button id="copy-console-link" type="button">Копировать ссылку ↗</button><span id="copy-link-status" role="status"></span></aside>
       </section>
       <section id="monitor-view" class="workspace-view monitor-view" hidden>
         <div class="view-intro"><div><span class="eyebrow">LIVE METRICS</span><h3>Мониторинг процесса</h3><p>Память процесса и события журнала обновляются автоматически.</p></div><button id="metrics-refresh" class="compact">↻ Обновить</button></div>
@@ -139,10 +155,10 @@
       <span class="eyebrow">PRIVATE ACCESS</span>
       <h2 id="auth-title">Вход</h2>
       <p id="auth-note">Войдите в аккаунт, созданный по инвайту.</p>
-      <input id="invite" name="invite" placeholder="инвайт" autocomplete="off" hidden>
-      <input id="auth-username" name="username" placeholder="логин" autocomplete="username" required>
-      <input id="auth-password" name="password" type="password" placeholder="пароль" autocomplete="current-password" required>
-      <input id="auth-password-confirm" name="password-confirm" type="password" placeholder="повторите пароль" autocomplete="new-password" hidden>
+      <input id="invite" name="invite" placeholder="инвайт" aria-label="Инвайт" autocomplete="off" hidden>
+      <input id="auth-username" name="username" placeholder="логин" aria-label="Логин" autocomplete="username" required>
+      <input id="auth-password" name="password" type="password" placeholder="пароль" aria-label="Пароль" autocomplete="current-password" required>
+      <input id="auth-password-confirm" name="password-confirm" type="password" placeholder="повторите пароль" aria-label="Повторите пароль" autocomplete="new-password" hidden>
       <p id="auth-error" class="auth-error"></p>
       <button class="primary" type="submit">Продолжить</button>
       <button id="auth-switch" type="button">У меня есть инвайт</button>
