@@ -1,0 +1,148 @@
+.logs-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 14px 18px 16px;
+}
+
+.logs-controls {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(18, 29, 25, .92), rgba(9, 15, 13, .88));
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .15);
+}
+
+.logs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.logs-actions .search-wrap { flex: 1; min-width: 120px; }
+.logs-actions input { width: 100%; min-width: 0; }
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+}
+
+.level-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.stream-actions { display: flex; align-items: center; gap: 9px; }
+.line-count { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+details.log-advanced {
+  display: block;
+  margin: 0 -12px -12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+}
+
+.log-advanced summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  list-style: none;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.log-advanced summary::-webkit-details-marker { display: none; }
+.log-advanced summary small { color: var(--muted); font-size: 10px; font-weight: 400; }
+.log-advanced summary i { margin-left: auto; color: var(--muted); font-style: normal; transition: transform .2s ease; }
+.log-advanced[open] summary { border-bottom: 1px solid var(--line); }
+.log-advanced[open] summary i { transform: rotate(180deg); }
+
+.log-advanced-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(145px, 1fr) minmax(145px, 1fr) minmax(155px, 1.15fr) minmax(115px, .8fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  padding: 11px 0 12px;
+}
+
+.log-advanced-grid label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; }
+.log-advanced-grid select,
+.log-advanced-grid input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 35px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 10px;
+}
+.log-advanced-grid #preset-name { max-width: none; }
+.log-advanced-grid #preset-delete { min-width: 34px; justify-content: center; color: var(--red); }
+
+.log-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 12, 10, .84);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .16);
+}
+
+.log-head {
+  position: relative;
+  z-index: 1;
+  background: rgba(17, 27, 23, .97);
+  border-bottom: 1px solid var(--line);
+}
+
+.log { min-height: 0; padding: 5px 0; scrollbar-color: rgba(97, 242, 202, .2) transparent; }
+
+@media (max-width: 1120px) {
+  .log-advanced-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .logs-view { height: 65vh; padding: 10px; gap: 9px; }
+  .logs-controls { padding: 9px; border-radius: 13px; }
+  .logs-actions { flex-wrap: wrap; }
+  .logs-actions .search-wrap { flex-basis: 100%; }
+  .logs-actions button { flex: 1; justify-content: center; }
+  .log-toolbar { align-items: flex-start; }
+  .level-filters { gap: 4px; }
+  .filter-chip { padding-inline: 8px; }
+  .stream-actions { gap: 6px; }
+  .line-count { display: none; }
+  details.log-advanced { margin: 0 -9px -9px; padding: 0 9px; }
+  .log-advanced summary { gap: 6px; }
+  .log-advanced summary small { font-size: 9px; }
+  .log-advanced-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 460px) {
+  .logs-view { height: 68vh; }
+  .log-advanced summary small { display: none; }
+  .log-advanced-grid { grid-template-columns: 1fr; }
+  .log-toolbar { flex-wrap: wrap; }
+  .stream-actions { margin-left: auto; }
+}
