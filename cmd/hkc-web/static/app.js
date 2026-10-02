@@ -139,7 +139,7 @@ function renderLines() {
   const fragment = document.createDocumentFragment();
   for (const raw of visible) fragment.append(createLine(raw));
   logEl.replaceChildren(fragment);
-  $('#line-count').textContent = `${visible.length} строк`;
+  animateValue($('#line-count'), visible.length);
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
   renderRecentEvents();
 }
@@ -160,6 +160,9 @@ function renderRecentEvents() {
 function createLine(raw, live = false) {
   const row = document.createElement('div');
   row.className = `line${live ? ' live' : ''}`;
+  if (live) row.addEventListener('animationend', (event) => {
+    if (!event.pseudoElement) row.classList.remove('live');
+  });
   const match = raw.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^:]+):\s?(.*)$/);
   if (!match) {
     row.classList.add('continuation');
@@ -210,7 +213,7 @@ function appendLiveLine(raw) {
   if (trimmed && logEl.firstChild) logEl.firstChild.remove();
   if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query))) return;
   logEl.append(createLine(raw, true));
-  $('#line-count').textContent = `${logEl.childElementCount} строк`;
+  animateValue($('#line-count'), logEl.childElementCount);
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
 }
 
