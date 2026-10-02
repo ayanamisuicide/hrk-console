@@ -1,4 +1,14 @@
 /* The administrative collection shares the exhibition's typography and plates. */
+.updates-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.updates-grid article{display:grid;gap:14px;padding:24px;min-width:0;border-bottom:1px solid var(--line)}
+.updates-grid article+article{border-left:1px solid var(--line)}
+.updates-grid strong{font:22px/1.65 var(--serif);overflow-wrap:anywhere}
+.updates-grid code{overflow-wrap:anywhere;color:var(--muted)}
+.updates-details{display:grid;gap:16px;padding:24px}
+.updates-details button{justify-self:start}
+#update-job:empty{display:none}
+@media(max-width:1000px){.updates-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-grid article:nth-child(3){border-left:0}}
+@media(max-width:500px){.updates-grid{grid-template-columns:1fr}.updates-grid article+article{border-left:0}}
 .admin-header{max-width:1440px;margin:auto;padding:36px 48px;display:flex;align-items:center;justify-content:space-between;gap:28px;border-bottom:1px solid var(--line)}
 .admin-header h1{font:clamp(26px,3vw,44px)/1.2 var(--display);text-transform:uppercase;margin:12px 0}
 .admin-subtitle{color:var(--muted)}

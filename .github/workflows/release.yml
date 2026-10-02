@@ -24,6 +24,7 @@ jobs:
         run: |
           go vet ./...
           go test -count=1 ./...
+          python3 deploy/test_update.py
 
       - name: build web server
         env:

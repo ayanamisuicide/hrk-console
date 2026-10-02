@@ -28,3 +28,6 @@ jobs:
 
       - name: build web server
         run: make build
+
+      - name: updater integrity and rollback tests
+        run: python3 deploy/test_update.py

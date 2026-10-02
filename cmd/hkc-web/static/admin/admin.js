@@ -231,6 +231,7 @@ async function refresh() {
     renderBackups(backups.backups || []);
     renderConfig(config);
     renderTokens(tokens.tokens || []);
+    await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
   }
@@ -373,6 +374,50 @@ $('#copy-api-token').addEventListener('click', async () => {
 });
 $('#close-api-token').addEventListener('click', () => $('#token-dialog').close());
 $('#token-dialog').addEventListener('close', () => { $('#new-api-token').textContent = ''; });
+
+async function refreshUpdates() {
+  try {
+    const data = await adminRequest('/api/admin/updates');
+    const short = value => value ? value.slice(0, 12) : 'неизвестен';
+    const installed = data.installed;
+    $('#update-installed').textContent = installed.version + (installed.modified ? ' · изменена' : '');
+    $('#update-installed-commit').textContent = short(installed.commit);
+    for (const key of ['source', 'local']) {
+      const copy = data[key];
+      $('#update-' + key).textContent = !copy.configured ? 'Не подключена' : copy.error ? 'Ошибка доступа' : copy.dirty ? 'Есть свои изменения' : copy.commit === installed.commit ? 'Совпадает со сборкой' : 'Отличается от сборки';
+      $('#update-' + key + '-commit').textContent = copy.error || (short(copy.commit) + (copy.branch ? ' / ' + copy.branch : ''));
+    }
+    const remote = data.github;
+    $('#update-release').textContent = remote.version || (remote.checking ? 'Проверяем…' : 'Нет данных');
+    $('#update-release-commit').textContent = short(remote.commit);
+    $('#update-main').textContent = 'GitHub main: ' + short(remote.main) + (remote.checkedAt && !remote.checkedAt.startsWith('0001') ? ' · Сверка: ' + formatDate(remote.checkedAt) : '');
+    const blocked = [data.source, data.local].some(copy => copy.configured && (copy.dirty || copy.error || copy.branch !== 'main'));
+    const busy = ['checking', 'downloading', 'restarting'].includes(data.job?.phase);
+    let message = remote.error ? 'Сверка с GitHub не выполнена: ' + remote.error : remote.checking ? 'Сверяем GitHub…' : remote.commit === installed.commit ? 'Сборка совпадает со стабильным релизом GitHub.' : remote.commit ? 'На GitHub доступен другой стабильный релиз: ' + remote.version + '.' : 'Ожидаем результат сверки.';
+    if (blocked) message += ' Обновление заблокировано: сначала сохраните локальные изменения и выберите main.';
+    if (!data.enabled) message += ' Служба установки на этом сервере не настроена.';
+    $('#update-summary').textContent = message;
+    $('#update-job').textContent = data.job ? data.job.message + (data.job.updatedAt ? ' · ' + formatDate(data.job.updatedAt) : '') : '';
+    const syncNeeded = [data.source, data.local].some(copy => copy.configured && copy.commit !== remote.commit);
+    $('#updates-install').textContent = remote.commit === installed.commit && syncNeeded ? 'Синхронизировать копии' : 'Установить обновление';
+    $('#updates-install').disabled = !data.enabled || blocked || busy || !!remote.error || remote.checking || !remote.commit || (remote.commit === installed.commit && !syncNeeded) || installed.modified;
+  } catch (error) {
+    $('#update-summary').textContent = 'Не удалось получить состояние обновлений: ' + error.message;
+    $('#updates-install').disabled = true;
+  }
+}
+$('#updates-check').addEventListener('click', async () => {
+  $('#updates-check').disabled = true;
+  try { await adminRequest('/api/admin/updates/check', {method: 'POST'}); await refreshUpdates(); }
+  catch (error) { showNotice(error.message, 'error'); }
+  finally { $('#updates-check').disabled = false; }
+});
+$('#updates-install').addEventListener('click', async () => {
+  if (!await confirmAction('Установить обновление панели?', 'Сохраним предыдущую сборку, проверим контрольную сумму и перезапустим панель. При неудачном запуске вернём предыдущую сборку. После перезапуска потребуется войти заново.')) return;
+  $('#updates-install').disabled = true;
+  try { const result = await adminRequest('/api/admin/updates/install', {method: 'POST'}); $('#update-job').textContent = result.message; }
+  catch (error) { showNotice(error.message, 'error'); }
+});
 
 refresh();
 refreshTimer = setInterval(refresh, 10000);

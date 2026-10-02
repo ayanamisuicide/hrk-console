@@ -1,0 +1,11 @@
+[Unit]
+Description=Verified Heroku console release update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/hkc/hkc.env
+ExecStart=/usr/bin/python3 /opt/hkc-updater/update.py
+TimeoutStartSec=600
+UMask=0077

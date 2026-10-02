@@ -24,6 +24,16 @@
   </header>
 
   <main class="admin-main">
+    <section class="admin-section updates-section" aria-labelledby="updates-title">
+      <div class="section-heading"><div><span class="eyebrow">RELEASES / SOURCE VERIFICATION</span><h2 id="updates-title">Обновления и сверка</h2></div><button id="updates-check" class="compact">Проверить GitHub</button></div>
+      <div class="updates-grid">
+        <article><span class="eyebrow">RUNNING / СБОРКА</span><strong id="update-installed">—</strong><code id="update-installed-commit">—</code></article>
+        <article><span class="eyebrow">SERVER / ИСХОДНИКИ</span><strong id="update-source">—</strong><code id="update-source-commit">—</code></article>
+        <article><span class="eyebrow">LOCAL / WINDOWS</span><strong id="update-local">—</strong><code id="update-local-commit">—</code></article>
+        <article><span class="eyebrow">GITHUB / РЕЛИЗ</span><strong id="update-release">—</strong><code id="update-release-commit">—</code></article>
+      </div>
+      <div class="updates-details"><p id="update-summary" role="status">Получаем сведения о версиях…</p><p id="update-job" role="status"></p><p id="update-main" class="muted"></p><p class="muted">Проверка каждые 10 минут. Установка — только по кнопке. Изменённые локальные файлы блокируют обновление; предыдущая сборка сохраняется для отката.</p><button id="updates-install" class="primary" disabled>Установить обновление</button></div>
+    </section>
     <section class="summary" aria-label="Сводка">
       <article><i>01</i><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong><small>зарегистрировано</small></article>
       <article><i>02</i><span>СЕЙЧАС ОНЛАЙН</span><strong id="online-count">—</strong><small>за последние 30 секунд</small></article>

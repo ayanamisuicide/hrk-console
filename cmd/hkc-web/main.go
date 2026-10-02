@@ -33,6 +33,7 @@ type server struct {
 	metrics    *metricStore
 	notifier   *stateNotifier
 	configMu   sync.Mutex
+	updates    *updateChecker
 }
 
 type statusResponse struct {
@@ -52,6 +53,10 @@ type actionResponse struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version-json" {
+		_ = json.NewEncoder(os.Stdout).Encode(currentVersion())
+		return
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
@@ -70,6 +75,16 @@ func main() {
 		log.Fatal(err)
 	}
 	adminToken := os.Getenv("HKC_ADMIN_TOKEN")
+	if path := os.Getenv("HKC_ADMIN_TOKEN_FILE"); adminToken == "" && path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("cannot read administrative token file")
+		}
+		adminToken = strings.TrimSpace(string(data))
+		if adminToken == "" {
+			log.Fatal("administrative token file is empty")
+		}
+	}
 	if adminToken == "" {
 		adminToken, err = randomToken(32)
 		if err != nil {
@@ -86,7 +101,20 @@ func main() {
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
 		audit: newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
 	go watchBotState(context.Background(), notifier)
+	s.updates = &updateChecker{}
+	s.updates.check()
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.updates.check()
+		}
+	}()
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, currentVersion()) })
+	mux.HandleFunc("GET /api/admin/updates", s.updateStatus)
+	mux.HandleFunc("POST /api/admin/updates/check", s.updateStatus)
+	mux.HandleFunc("POST /api/admin/updates/install", s.installUpdate)
 	mux.HandleFunc("GET /api/auth/me", s.authorize(s.me))
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/register", s.register)

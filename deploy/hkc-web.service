@@ -1,0 +1,17 @@
+[Unit]
+Description=Heroku web console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/hkc/hkc.env
+WorkingDirectory=/root/heroku-console
+ExecStart=/root/heroku-console/bin/hkc-web
+Restart=on-failure
+RestartSec=2
+KillMode=process
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
