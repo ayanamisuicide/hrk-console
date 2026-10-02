@@ -6,5 +6,9 @@ fetch('/api/public/status').then(async (response) => {
   card.classList.toggle('online', data.running);
   card.querySelector('.dot').classList.toggle('online', data.running);
   card.querySelector('strong').textContent = data.running ? 'Сервис работает' : 'Сервис остановлен';
+  card.classList.add('is-ready');
   document.querySelector('#public-time').textContent = `Проверено ${new Date(data.checkedAt).toLocaleString('ru-RU')}`;
-}).catch((error) => { document.querySelector('#public-state strong').textContent = error.message; });
+}).catch((error) => {
+  document.querySelector('#public-state strong').textContent = error.message;
+  document.querySelector('#public-state').classList.add('is-ready');
+});

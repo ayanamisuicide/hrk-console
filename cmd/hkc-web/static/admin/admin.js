@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const authDialog = $('#admin-auth');
 function animateValue(element, value) {
+  if (window.motionValue) { window.motionValue(element, value); return; }
   const next = String(value);
   if (!element || element.textContent === next) return;
   element.textContent = next;
@@ -13,6 +14,7 @@ function animateValue(element, value) {
 document.documentElement.dataset.theme = localStorage.getItem('hkc-theme') || 'dark';
 $('#admin-theme').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  window.motionTheme?.();
   document.documentElement.dataset.theme = theme;
   localStorage.setItem('hkc-theme', theme);
 });
@@ -29,7 +31,6 @@ function saveTreeState() {
   const open = [...document.querySelectorAll('.admin-tree-group[open]')].map((item) => item.dataset.tree);
   localStorage.setItem('hkc-admin-tree', JSON.stringify(open));
 }
-const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 document.querySelectorAll('.admin-tree-group').forEach((branch) => {
   const summary = branch.querySelector(':scope > summary');
   const clip = branch.querySelector(':scope > .admin-tree-clip');
@@ -48,7 +49,7 @@ document.querySelectorAll('.admin-tree-group').forEach((branch) => {
       return;
     }
     summary.setAttribute('aria-expanded', 'false');
-    if (reduceMotion || !branch.open || !clip) {
+    if (window.prefersReducedMotion?.() || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !branch.open || !clip) {
       branch.open = false;
       if (clip) clip.inert = true;
       branch.classList.remove('is-closing');
@@ -65,7 +66,7 @@ document.querySelectorAll('.admin-tree-group').forEach((branch) => {
       saveTreeState();
     };
     clip.addEventListener('transitionend', finish, {once: true});
-    branch.closeTimer = setTimeout(() => finish(), 280);
+    branch.closeTimer = setTimeout(() => finish(), 240);
   });
 });
 
@@ -109,6 +110,7 @@ function showNotice(message, kind = 'ok') {
   const node = $('#admin-notice');
   node.textContent = message;
   node.className = `notice ${kind}`;
+  if (window.motionShow) { window.motionShow(node, 5000); return; }
   node.hidden = false;
   clearTimeout(showNotice.timer);
   showNotice.timer = setTimeout(() => { node.hidden = true; }, 5000);

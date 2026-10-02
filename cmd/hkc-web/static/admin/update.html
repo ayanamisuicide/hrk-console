@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Обновление · HEROKU</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/motion.css">
   <link rel="stylesheet" href="/admin/update.css">
 </head>
 <body class="update-body">
@@ -45,6 +46,7 @@
 
   <dialog id="update-auth"><form method="dialog" id="update-auth-form"><span class="eyebrow">ADMIN ACCESS</span><h2>Доступ к обновлениям</h2><p>Введите административный токен. Он останется только в этой вкладке.</p><input id="update-token" type="password" aria-label="Административный токен" autocomplete="off" required><p id="update-auth-error" class="update-error"></p><button class="primary" type="submit">Открыть</button></form></dialog>
   <dialog id="update-confirm"><form method="dialog" id="update-confirm-form"><span class="eyebrow">INSTALL RELEASE</span><h2>Начать установку?</h2><p>Предыдущая сборка будет сохранена. Панель перезапустится, а это окно продолжит показывать ход и итог установки.</p><div class="confirm-actions"><button value="cancel">Отмена</button><button class="primary" value="confirm">Установить</button></div></form></dialog>
+  <script src="/motion.js" defer></script>
   <script src="/admin/update.js" defer></script>
 </body>
 </html>

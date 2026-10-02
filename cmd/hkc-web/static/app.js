@@ -18,7 +18,9 @@ let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
 let savedFilters = {};
+let lastAnimatedLogAt = 0;
 function animateValue(element, value) {
+  if (window.motionValue) { window.motionValue(element, value); return; }
   const next = String(value);
   if (!element || element.textContent === next) return;
   element.textContent = next;
@@ -79,13 +81,14 @@ function setView(view) {
 document.querySelectorAll('[data-view], [data-jump]').forEach((item) => item.addEventListener('click', () => setView(item.dataset.view || item.dataset.jump)));
 setView(localStorage.getItem('hkc-view') || 'overview');
 
-function setTheme(theme) {
+function setTheme(theme, animate = false) {
+  if (animate) window.motionTheme?.();
   document.documentElement.dataset.theme = theme;
   localStorage.setItem('hkc-theme', theme);
   $('#theme-toggle span').textContent = theme === 'light' ? 'Тёмная тема' : 'Светлая тема';
 }
 setTheme(localStorage.getItem('hkc-theme') || 'dark');
-$('#theme-toggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+$('#theme-toggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true));
 
 function lineLevel(raw) {
   return raw.match(/\[([A-Z]+)\]/)?.[1] || 'OTHER';
@@ -112,6 +115,7 @@ async function request(path, options = {}) {
 function showNotice(message, kind = 'ok') {
   notice.textContent = message;
   notice.className = `notice ${kind}`;
+  if (window.motionShow) { window.motionShow(notice, 5000); return; }
   notice.hidden = false;
   clearTimeout(showNotice.timer);
   showNotice.timer = setTimeout(() => { notice.hidden = true; }, 5000);
@@ -159,7 +163,10 @@ function renderRecentEvents() {
 
 function createLine(raw, live = false) {
   const row = document.createElement('div');
-  const animateArrival = live && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const motionReduced = window.prefersReducedMotion?.() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const now = performance.now();
+  const animateArrival = live && !motionReduced && document.visibilityState === 'visible' && now - lastAnimatedLogAt > 90;
+  if (animateArrival) lastAnimatedLogAt = now;
   row.className = `line${animateArrival ? ' live' : ''}`;
   if (animateArrival) row.addEventListener('animationend', (event) => {
     if (event.target === row && !event.pseudoElement) row.classList.remove('live');

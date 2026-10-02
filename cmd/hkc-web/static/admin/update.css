@@ -10,13 +10,14 @@
 .update-hero-top,.update-progress-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .update-hero-top { color:var(--muted); font:11px "Cascadia Mono",Consolas,monospace; }
 .update-state { display:inline-flex; align-items:center; gap:9px; color:var(--mint); letter-spacing:.1em; }
+.update-state.phase-change,.update-hero h2.phase-change { animation:motion-enter 220ms var(--motion-enter-ease) both; }
 .update-state::before { content:''; width:8px; height:8px; border-radius:50%; background:currentColor; }
-.update-state[data-phase="checking"]::before,.update-state[data-phase="downloading"]::before,.update-state[data-phase="restarting"]::before { animation:update-pulse 1.2s ease-in-out infinite; }
+.update-state[data-phase="checking"]::before,.update-state[data-phase="downloading"]::before,.update-state[data-phase="restarting"]::before { animation:update-pulse 2.8s ease-in-out infinite; }
 .update-state[data-phase="failed"],.update-state[data-phase="rolled_back"] { color:var(--red); }
 .update-hero h2 { margin:22px 0 8px; font-size:clamp(22px,3vw,34px); letter-spacing:-.03em; }
 .update-hero p { color:var(--muted); font-size:13px; line-height:1.65; max-width:70ch; }
 .update-progress-track { height:10px; margin:25px 0 12px; overflow:hidden; border:1px solid var(--line); border-radius:99px; background:var(--bg); }
-.update-progress-track span { display:block; width:0; height:100%; border-radius:99px; background:var(--mint); transition:width .35s ease; }
+.update-progress-track span { display:block; width:0; height:100%; border-radius:99px; background:var(--mint); transition:width 180ms var(--motion-ease); }
 .update-hero:has(.update-state[data-phase="failed"]) .update-progress-track span,.update-hero:has(.update-state[data-phase="rolled_back"]) .update-progress-track span { background:var(--red); }
 .update-progress-meta { color:var(--muted); font:11px "Cascadia Mono",Consolas,monospace; }
 .update-progress-meta span:first-child { color:var(--mint); }
@@ -34,6 +35,7 @@
 .update-timeline-heading > span { color:var(--muted); font-size:11px; }
 #timeline-list { display:grid; gap:0; max-height:480px; overflow:auto; margin:0; padding:10px 24px 18px 58px; list-style:none; }
 #timeline-list li { position:relative; padding:13px 0 13px 20px; border-left:1px solid var(--line); }
+#timeline-list li.timeline-enter { animation:motion-enter 220ms var(--motion-enter-ease) both; }
 #timeline-list li::before { content:''; position:absolute; left:-5px; top:18px; width:9px; height:9px; border-radius:50%; background:var(--mint); }
 #timeline-list li:last-child { border-left-color:transparent; }
 #timeline-list li[data-phase="failed"]::before,#timeline-list li[data-phase="rolled_back"]::before { background:var(--red); }
@@ -44,6 +46,6 @@
 .update-footnote { margin:0; }
 .update-error { min-height:1.5em; color:var(--red); }
 .confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-@keyframes update-pulse { 50% { opacity:.35; transform:scale(.7); } }
+@keyframes update-pulse { 50% { opacity:.64; } }
 @media (max-width:680px) { .update-header { flex-direction:column; } .update-versions { grid-template-columns:1fr; } .update-actions > span { width:100%; margin-left:0; } #timeline-list { padding-left:34px; } }
 @media (prefers-reduced-motion:reduce) { .update-state::before { animation:none!important; } .update-progress-track span { transition:none; } }

@@ -6,6 +6,15 @@ let waitingForJob = 0;
 let timelineSignature = '';
 let progressBusy = false;
 let lastTerminalStamp = '';
+let lastRenderedPhase = null;
+
+function replayPhaseMotion(element) {
+  if (!element || window.prefersReducedMotion?.()) return;
+  element.classList.remove('phase-change');
+  void element.offsetWidth;
+  element.classList.add('phase-change');
+  element.addEventListener('animationend', () => element.classList.remove('phase-change'), {once:true});
+}
 
 function dateTime(value) {
   if (!value) return '—';
@@ -30,6 +39,7 @@ async function api(path, options = {}) {
 function renderTimeline(events) {
   const signature = JSON.stringify(events);
   if (signature === timelineSignature) return;
+  const hasRenderedTimeline = timelineSignature !== '';
   timelineSignature = signature;
   const list = $('#timeline-list'); list.replaceChildren();
   $('#timeline-count').textContent = `${events.length} событий`;
@@ -37,8 +47,9 @@ function renderTimeline(events) {
     const empty = document.createElement('li'); empty.className = 'timeline-empty';
     empty.textContent = 'После запуска здесь появится подробный ход установки.'; list.append(empty); return;
   }
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     const item = document.createElement('li'); item.dataset.phase = event.phase || 'checking';
+    if (hasRenderedTimeline && index === events.length - 1 && !window.prefersReducedMotion?.()) item.classList.add('timeline-enter');
     const message = document.createElement('strong'); message.textContent = event.message || 'Этап выполнен';
     const stamp = document.createElement('time'); stamp.textContent = `${dateTime(event.at)} · ${event.progress ?? 0}%`;
     item.append(message, stamp); list.append(item);
@@ -53,9 +64,12 @@ function renderJob(job) {
   const labels = {idle:'ОЖИДАНИЕ',checking:'ПРОВЕРКА',downloading:'ЗАГРУЗКА',restarting:'ПЕРЕЗАПУСК',complete:'ГОТОВО',rolled_back:'ОТКАТ',failed:'ОШИБКА'};
   const fallback = {checking:12,downloading:44,restarting:78,complete:100,rolled_back:100,failed:100};
   const percent = Math.max(0, Math.min(100, Number(job?.progress ?? fallback[phase] ?? 0)));
+  const phaseChanged = lastRenderedPhase !== null && phase !== lastRenderedPhase;
+  lastRenderedPhase = phase;
   $('#update-state').dataset.phase = phase;
   $('#update-state').textContent = labels[phase] || phase.toUpperCase();
   $('#update-title').textContent = phase === 'complete' ? 'Обновление завершено' : phase === 'rolled_back' ? 'Предыдущая версия восстановлена' : phase === 'failed' ? 'Установка остановлена' : phase === 'idle' ? 'Готово к проверке' : 'Установка выполняется';
+  if (phaseChanged) { replayPhaseMotion($('#update-state')); replayPhaseMotion($('#update-title')); }
   $('#update-message').textContent = job?.message || 'Выберите действие, чтобы проверить или установить релиз.';
   $('#update-clock').textContent = job?.updatedAt ? `Обновлено ${dateTime(job.updatedAt)}` : '—';
   $('#update-progress-bar').style.width = `${percent}%`;
