@@ -27,7 +27,7 @@
     <div class="admin-tree" aria-label="Разделы админки">
     <details class="admin-tree-group" data-tree="updates">
       <summary><span class="tree-index">01 / СИСТЕМА</span><strong>Обновления и сверка</strong><small>Версии, исходники, установка</small></summary>
-      <div class="admin-tree-children">
+      <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section updates-section" aria-labelledby="updates-title">
       <div class="section-heading"><div><span class="eyebrow">RELEASES / SOURCE VERIFICATION</span><h2 id="updates-title">Обновления и сверка</h2></div><button id="updates-check" class="compact">Проверить GitHub</button></div>
       <div class="updates-grid">
@@ -38,7 +38,7 @@
       </div>
       <div class="updates-details"><p id="update-summary" role="status">Получаем сведения о версиях…</p><p id="update-job" role="status"></p><p id="update-main" class="muted"></p><p class="muted">Проверка каждые 10 минут. Установка — только по кнопке. Изменённые локальные файлы блокируют обновление; предыдущая сборка сохраняется для отката.</p><div class="update-actions"><button id="updates-install" class="primary" disabled>Открыть окно обновления</button><a id="updates-open" class="compact" href="/admin/update.html" target="hkc-update-progress">Посмотреть ход установки ↗</a></div></div>
     </section>
-      </div>
+      </div></div>
     </details>
     <section class="summary" aria-label="Сводка">
       <article><i>01</i><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong><small>зарегистрировано</small></article>
@@ -62,18 +62,18 @@
 
     <details class="admin-tree-group" data-tree="service">
       <summary><span class="tree-index">02 / СЛУЖБА</span><strong>Диагностика</strong><small>Процесс, запуск, Git и Python</small></summary>
-      <div class="admin-tree-children">
+      <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section console-section">
       <div class="section-heading"><div><span class="eyebrow">DIAGNOSTIC CONSOLE</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
       <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
       <pre id="diagnostic-output">Выберите проверку выше.</pre>
     </section>
-      </div>
+      </div></div>
     </details>
 
     <details class="admin-tree-group" data-tree="access">
       <summary><span class="tree-index">03 / ДОСТУП</span><strong>Пользователи и инвайты</strong><small>Роли, приглашения, сессии</small></summary>
-      <div class="admin-tree-children">
+      <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section">
       <div class="section-heading">
         <div>
@@ -106,12 +106,12 @@
       <div id="invites-grid" class="invites-grid"></div>
       <p id="invites-empty" class="empty" hidden>Активных инвайтов нет.</p>
     </section>
-      </div>
+      </div></div>
     </details>
 
     <details class="admin-tree-group" data-tree="history">
       <summary><span class="tree-index">04 / СОБЫТИЯ</span><strong>История и восстановление</strong><small>Действия и резервные копии доступа</small></summary>
-      <div class="admin-tree-children">
+      <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section audit-section">
       <div class="section-heading"><div><span class="eyebrow">AUDIT TRAIL</span><h2>История действий</h2></div><span class="muted">Повторы среди последних 100 · хранится до 1000 событий</span></div>
       <div id="audit-groups" class="audit-groups"></div>
@@ -125,7 +125,7 @@
       <div id="backup-list" class="backup-list"></div>
       <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
     </section>
-      </div>
+      </div></div>
     </details>
     </div>
 

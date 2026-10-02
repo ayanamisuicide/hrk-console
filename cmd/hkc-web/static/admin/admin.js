@@ -25,10 +25,49 @@ try {
   const openBranches = JSON.parse(localStorage.getItem('hkc-admin-tree') || 'null');
   if (Array.isArray(openBranches)) document.querySelectorAll('.admin-tree-group').forEach((branch) => { branch.open = openBranches.includes(branch.dataset.tree); });
 } catch (_) { localStorage.removeItem('hkc-admin-tree'); }
-document.querySelectorAll('.admin-tree-group').forEach((branch) => branch.addEventListener('toggle', () => {
+function saveTreeState() {
   const open = [...document.querySelectorAll('.admin-tree-group[open]')].map((item) => item.dataset.tree);
   localStorage.setItem('hkc-admin-tree', JSON.stringify(open));
-}));
+}
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+document.querySelectorAll('.admin-tree-group').forEach((branch) => {
+  const summary = branch.querySelector(':scope > summary');
+  const clip = branch.querySelector(':scope > .admin-tree-clip');
+  summary.setAttribute('aria-expanded', String(branch.open));
+  summary.addEventListener('click', (event) => {
+    event.preventDefault();
+    const visuallyOpen = branch.open && !branch.classList.contains('is-closing');
+    const open = !visuallyOpen;
+    clearTimeout(branch.closeTimer);
+    if (open) {
+      branch.classList.remove('is-closing');
+      if (clip) clip.inert = false;
+      branch.open = true;
+      summary.setAttribute('aria-expanded', 'true');
+      saveTreeState();
+      return;
+    }
+    summary.setAttribute('aria-expanded', 'false');
+    if (reduceMotion || !branch.open || !clip) {
+      branch.open = false;
+      if (clip) clip.inert = true;
+      branch.classList.remove('is-closing');
+      saveTreeState();
+      return;
+    }
+    clip.inert = true;
+    branch.classList.add('is-closing');
+    const finish = (transitionEvent) => {
+      if (transitionEvent && (transitionEvent.target !== clip || transitionEvent.propertyName !== 'grid-template-rows')) return;
+      if (!branch.classList.contains('is-closing')) return;
+      branch.open = false;
+      branch.classList.remove('is-closing');
+      saveTreeState();
+    };
+    clip.addEventListener('transitionend', finish, {once: true});
+    branch.closeTimer = setTimeout(() => finish(), 280);
+  });
+});
 
 function confirmAction(title, message) {
   const dialog = $('#confirm-dialog');
@@ -217,6 +256,7 @@ function drawAudit() {
         card.classList.toggle('open', open); button.setAttribute('aria-expanded', String(open));
         button.textContent = `${repetitionLabel(group.events.length)} ${open ? '▴' : '▾'}`;
         panel.inert = !open;
+        panel.setAttribute('aria-hidden', String(!open));
         if (open) auditOpen.add(key); else auditOpen.delete(key);
       };
       button.setAttribute('aria-controls', panel.id);
