@@ -34,41 +34,68 @@ function saveTreeState() {
 document.querySelectorAll('.admin-tree-group').forEach((branch) => {
   const summary = branch.querySelector(':scope > summary');
   const clip = branch.querySelector(':scope > .admin-tree-clip');
+  let frame = 0;
+  let motionTimer;
+  let motionEnd;
+  const cancelMotion = () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(motionTimer);
+    if (motionEnd && clip) clip.removeEventListener('transitionend', motionEnd);
+    motionEnd = null;
+  };
   summary.setAttribute('aria-expanded', String(branch.open));
   summary.addEventListener('click', (event) => {
     event.preventDefault();
     const visuallyOpen = branch.open && !branch.classList.contains('is-closing');
     const open = !visuallyOpen;
-    clearTimeout(branch.closeTimer);
+    cancelMotion();
     if (open) {
+      const startHeight = branch.open && clip ? clip.getBoundingClientRect().height : 0;
+      if (clip) clip.style.height = `${startHeight}px`;
       branch.classList.remove('is-closing');
       if (clip) clip.inert = false;
       branch.open = true;
       summary.setAttribute('aria-expanded', 'true');
+      if (clip && !window.prefersReducedMotion?.()) {
+        void clip.offsetHeight;
+        frame = requestAnimationFrame(() => { clip.style.height = `${clip.scrollHeight}px`; });
+        const finish = (transitionEvent) => {
+          if (transitionEvent && (transitionEvent.target !== clip || transitionEvent.propertyName !== 'height')) return;
+          cancelMotion();
+          clip.style.height = '';
+        };
+        motionEnd = finish;
+        clip.addEventListener('transitionend', finish);
+        motionTimer = setTimeout(() => finish(), 700);
+      } else if (clip) clip.style.height = '';
       saveTreeState();
       return;
     }
     summary.setAttribute('aria-expanded', 'false');
     if (window.prefersReducedMotion?.() || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !branch.open || !clip) {
       branch.open = false;
-      if (clip) clip.inert = true;
+      if (clip) { clip.inert = true; clip.style.height = ''; }
       branch.classList.remove('is-closing');
       saveTreeState();
       return;
     }
     clip.inert = true;
+    clip.style.height = `${clip.getBoundingClientRect().height}px`;
+    void clip.offsetHeight;
     branch.classList.add('is-closing');
     const finish = (transitionEvent) => {
-      if (transitionEvent && (transitionEvent.target !== clip || transitionEvent.propertyName !== 'grid-template-rows')) return;
+      if (transitionEvent && (transitionEvent.target !== clip || transitionEvent.propertyName !== 'height')) return;
       if (!branch.classList.contains('is-closing')) return;
-      clip.removeEventListener('transitionend', finish);
-      clearTimeout(branch.closeTimer);
+      cancelMotion();
       branch.open = false;
+      clip.style.height = '';
       branch.classList.remove('is-closing');
       saveTreeState();
     };
+    motionEnd = finish;
     clip.addEventListener('transitionend', finish);
-    branch.closeTimer = setTimeout(() => finish(), 700);
+    frame = requestAnimationFrame(() => { clip.style.height = '0px'; });
+    motionTimer = setTimeout(() => finish(), 700);
   });
 });
 
@@ -137,11 +164,13 @@ function renderUsers(users) {
   for (const user of users) {
     const row = document.createElement('tr');
     const name = document.createElement('td');
+    name.dataset.label = 'Пользователь';
     name.innerHTML = `<strong></strong><small></small>`;
     name.querySelector('strong').textContent = user.username;
     name.querySelector('small').textContent = sessionLabel(user.activeSessions);
 
     const roleCell = document.createElement('td');
+    roleCell.dataset.label = 'Роль';
     const role = document.createElement('select');
     role.className = 'role-select';
     for (const [value, label] of [['operator', 'Оператор'], ['viewer', 'Наблюдатель']]) {
@@ -160,16 +189,20 @@ function renderUsers(users) {
     roleCell.append(role);
 
     const status = document.createElement('td');
+    status.dataset.label = 'Статус';
     const badge = document.createElement('span');
     badge.className = `presence ${user.online ? 'online' : ''}`;
     badge.textContent = user.online ? '● онлайн' : '○ офлайн';
     status.append(badge);
 
     const created = document.createElement('td');
+    created.dataset.label = 'Регистрация';
     created.textContent = formatDate(user.createdAt);
     const seen = document.createElement('td');
+    seen.dataset.label = 'Активность';
     seen.textContent = formatDate(user.lastSeen);
     const actions = document.createElement('td');
+    actions.dataset.label = 'Действия';
     const remove = document.createElement('button');
     remove.className = 'danger compact';
     remove.textContent = 'Удалить';

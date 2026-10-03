@@ -103,7 +103,9 @@
   font-size: 10px;
 }
 .log-advanced-grid #preset-name { max-width: none; }
-.log-advanced-grid #preset-delete { min-width: 34px; justify-content: center; color: var(--red); }
+.preset-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:7px; min-width:0; }
+.preset-row label { min-width:0; }
+.log-advanced-grid #preset-delete { min-width:34px; min-height:34px; justify-content:center; color:var(--red); }
 
 .log-frame {
   display: grid;
@@ -234,6 +236,10 @@
   .log-advanced { margin-left: 0; }
 }
 
+@media (min-width: 761px) and (max-width: 1000px) {
+  .log-head,.line { grid-template-columns:58px 60px minmax(60px,85px) minmax(0,1fr); gap:7px; padding-inline:12px; }
+}
+
 @media (max-width: 600px) {
   .logs-view { height: 65vh; padding: 0 10px 10px; }
   .logs-controls { padding-bottom: 8px; }
@@ -253,6 +259,17 @@
   .line.continuation { padding-left: 12px; }
   footer { padding: 9px 12px; }
 }
+
+:root[data-theme=light] .log-frame { background:#fbfdfb; }
+:root[data-theme=light] .log-head { background:#eef5f1; color:#60776e; }
+:root[data-theme=light] .line time { color:#52675d; }
+:root[data-theme=light] .line .level { color:#52675d; }
+:root[data-theme=light] .line .module { color:#52675d; }
+:root[data-theme=light] .line:nth-child(even) { background-color:rgba(8,121,91,.025); }
+:root[data-theme=light] .line:hover { background-color:rgba(8,121,91,.06); }
+:root[data-theme=light] .log-advanced-grid { background:#f8fcf9; box-shadow:0 20px 45px rgba(15,50,38,.16); }
+:root[data-theme=light] .log-advanced-grid select,
+:root[data-theme=light] .log-advanced-grid input { background:#fff; }
 
 @media (prefers-reduced-motion: reduce) {
   .line.live,

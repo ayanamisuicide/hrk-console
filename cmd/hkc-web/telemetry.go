@@ -249,10 +249,15 @@ type diagnosticCheck struct {
 }
 
 func (s *server) diagnostics(w http.ResponseWriter, _ *http.Request) {
+	logExists := fileExists(s.bot.LogFile)
+	logDetail := "Появится после первого запуска бота"
+	if logExists {
+		logDetail = s.bot.LogFile
+	}
 	checks := []diagnosticCheck{
 		{Name: "Каталог Heroku", OK: fileExists(s.bot.HerokuDir), Detail: s.bot.HerokuDir},
 		{Name: "Виртуальное окружение", OK: s.bot.VirtualEnv() != "", Detail: "Поддерживаются .venv и venv"},
-		{Name: "Файл журнала", OK: fileExists(s.bot.LogFile), Detail: "Появится после первого запуска бота"},
+		{Name: "Файл журнала", OK: logExists, Detail: logDetail},
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"checks": checks})
 }

@@ -64,8 +64,8 @@
         <div class="header-actions">
           <span id="username"></span>
           <button id="copy-console-link" class="compact" type="button">Скопировать ссылку</button>
-          <button id="command-open" class="compact">⌘ Быстрые действия <kbd>Ctrl K</kbd></button>
-          <button id="logout" class="compact">Выйти</button>
+          <button id="command-open" class="compact" type="button">⌘ Быстрые действия <kbd>Ctrl K</kbd></button>
+          <button id="logout" class="compact" type="button">Выйти</button>
         </div>
       </header>
 
@@ -103,8 +103,8 @@
             <span class="line-count"><b id="line-count">0</b> строк</span>
             <div class="log-actions">
               <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
-              <button id="export-logs" class="compact" title="Экспорт журнала">↓ <span>Экспорт</span></button>
-              <button id="clear" class="compact" title="Очистить экран">⌫ <span>Очистить</span></button>
+              <button id="export-logs" class="compact" type="button" title="Экспорт журнала" aria-label="Экспорт журнала">↓ <span>Экспорт</span></button>
+              <button id="clear" class="compact" type="button" title="Очистить экран" aria-label="Очистить экран">⌫ <span>Очистить</span></button>
             </div>
           </div>
           <div class="log-filterbar">
@@ -121,10 +121,9 @@
                 <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
                 <label>С <input id="time-from" type="datetime-local"></label>
                 <label>По <input id="time-to" type="datetime-local"></label>
-                <label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label>
+                <div class="preset-row"><label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label><button id="preset-delete" class="compact" type="button" title="Удалить выбранный фильтр" aria-label="Удалить выбранный фильтр" disabled>×</button></div>
                 <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
                 <button id="preset-save" class="compact">Сохранить</button>
-                <button id="preset-delete" class="compact" title="Удалить выбранный пресет" aria-label="Удалить выбранный фильтр">×</button>
               </div>
             </details>
           </div>

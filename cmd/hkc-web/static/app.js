@@ -66,6 +66,7 @@ function refreshPresetOptions() {
   select.replaceChildren(new Option('Выберите', ''));
   for (const name of Object.keys(savedFilters).sort()) select.add(new Option(name, name));
   if (savedFilters[selected]) select.value = selected;
+  $('#preset-delete').disabled = !select.value;
 }
 refreshPresetOptions();
 
@@ -337,12 +338,12 @@ async function refreshSystem() {
     $('#system-cpu-meta').textContent = data.supported ? `${data.cpuCores} логических CPU` : 'Метрики доступны в Linux/WSL';
     $('#system-ram-meta').textContent = `${formatBytes(data.memoryUsedBytes)} из ${formatBytes(data.memoryTotalBytes)} · свободно ${formatBytes(data.memoryAvailableBytes)}`;
     $('#system-disk-meta').textContent = `${formatBytes(data.diskUsedBytes)} из ${formatBytes(data.diskTotalBytes)} · свободно ${formatBytes(data.diskFreeBytes)}`;
-    for (const period of [1, 5, 15]) animateValue($(`#system-load-${period}`), Number(data[`load${period}`] || 0).toFixed(2));
+    for (const period of [1, 5, 15]) animateValue($(`#system-load-${period}`), data.supported ? Number(data[`load${period}`] || 0).toFixed(2) : '—');
     $('#system-host').textContent = data.hostname || '—';
     $('#system-platform').textContent = `${data.os}/${data.arch}`;
     $('#system-kernel').textContent = data.kernel || (data.supported ? '—' : 'Метрики доступны в Linux/WSL');
     $('#system-uptime').textContent = formatUptime(data.uptimeSeconds);
-    $('#system-sampled').textContent = `Обновлено ${new Date(data.sampledAt).toLocaleTimeString('ru-RU')}`;
+    $('#system-sampled').textContent = data.supported ? `Обновлено ${new Date(data.sampledAt).toLocaleTimeString('ru-RU')}` : 'Метрики доступны в Linux/WSL';
   } catch (error) {
     $('#system-sampled').textContent = `Ошибка: ${error.message}`;
   } finally { systemBusy = false; }
@@ -402,10 +403,11 @@ $('#preset-save').addEventListener('click', () => {
   if (!name) { showNotice('Введите имя фильтра', 'error'); return; }
   savedFilters[name] = {query: filterInput.value, level: activeLevel, module: $('#module-filter').value, from: $('#time-from').value, to: $('#time-to').value};
   localStorage.setItem('hkc-log-presets', JSON.stringify(savedFilters));
-  refreshPresetOptions(); $('#preset-select').value = name; $('#preset-name').value = '';
+  refreshPresetOptions(); $('#preset-select').value = name; $('#preset-delete').disabled = false; $('#preset-name').value = '';
   showNotice(`Фильтр «${name}» сохранён`);
 });
 $('#preset-select').addEventListener('change', () => {
+  $('#preset-delete').disabled = !$('#preset-select').value;
   const preset = savedFilters[$('#preset-select').value]; if (!preset) return;
   filterInput.value = preset.query || ''; activeLevel = preset.level || 'ALL';
   $('#module-filter').value = preset.module || ''; $('#time-from').value = preset.from || ''; $('#time-to').value = preset.to || '';
