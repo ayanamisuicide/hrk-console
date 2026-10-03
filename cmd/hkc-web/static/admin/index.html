@@ -61,12 +61,18 @@
     </section>
 
     <details class="admin-tree-group" data-tree="service">
-      <summary><span class="tree-index">02 / СЛУЖБА</span><strong>Диагностика</strong><small>Процесс, запуск, Git и Python</small></summary>
+      <summary><span class="tree-index">02 / СЛУЖБА</span><strong>Диагностика и консоль</strong><small>Команды внутри WSL / HEROKU_DIR</small></summary>
       <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section console-section">
       <div class="section-heading"><div><span class="eyebrow">DIAGNOSTIC CONSOLE</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
       <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
       <pre id="diagnostic-output">Выберите проверку выше.</pre>
+      <form id="terminal-form" class="terminal-form">
+        <label for="terminal-command"><span>WSL / HEROKU_DIR</span><small>Команда выполняется с правами службы панели · Ctrl+Enter для запуска</small></label>
+        <div class="terminal-prompt"><b>$</b><textarea id="terminal-command" rows="2" maxlength="4096" spellcheck="false" placeholder="git status --short"></textarea></div>
+        <div class="terminal-actions"><button id="terminal-run" type="submit" class="primary compact">▶ Выполнить</button><button id="terminal-clear" type="button" class="compact">Очистить вывод</button><span id="terminal-meta">Готово к команде</span></div>
+      </form>
+      <pre id="terminal-output" class="terminal-output">Команды ещё не выполнялись.</pre>
     </section>
       </div></div>
     </details>

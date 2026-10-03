@@ -34,6 +34,7 @@
         <button class="nav-item active" data-view="overview"><span>◫</span> Обзор</button>
         <button class="nav-item" data-view="logs"><span>≡</span> Журнал</button>
         <button class="nav-item" data-view="monitor"><span>⌁</span> Мониторинг</button>
+        <button class="nav-item" data-view="system"><span>▦</span> Система</button>
         <a class="nav-item" href="/admin/"><span>⚙</span> Администрирование</a>
       </nav>
 
@@ -88,6 +89,18 @@
         <div class="view-intro"><div><span class="eyebrow">LIVE METRICS</span><h3>Мониторинг процесса</h3><p>Память процесса и события журнала обновляются автоматически.</p></div><button id="metrics-refresh" class="compact">↻ Обновить</button></div>
         <div class="dashboard-grid monitor-stats"><article class="metric-card"><span>СТАТУС</span><strong id="monitor-status">—</strong></article><article class="metric-card"><span>ПАМЯТЬ</span><strong id="monitor-memory">—</strong></article><article class="metric-card"><span>ОШИБКИ</span><strong id="monitor-errors">—</strong></article><article class="metric-card"><span>СТРОК ПРОВЕРЕНО</span><strong id="monitor-lines">—</strong></article></div>
         <article class="surface-card chart-card"><div class="card-heading"><div><span class="eyebrow">MEMORY HISTORY</span><h3>Использование RAM</h3></div><span class="muted">Последние 2 минуты · шаг 1 секунда</span></div><svg id="memory-chart" viewBox="0 0 800 220" preserveAspectRatio="none" role="img" aria-label="График использования памяти"><path id="memory-area"></path><path id="memory-line"></path></svg><p id="chart-empty" class="muted">Ожидаем данные процесса.</p></article>
+      </section>
+      <section id="system-view" class="workspace-view system-view" hidden>
+        <div class="view-intro"><div><span class="eyebrow">HOST HEALTH</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>
+        <div class="system-kpis">
+          <article class="resource-card"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
+          <article class="resource-card"><div class="resource-heading"><span>ОПЕРАТИВНАЯ ПАМЯТЬ</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
+          <article class="resource-card"><div class="resource-heading"><span>ДИСК HEROKU</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
+        </div>
+        <div class="system-columns">
+          <article class="surface-card load-card"><div class="card-heading"><div><span class="eyebrow">LOAD AVERAGE</span><h3>Средняя нагрузка</h3></div><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
+          <article class="surface-card host-card"><div class="card-heading"><div><span class="eyebrow">ENVIRONMENT</span><h3>Среда выполнения</h3></div></div><div class="host-details"><span>Узел</span><strong id="system-host">—</strong><span>Платформа</span><strong id="system-platform">—</strong><span>Ядро</span><strong id="system-kernel">—</strong><span>Uptime</span><strong id="system-uptime">—</strong></div></article>
+        </div>
       </section>
       <section id="logs-view" class="workspace-view logs-view" hidden>
         <div class="logs-controls">

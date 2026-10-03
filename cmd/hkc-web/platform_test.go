@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,39 @@ func TestDiagnosticCommandRejectsUnknownAction(t *testing.T) {
 	s.adminDiagnosticCommand(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("unexpected code: %d", w.Code)
+	}
+}
+
+func TestAdminTerminalRequiresToken(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd"}`))
+	w := httptest.NewRecorder()
+	s.adminTerminal(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected code: %d", w.Code)
+	}
+}
+
+func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("terminal is available only on Linux")
+	}
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd; printf terminal-ok"}`))
+	r.Header.Set("Authorization", "Bearer admin-secret")
+	w := httptest.NewRecorder()
+	s.adminTerminal(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), s.bot.HerokuDir) || !strings.Contains(w.Body.String(), "terminal-ok") {
+		t.Fatalf("terminal failed: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSystemHealthReturnsPlatform(t *testing.T) {
+	s := newTestServer(t)
+	w := httptest.NewRecorder()
+	s.systemHealth(w, httptest.NewRequest(http.MethodGet, "/api/system", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), runtime.GOOS) {
+		t.Fatalf("system health failed: %d %s", w.Code, w.Body.String())
 	}
 }
 

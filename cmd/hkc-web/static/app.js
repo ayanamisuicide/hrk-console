@@ -69,11 +69,11 @@ function refreshPresetOptions() {
 refreshPresetOptions();
 
 function setView(view) {
-  if (!['overview', 'logs', 'monitor'].includes(view)) return;
+  if (!['overview', 'logs', 'monitor', 'system'].includes(view)) return;
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг'}[view]);
+  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг', system: 'Состояние системы'}[view]);
   localStorage.setItem('hkc-view', view);
 }
 
@@ -269,6 +269,50 @@ async function refreshStatus() {
 }
 
 function formatMemory(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} МБ` : '—'; }
+function formatBytes(bytes) {
+  if (!bytes) return '—';
+  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  let value = bytes; let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value.toFixed(unit < 2 ? 0 : 1)} ${units[unit]}`;
+}
+function formatUptime(seconds) {
+  if (!seconds) return '—';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [days ? `${days} д` : '', hours ? `${hours} ч` : '', `${minutes} мин`].filter(Boolean).join(' ');
+}
+function percent(used, total) { return total ? Math.min(100, Math.max(0, used / total * 100)) : 0; }
+
+let systemBusy = false;
+async function refreshSystem() {
+  if (systemBusy || document.hidden) return;
+  systemBusy = true;
+  try {
+    const data = await request('/api/system');
+    const cpu = data.cpuPercent || 0;
+    const ram = percent(data.memoryUsedBytes, data.memoryTotalBytes);
+    const disk = percent(data.diskUsedBytes, data.diskTotalBytes);
+    animateValue($('#system-cpu'), !data.supported ? '—' : cpu === 0 ? 'сбор…' : `${cpu.toFixed(1)}%`);
+    animateValue($('#system-ram'), !data.memoryTotalBytes ? '—' : `${ram.toFixed(1)}%`);
+    animateValue($('#system-disk'), !data.diskTotalBytes ? '—' : `${disk.toFixed(1)}%`);
+    $('#system-cpu-bar').style.width = `${cpu}%`;
+    $('#system-ram-bar').style.width = `${ram}%`;
+    $('#system-disk-bar').style.width = `${disk}%`;
+    $('#system-cpu-meta').textContent = data.supported ? `${data.cpuCores} логических CPU` : 'Метрики доступны в Linux/WSL';
+    $('#system-ram-meta').textContent = `${formatBytes(data.memoryUsedBytes)} из ${formatBytes(data.memoryTotalBytes)} · свободно ${formatBytes(data.memoryAvailableBytes)}`;
+    $('#system-disk-meta').textContent = `${formatBytes(data.diskUsedBytes)} из ${formatBytes(data.diskTotalBytes)} · свободно ${formatBytes(data.diskFreeBytes)}`;
+    for (const period of [1, 5, 15]) animateValue($(`#system-load-${period}`), Number(data[`load${period}`] || 0).toFixed(2));
+    $('#system-host').textContent = data.hostname || '—';
+    $('#system-platform').textContent = `${data.os}/${data.arch}`;
+    $('#system-kernel').textContent = data.kernel || (data.supported ? '—' : 'Метрики доступны в Linux/WSL');
+    $('#system-uptime').textContent = formatUptime(data.uptimeSeconds);
+    $('#system-sampled').textContent = `Обновлено ${new Date(data.sampledAt).toLocaleTimeString('ru-RU')}`;
+  } catch (error) {
+    $('#system-sampled').textContent = `Ошибка: ${error.message}`;
+  } finally { systemBusy = false; }
+}
 
 function renderChart(points) {
   const values = points.filter((point) => point.rssBytes > 0).slice(-120);
@@ -326,6 +370,7 @@ async function refreshDiagnostics() {
 $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
 $('#metrics-refresh').addEventListener('click', () => { refreshMetrics(); refreshInsights(); });
+$('#system-refresh').addEventListener('click', refreshSystem);
 $('#export-logs').addEventListener('click', () => {
   const query = filterInput.value.trim().toLowerCase();
   const lines = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
@@ -500,7 +545,7 @@ async function bootstrap() {
     $('#username').textContent = me.username;
     const viewer = me.role === 'viewer';
     document.querySelectorAll('[data-action]').forEach((button) => { if (viewer) { button.hidden = true; } });
-    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics()]);
+    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics(), refreshSystem()]);
     connectStream();
   } catch (error) {
     if (!authDialog.open) showNotice(error.message, 'error');
@@ -513,4 +558,5 @@ setInterval(() => {
 }, 1500);
 setInterval(() => { if (authenticated) refreshInsights(); }, 10000);
 setInterval(() => { if (authenticated) refreshMetrics(); }, 1000);
+setInterval(() => { if (authenticated && currentView === 'system') refreshSystem(); }, 2000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

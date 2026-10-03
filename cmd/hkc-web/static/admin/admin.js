@@ -61,11 +61,13 @@ document.querySelectorAll('.admin-tree-group').forEach((branch) => {
     const finish = (transitionEvent) => {
       if (transitionEvent && (transitionEvent.target !== clip || transitionEvent.propertyName !== 'grid-template-rows')) return;
       if (!branch.classList.contains('is-closing')) return;
+      clip.removeEventListener('transitionend', finish);
+      clearTimeout(branch.closeTimer);
       branch.open = false;
       branch.classList.remove('is-closing');
       saveTreeState();
     };
-    clip.addEventListener('transitionend', finish, {once: true});
+    clip.addEventListener('transitionend', finish);
     branch.closeTimer = setTimeout(() => finish(), 700);
   });
 });
@@ -420,6 +422,39 @@ document.querySelectorAll('[data-diagnostic]').forEach((button) => button.addEve
   } catch (error) { $('#diagnostic-output').textContent = error.message; }
   button.disabled = false;
 }));
+
+const terminalForm = $('#terminal-form');
+const terminalCommand = $('#terminal-command');
+const terminalOutput = $('#terminal-output');
+const terminalMeta = $('#terminal-meta');
+terminalForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const command = terminalCommand.value.trim();
+  if (!command) { terminalCommand.focus(); return; }
+  const button = $('#terminal-run');
+  button.disabled = true;
+  terminalCommand.disabled = true;
+  terminalMeta.textContent = 'Выполняется…';
+  terminalOutput.textContent = `$ ${command}\n`;
+  try {
+    const result = await adminRequest('/api/admin/terminal', {method: 'POST', body: JSON.stringify({command})});
+    terminalOutput.textContent += result.output || '(команда не вернула вывод)';
+    terminalMeta.textContent = `exit ${result.exitCode} · ${result.durationMs} мс`;
+  } catch (error) {
+    terminalOutput.textContent += error.message;
+    terminalMeta.textContent = 'Ошибка выполнения';
+  }
+  terminalCommand.disabled = false;
+  button.disabled = false;
+  terminalCommand.focus();
+});
+terminalCommand.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.ctrlKey) { event.preventDefault(); terminalForm.requestSubmit(); }
+});
+$('#terminal-clear').addEventListener('click', () => {
+  terminalOutput.textContent = 'Вывод очищен.';
+  terminalMeta.textContent = 'Готово к команде';
+});
 
 async function refreshUpdates() {
   try {
