@@ -18,7 +18,6 @@ let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
 let savedFilters = {};
-let lastAnimatedLogAt = 0;
 function animateValue(element, value) {
   if (window.motionValue) { window.motionValue(element, value); return; }
   const next = String(value);
@@ -164,9 +163,7 @@ function renderRecentEvents() {
 function createLine(raw, live = false) {
   const row = document.createElement('div');
   const motionReduced = window.prefersReducedMotion?.() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const now = performance.now();
-  const animateArrival = live && !motionReduced && document.visibilityState === 'visible' && now - lastAnimatedLogAt > 90;
-  if (animateArrival) lastAnimatedLogAt = now;
+  const animateArrival = live && !motionReduced && document.visibilityState === 'visible';
   row.className = `line${animateArrival ? ' live' : ''}`;
   if (animateArrival) row.addEventListener('animationend', (event) => {
     if (event.target === row && !event.pseudoElement) row.classList.remove('live');

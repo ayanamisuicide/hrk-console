@@ -1,4 +1,4 @@
-const CACHE = 'hkc-shell-v9-log-arrival';
+const CACHE = 'hkc-shell-v10-every-log-arrival';
 const ASSETS = ['/', '/style.css', '/motion.css', '/logs.css', '/motion.js', '/app.js', '/icon.svg', '/manifest.webmanifest'];
 self.addEventListener('install', (event) => { event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener('activate', (event) => { event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))); self.clients.claim(); });
