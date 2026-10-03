@@ -474,15 +474,18 @@ terminalForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const command = terminalCommand.value.trim();
   if (!command) { terminalCommand.focus(); return; }
+  const potentiallyDangerous = /(?:^|[\s;&|])(rm|sudo|chmod|chown|dd|mkfs|reboot|shutdown|kill|pkill|truncate|git\s+reset|git\s+clean)(?:\s|$)/i.test(command);
+  const warning = potentiallyDangerous ? '⚠ Команда похожа на потенциально опасную. Проверьте её особенно внимательно. ' : '';
+  if (!await confirmAction('Выполнить команду в WSL?', `${warning}Команда будет запущена с правами службы панели в каталоге Heroku: ${command}`)) return;
   const button = $('#terminal-run');
   button.disabled = true;
   terminalCommand.disabled = true;
   terminalMeta.textContent = 'Выполняется…';
   terminalOutput.textContent = `$ ${command}\n`;
   try {
-    const result = await adminRequest('/api/admin/terminal', {method: 'POST', body: JSON.stringify({command})});
+    const result = await adminRequest('/api/admin/terminal', {method: 'POST', body: JSON.stringify({command, confirmed: true})});
     terminalOutput.textContent += result.output || '(команда не вернула вывод)';
-    terminalMeta.textContent = `exit ${result.exitCode} · ${result.durationMs} мс`;
+    terminalMeta.textContent = `${result.actor || 'администратор'} · exit ${result.exitCode} · ${result.durationMs} мс${result.timedOut ? ' · таймаут' : ''}`;
   } catch (error) {
     terminalOutput.textContent += error.message;
     terminalMeta.textContent = 'Ошибка выполнения';

@@ -25,15 +25,16 @@ import (
 var staticFiles embed.FS
 
 type server struct {
-	bot        *botproc.Manager
-	auth       *authStore
-	sessions   *sessionStore
-	adminToken string
-	audit      *auditStore
-	metrics    *metricStore
-	notifier   *stateNotifier
-	configMu   sync.Mutex
-	updates    *updateChecker
+	bot         *botproc.Manager
+	auth        *authStore
+	sessions    *sessionStore
+	adminToken  string
+	audit       *auditStore
+	metrics     *metricStore
+	hostHistory *hostHistoryStore
+	notifier    *stateNotifier
+	configMu    sync.Mutex
+	updates     *updateChecker
 }
 
 type statusResponse struct {
@@ -100,6 +101,8 @@ func main() {
 	}
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
 		audit: newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
+	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.json"))
+	go s.collectHostHistory(context.Background())
 	go watchBotState(context.Background(), notifier)
 	s.updates = &updateChecker{}
 	s.updates.check()
@@ -145,6 +148,8 @@ func main() {
 	mux.HandleFunc("GET /api/insights", s.authorize(s.insights))
 	mux.HandleFunc("GET /api/metrics", s.authorize(s.liveMetrics))
 	mux.HandleFunc("GET /api/system", s.authorize(s.systemHealth))
+	mux.HandleFunc("GET /api/system/history", s.authorize(s.systemHistory))
+	mux.HandleFunc("GET /api/incidents", s.authorize(s.incidents))
 	mux.HandleFunc("GET /api/diagnostics", s.authorize(s.diagnostics))
 	mux.HandleFunc("GET /api/public/status", s.publicStatus)
 	mux.HandleFunc("GET /api/logs", s.authorize(s.logs))

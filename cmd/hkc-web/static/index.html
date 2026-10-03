@@ -18,7 +18,7 @@
         <div>
           <span class="eyebrow">CONTROL DECK</span>
           <h1>HEROKU</h1>
-          <p id="version">версия —</p>
+          <p id="version">Панель — · бот —</p>
         </div>
       </div>
 
@@ -33,6 +33,7 @@
       <nav class="side-nav" aria-label="Разделы панели">
         <button class="nav-item active" data-view="overview"><span>◫</span> Обзор</button>
         <button class="nav-item" data-view="logs"><span>≡</span> Журнал</button>
+        <button class="nav-item" data-view="incidents"><span>!</span> Происшествия</button>
         <button class="nav-item" data-view="system"><span>▦</span> Система</button>
         <a class="nav-item" href="/admin/"><span>⚙</span> Администрирование</a>
       </nav>
@@ -91,11 +92,13 @@
           <article class="resource-card"><div class="resource-heading"><span>ОПЕРАТИВНАЯ ПАМЯТЬ</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
           <article class="resource-card"><div class="resource-heading"><span>ДИСК HEROKU</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
         </div>
+        <article class="surface-card history-card"><div class="card-heading"><div><span class="eyebrow">RESOURCE HISTORY</span><h3>История нагрузки</h3><p class="muted">CPU, RAM и диск; вертикальные метки — смена процесса бота.</p></div><div class="history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div></div><div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div><div class="history-legend"><span>● CPU</span><span>● RAM</span><span>● Диск</span><span id="history-count">Ожидание данных…</span></div></article>
         <div class="system-columns">
           <article class="surface-card load-card"><div class="card-heading"><div><span class="eyebrow">LOAD AVERAGE</span><h3>Средняя нагрузка</h3></div><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
           <article class="surface-card host-card"><div class="card-heading"><div><span class="eyebrow">ENVIRONMENT</span><h3>Среда выполнения</h3></div></div><div class="host-details"><span>Узел</span><strong id="system-host">—</strong><span>Платформа</span><strong id="system-platform">—</strong><span>Ядро</span><strong id="system-kernel">—</strong><span>Uptime</span><strong id="system-uptime">—</strong></div></article>
         </div>
       </section>
+      <section id="incidents-view" class="workspace-view incidents-view" hidden><div class="view-intro"><div><span class="eyebrow">INCIDENT CENTER</span><h3>Происшествия</h3><p>Ошибки и частые предупреждения, сгруппированные по модулю и времени. Источник — последние 3000 строк журнала.</p></div><button id="incidents-refresh" class="compact">↻ Обновить</button></div><div id="incident-list" class="incident-list"><p class="empty-state">Загружаем события…</p></div></section>
       <section id="logs-view" class="workspace-view logs-view" hidden>
         <div class="logs-controls">
           <div class="log-console-bar">
@@ -104,6 +107,7 @@
             <div class="log-actions">
               <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
               <button id="export-logs" class="compact" type="button" title="Экспорт журнала" aria-label="Экспорт журнала">↓ <span>Экспорт</span></button>
+              <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные строки">☆ <span>Закладки</span></button>
               <button id="clear" class="compact" type="button" title="Очистить экран" aria-label="Очистить экран">⌫ <span>Очистить</span></button>
             </div>
           </div>

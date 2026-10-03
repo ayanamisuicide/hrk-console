@@ -31,3 +31,20 @@ jobs:
 
       - name: updater integrity and rollback tests
         run: python3 deploy/test_update.py
+
+  ui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run test:ui
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: test-results/

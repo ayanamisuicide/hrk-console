@@ -19,6 +19,11 @@ let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
 let savedFilters = {};
+let bookmarks = new Set();
+let bookmarksOnly = false;
+let historyRange = '1h';
+try { bookmarks = new Set(JSON.parse(localStorage.getItem('hkc-log-bookmarks') || '[]')); } catch (_) { localStorage.removeItem('hkc-log-bookmarks'); }
+function lineKey(raw) { let hash = 2166136261; for (let i = 0; i < raw.length; i++) hash = Math.imul(hash ^ raw.charCodeAt(i), 16777619); return (hash >>> 0).toString(36); }
 function animateValue(element, value) {
   if (window.motionValue) { window.motionValue(element, value); return; }
   const next = String(value);
@@ -71,11 +76,13 @@ function refreshPresetOptions() {
 refreshPresetOptions();
 
 function setView(view) {
-  if (!['overview', 'logs', 'system'].includes(view)) view = 'overview';
+  if (!['overview', 'logs', 'system', 'incidents'].includes(view)) view = 'overview';
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', system: 'Состояние системы'}[view]);
+  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', system: 'Состояние системы', incidents: 'Происшествия'}[view]);
+  if (view === 'incidents' && authenticated) refreshIncidents();
+  if (view === 'system' && authenticated) refreshHistory();
   localStorage.setItem('hkc-view', view);
 }
 
@@ -140,7 +147,7 @@ document.addEventListener('keydown', (event) => {
 
 function renderLines() {
   const query = filterInput.value.trim().toLowerCase();
-  const visible = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
+  const visible = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)) && (!bookmarksOnly || bookmarks.has(lineKey(line))));
   const fragment = document.createDocumentFragment();
   for (const raw of visible) fragment.append(createLine(raw));
   if (!visible.length) fragment.append(createLogEmpty());
@@ -216,7 +223,17 @@ function createLine(raw, live = false) {
   const messageEl = document.createElement('span');
   messageEl.className = 'message';
   messageEl.textContent = message;
-  row.append(levelEl, moduleEl, messageEl);
+  const mark = document.createElement('button');
+  mark.type = 'button'; mark.className = 'line-bookmark'; mark.textContent = bookmarks.has(lineKey(raw)) ? '★' : '☆';
+  mark.title = 'Отметить строку'; mark.setAttribute('aria-label', 'Отметить строку'); mark.setAttribute('aria-pressed', String(bookmarks.has(lineKey(raw))));
+  mark.addEventListener('click', () => {
+    const key = lineKey(raw);
+    if (bookmarks.has(key)) bookmarks.delete(key); else bookmarks.add(key);
+    localStorage.setItem('hkc-log-bookmarks', JSON.stringify([...bookmarks].slice(-500)));
+    mark.textContent = bookmarks.has(key) ? '★' : '☆'; mark.setAttribute('aria-pressed', String(bookmarks.has(key)));
+    if (bookmarksOnly) renderLines();
+  });
+  row.append(levelEl, moduleEl, messageEl, mark);
   return row;
 }
 
@@ -244,7 +261,7 @@ function appendLiveLine(raw) {
     return;
   }
   if (trimmed && logEl.firstChild) logEl.firstChild.remove();
-  if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query))) {
+  if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query)) || (bookmarksOnly && !bookmarks.has(lineKey(raw)))) {
     if (logEl.querySelector('.log-empty')) renderLines();
     return;
   }
@@ -285,7 +302,7 @@ async function refreshStatus() {
     $('#status-card').classList.toggle('online', status.running);
     animateValue($('#status-label'), status.running ? 'бот запущен' : 'бот остановлен');
     $('#status-meta').textContent = status.running ? `PID ${status.pid} · ${status.uptime}` : 'процесс не найден';
-    $('#version').textContent = status.version ? `версия ${status.version}` : 'версия не определена';
+    $('#version').textContent = `Панель ${window.panelVersion || '—'} · бот ${status.version || 'не определён'}`;
     $('#heroku-dir').textContent = status.herokuDir;
     document.querySelector('[data-action="start"]').disabled = status.running;
     document.querySelector('[data-action="stop"]').disabled = !status.running;
@@ -389,9 +406,76 @@ async function refreshDiagnostics() {
 $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
 $('#system-refresh').addEventListener('click', refreshSystem);
+async function refreshPanelVersion() {
+  try {
+    const data = await request('/api/version');
+    window.panelVersion = data.version || '—';
+    if (lastStatus) $('#version').textContent = `Панель ${window.panelVersion} · бот ${lastStatus.version || 'не определён'}`;
+  } catch (_) { /* Bot status remains available independently. */ }
+}
+
+async function refreshIncidents() {
+  const container = $('#incident-list');
+  try {
+    const data = await request('/api/incidents');
+    container.replaceChildren();
+    if (!data.incidents?.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = 'В доступной части журнала происшествий нет.'; container.append(empty); return; }
+    for (const incident of data.incidents) {
+      const card = document.createElement('button'); card.className = 'incident-card'; card.type = 'button';
+      const meta = document.createElement('span'); meta.className = 'incident-meta'; meta.textContent = `${incident.level} · ${incident.module} · ${incident.count} событий · ${incident.start}${incident.restarts ? ` · перезапусков рядом: ${incident.restarts}` : ''}`;
+      const title = document.createElement('strong'); title.textContent = incident.title || 'Ошибка без описания';
+      const context = document.createElement('small'); context.textContent = incident.context ? `Перед ошибкой: ${incident.context}` : 'Предшествующей строки нет';
+      const action = document.createElement('em'); action.textContent = 'Открыть этот интервал в журнале →';
+      card.append(meta, title, context, action);
+      card.addEventListener('click', () => {
+        const start = new Date(incident.start.replace(' ', 'T')); const end = new Date(incident.end.replace(' ', 'T'));
+        const localValue = (date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+        $('#time-from').value = localValue(new Date(start.getTime() - 120000));
+        $('#time-to').value = localValue(new Date(end.getTime() + 120000));
+        $('#module-filter').value = incident.module;
+        activeLevel = 'ALL'; bookmarksOnly = false; $('#bookmarks-only').setAttribute('aria-pressed', 'false');
+        document.querySelectorAll('.filter-chip').forEach((item) => item.classList.toggle('active', item.dataset.level === 'ALL'));
+        setView('logs'); renderLines();
+        document.querySelector('.log-advanced').open = true;
+        logEl.querySelector('.line[data-level="ERROR"], .line[data-level="CRITICAL"]')?.scrollIntoView({block: 'center', behavior: 'auto'});
+      });
+      container.append(card);
+    }
+  } catch (error) { container.textContent = `Не удалось загрузить происшествия: ${error.message}`; }
+}
+$('#incidents-refresh').addEventListener('click', refreshIncidents);
+
+async function refreshHistory() {
+  try {
+    const data = await request(`/api/system/history?range=${historyRange}`);
+    const points = data.points || [];
+    const chart = $('#history-chart'); chart.replaceChildren();
+    $('#history-count').textContent = `${points.length} замеров · каждые 30 секунд`;
+    if (points.length < 2) { chart.textContent = 'История появится после нескольких замеров (до 30 секунд).'; return; }
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 1000 200'); svg.setAttribute('preserveAspectRatio', 'none');
+    const start = new Date(points[0].at).getTime(); const span = Math.max(1, new Date(points.at(-1).at).getTime() - start);
+    const x = (point) => (new Date(point.at).getTime() - start) / span * 1000;
+    for (const [key, color] of [['cpu','var(--mint)'], ['memory','var(--amber)'], ['disk','#8baeff']]) {
+      const path = document.createElementNS(ns, 'polyline');
+      path.setAttribute('points', points.map((point) => `${x(point).toFixed(2)},${(195 - Math.min(100,Math.max(0,point[key])) * 1.9).toFixed(2)}`).join(' '));
+      path.setAttribute('fill', 'none'); path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2'); path.setAttribute('vector-effect', 'non-scaling-stroke'); svg.append(path);
+    }
+    for (let i = 1; i < points.length; i++) if (points[i].pid && points[i-1].pid && points[i].pid !== points[i-1].pid) {
+      const marker = document.createElementNS(ns, 'line'); marker.setAttribute('x1', x(points[i])); marker.setAttribute('x2', x(points[i])); marker.setAttribute('y1', '0'); marker.setAttribute('y2', '200'); marker.setAttribute('stroke', 'var(--red)'); marker.setAttribute('stroke-dasharray', '5 5'); svg.append(marker);
+    }
+    chart.append(svg);
+  } catch (error) { $('#history-chart').textContent = `История недоступна: ${error.message}`; }
+}
+document.querySelectorAll('[data-history-range]').forEach((button) => button.addEventListener('click', () => {
+  historyRange = button.dataset.historyRange;
+  document.querySelectorAll('[data-history-range]').forEach((item) => item.classList.toggle('active', item === button));
+  refreshHistory();
+}));
+$('#bookmarks-only').addEventListener('click', (event) => { bookmarksOnly = !bookmarksOnly; event.currentTarget.setAttribute('aria-pressed', String(bookmarksOnly)); renderLines(); });
 $('#export-logs').addEventListener('click', () => {
   const query = filterInput.value.trim().toLowerCase();
-  const lines = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
+  const lines = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)) && (!bookmarksOnly || bookmarks.has(lineKey(line))));
   const blob = new Blob([lines.join('\n') + '\n'], {type: 'text/plain;charset=utf-8'});
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `heroku-log-${new Date().toISOString().slice(0, 10)}.txt`; link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -423,6 +507,7 @@ $('#preset-delete').addEventListener('click', () => {
 const commands = [
   {name: 'Открыть обзор', run: () => setView('overview')},
   {name: 'Открыть журнал', run: () => setView('logs')},
+  {name: 'Открыть происшествия', run: () => setView('incidents')},
   {name: 'Открыть состояние системы', run: () => setView('system')},
   {name: 'Найти в журнале', run: () => { setView('logs'); filterInput.focus(); }},
   {name: 'Открыть админку', run: () => { location.href = '/admin/'; }},
@@ -569,7 +654,9 @@ async function bootstrap() {
     $('#username').textContent = me.username;
     const viewer = me.role === 'viewer';
     document.querySelectorAll('[data-action]').forEach((button) => { if (viewer) { button.hidden = true; } });
-    await Promise.all([refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics(), refreshSystem()]);
+    await Promise.all([refreshPanelVersion(), refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics(), refreshSystem()]);
+    if (currentView === 'incidents') refreshIncidents();
+    if (currentView === 'system') refreshHistory();
     connectStream();
   } catch (error) {
     if (!authDialog.open) showNotice(error.message, 'error');
@@ -583,4 +670,6 @@ setInterval(() => {
 setInterval(() => { if (authenticated) refreshInsights(); }, 10000);
 setInterval(() => { if (authenticated) refreshMetrics(); }, 1000);
 setInterval(() => { if (authenticated && currentView === 'system') refreshSystem(); }, 2000);
+setInterval(() => { if (authenticated && currentView === 'system') refreshHistory(); }, 30000);
+setInterval(() => { if (authenticated && currentView === 'incidents') refreshIncidents(); }, 15000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

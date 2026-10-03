@@ -76,7 +76,7 @@ func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
 		t.Skip("terminal is available only on Linux")
 	}
 	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd; printf terminal-ok"}`))
+	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd; printf terminal-ok","confirmed":true}`))
 	r.Header.Set("Authorization", "Bearer admin-secret")
 	w := httptest.NewRecorder()
 	s.adminTerminal(w, r)

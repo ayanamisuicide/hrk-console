@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "test:ui": "playwright test",
+    "test:ui:update": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "http-server": "^14.1.1"
+  }
+}

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -18,15 +21,37 @@ const (
 )
 
 type terminalRequest struct {
-	Command string `json:"command"`
+	Command   string `json:"command"`
+	Confirmed bool   `json:"confirmed"`
 }
 
 type terminalResponse struct {
 	Output     string `json:"output"`
+	Actor      string `json:"actor"`
 	ExitCode   int    `json:"exitCode"`
 	TimedOut   bool   `json:"timedOut"`
 	DurationMS int64  `json:"durationMs"`
 	Directory  string `json:"directory"`
+}
+
+type cappedOutput struct {
+	buffer bytes.Buffer
+	cut    bool
+}
+
+func (c *cappedOutput) Write(p []byte) (int, error) {
+	length := len(p)
+	room := terminalMaxOutput - c.buffer.Len()
+	if room > 0 {
+		if room > length {
+			room = length
+		}
+		_, _ = c.buffer.Write(p[:room])
+	}
+	if length > room {
+		c.cut = true
+	}
+	return length, nil
 }
 
 func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
@@ -54,17 +79,23 @@ func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, actionResponse{Message: "команда слишком длинная"})
 		return
 	}
+	if !request.Confirmed {
+		writeJSON(w, http.StatusPreconditionRequired, actionResponse{Message: "подтвердите выполнение команды"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), terminalTimeout)
 	defer cancel()
 	started := time.Now()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", request.Command)
 	cmd.Dir = s.bot.HerokuDir
-	data, err := cmd.CombinedOutput()
+	var capture cappedOutput
+	cmd.Stdout, cmd.Stderr = &capture, &capture
+	err := cmd.Run()
 	duration := time.Since(started)
-	output := strings.TrimSpace(strings.ToValidUTF8(string(data), "�"))
-	if len(output) > terminalMaxOutput {
-		output = output[:terminalMaxOutput] + "\n…вывод обрезан"
+	output := strings.TrimSpace(strings.ToValidUTF8(capture.buffer.String(), "�"))
+	if capture.cut {
+		output += "\n…вывод обрезан"
 	}
 	exitCode := 0
 	if err != nil {
@@ -81,9 +112,16 @@ func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 	if timedOut {
 		output = strings.TrimSpace(output + "\nКоманда остановлена по таймауту 30 секунд.")
 	}
-	s.record(r, "admin", "terminal.execute", "Выполнена команда в каталоге Heroku")
+	digest := sha256.Sum256([]byte(request.Command))
+	actor := "admin-token"
+	if cookie, err := r.Cookie(sessionCookie); err == nil && s.sessions != nil {
+		if username, ok := s.sessions.get(cookie.Value); ok && s.auth != nil && s.auth.role(username) != "" {
+			actor = username
+		}
+	}
+	s.record(r, actor, "terminal.execute", fmt.Sprintf("Команда SHA256 %.12x · exit %d · %d мс · таймаут %t", digest, exitCode, duration.Milliseconds(), timedOut))
 	writeJSON(w, http.StatusOK, terminalResponse{
-		Output: output, ExitCode: exitCode, TimedOut: timedOut,
+		Output: output, Actor: actor, ExitCode: exitCode, TimedOut: timedOut,
 		DurationMS: duration.Milliseconds(), Directory: s.bot.HerokuDir,
 	})
 }
