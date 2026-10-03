@@ -41,6 +41,36 @@ function animateValue(element, value) {
   element.classList.add('value-change');
   element.addEventListener('animationend', () => element.classList.remove('value-change'), {once: true});
 }
+const numericAnimations = new WeakMap();
+function animateNumber(element, target, {decimals = 0, suffix = '', formatter} = {}) {
+  if (!element || !Number.isFinite(target)) return;
+  const format = formatter || ((value) => `${value.toFixed(decimals)}${suffix}`);
+  const reduced = window.prefersReducedMotion?.() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const previousState = numericAnimations.get(element);
+  if (previousState?.frame) cancelAnimationFrame(previousState.frame);
+  const parsed = Number.parseFloat(element.dataset.motionValue);
+  const from = Number.isFinite(parsed) ? parsed : target;
+  element.dataset.motionValue = String(target);
+  if (reduced || document.hidden || from === target) { element.textContent = format(target); return; }
+  const state = {frame: 0}; numericAnimations.set(element, state);
+  const started = performance.now();
+  const duration = 760;
+  element.classList.add('number-tweening');
+  const draw = (now) => {
+    const progress = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - progress, 4);
+    element.textContent = format(from + (target - from) * eased);
+    if (progress < 1) state.frame = requestAnimationFrame(draw);
+    else { element.textContent = format(target); element.classList.remove('number-tweening'); state.frame = 0; }
+  };
+  state.frame = requestAnimationFrame(draw);
+}
+function pulseText(element, value) {
+  if (!element || element.textContent === value) return;
+  element.textContent = value;
+  if (window.prefersReducedMotion?.() || document.hidden) return;
+  element.classList.remove('live-text-update'); void element.offsetWidth; element.classList.add('live-text-update');
+}
 try {
   const stored = JSON.parse(localStorage.getItem('hkc-log-presets') || '{}');
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) savedFilters = stored;
@@ -86,6 +116,8 @@ function setView(view) {
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
+  $('#journal-nav').classList.toggle('section-active', view === 'logs' || view === 'incidents');
+  if (view === 'incidents' && typeof setJournalNavOpen === 'function') setJournalNavOpen(true);
   animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', system: 'Состояние системы', incidents: 'Происшествия'}[view]);
   if (view === 'incidents' && authenticated) refreshIncidents();
   if (view === 'system' && authenticated) refreshHistory();
@@ -93,6 +125,14 @@ function setView(view) {
 }
 
 document.querySelectorAll('[data-view], [data-jump]').forEach((item) => item.addEventListener('click', () => setView(item.dataset.view || item.dataset.jump)));
+function setJournalNavOpen(open) {
+  $('#journal-nav').classList.toggle('open', open);
+  $('#journal-nav-toggle').setAttribute('aria-expanded', String(open));
+  $('#journal-nav-toggle').setAttribute('aria-label', open ? 'Свернуть раздел журнала' : 'Раскрыть раздел журнала');
+  localStorage.setItem('hkc-journal-nav-open', String(open));
+}
+setJournalNavOpen(localStorage.getItem('hkc-journal-nav-open') === 'true');
+$('#journal-nav-toggle').addEventListener('click', () => setJournalNavOpen(!$('#journal-nav').classList.contains('open')));
 setView(localStorage.getItem('hkc-view') || 'overview');
 
 function setTheme(theme, animate = false) {
@@ -354,21 +394,24 @@ async function refreshSystem() {
     const cpu = data.cpuPercent || 0;
     const ram = percent(data.memoryUsedBytes, data.memoryTotalBytes);
     const disk = percent(data.diskUsedBytes, data.diskTotalBytes);
-    animateValue($('#system-cpu'), !data.supported ? '—' : `${cpu.toFixed(1)}%`);
-    animateValue($('#system-ram'), !data.memoryTotalBytes ? '—' : `${ram.toFixed(1)}%`);
-    animateValue($('#system-disk'), !data.diskTotalBytes ? '—' : `${disk.toFixed(1)}%`);
+    if (data.supported) animateNumber($('#system-cpu'), cpu, {decimals: 1, suffix: '%'}); else animateValue($('#system-cpu'), '—');
+    if (data.memoryTotalBytes) animateNumber($('#system-ram'), ram, {decimals: 1, suffix: '%'}); else animateValue($('#system-ram'), '—');
+    if (data.diskTotalBytes) animateNumber($('#system-disk'), disk, {decimals: 1, suffix: '%'}); else animateValue($('#system-disk'), '—');
     $('#system-cpu-bar').style.width = `${cpu}%`;
     $('#system-ram-bar').style.width = `${ram}%`;
     $('#system-disk-bar').style.width = `${disk}%`;
-    $('#system-cpu-meta').textContent = data.supported ? `${data.cpuCores} логических CPU` : 'Метрики доступны в Linux/WSL';
-    $('#system-ram-meta').textContent = `${formatBytes(data.memoryUsedBytes)} из ${formatBytes(data.memoryTotalBytes)} · свободно ${formatBytes(data.memoryAvailableBytes)}`;
-    $('#system-disk-meta').textContent = `${formatBytes(data.diskUsedBytes)} из ${formatBytes(data.diskTotalBytes)} · свободно ${formatBytes(data.diskFreeBytes)}`;
-    for (const period of [1, 5, 15]) animateValue($(`#system-load-${period}`), data.supported ? Number(data[`load${period}`] || 0).toFixed(2) : '—');
+    pulseText($('#system-cpu-meta'), data.supported ? `${data.cpuCores} логических CPU` : 'Метрики доступны в Linux/WSL');
+    pulseText($('#system-ram-meta'), `${formatBytes(data.memoryUsedBytes)} из ${formatBytes(data.memoryTotalBytes)} · свободно ${formatBytes(data.memoryAvailableBytes)}`);
+    pulseText($('#system-disk-meta'), `${formatBytes(data.diskUsedBytes)} из ${formatBytes(data.diskTotalBytes)} · свободно ${formatBytes(data.diskFreeBytes)}`);
+    for (const period of [1, 5, 15]) {
+      if (data.supported) animateNumber($(`#system-load-${period}`), Number(data[`load${period}`] || 0), {decimals: 2});
+      else animateValue($(`#system-load-${period}`), '—');
+    }
     $('#system-host').textContent = data.hostname || '—';
     $('#system-platform').textContent = `${data.os}/${data.arch}`;
     $('#system-kernel').textContent = data.kernel || (data.supported ? '—' : 'Метрики доступны в Linux/WSL');
-    $('#system-uptime').textContent = formatUptime(data.uptimeSeconds);
-    $('#system-sampled').textContent = data.supported ? `Обновлено ${new Date(data.sampledAt).toLocaleTimeString('ru-RU')}` : 'Метрики доступны в Linux/WSL';
+    pulseText($('#system-uptime'), formatUptime(data.uptimeSeconds));
+    pulseText($('#system-sampled'), data.supported ? `Обновлено ${new Date(data.sampledAt).toLocaleTimeString('ru-RU')}` : 'Метрики доступны в Linux/WSL');
   } catch (error) {
     $('#system-sampled').textContent = `Ошибка: ${error.message}`;
   } finally { systemBusy = false; }
@@ -380,8 +423,8 @@ async function refreshMetrics() {
   metricsBusy = true;
   try {
     const data = await request('/api/metrics');
-    const value = formatMemory(data.rssBytes);
-    animateValue($('#metric-memory'), value);
+    if (data.rssBytes) animateNumber($('#metric-memory'), data.rssBytes / 1048576, {decimals: 1, suffix: ' МБ'});
+    else animateValue($('#metric-memory'), '—');
   } catch (_) {
     $('#metric-memory').textContent = '—';
   } finally { metricsBusy = false; }
@@ -393,8 +436,8 @@ async function refreshInsights() {
   try {
     const data = await request('/api/insights');
     lastInsights = data;
-    animateValue($('#metric-errors'), data.logCounts.error);
-    animateValue($('#metric-warnings'), data.logCounts.warning);
+    animateNumber($('#metric-errors'), Number(data.logCounts.error || 0));
+    animateNumber($('#metric-warnings'), Number(data.logCounts.warning || 0));
     $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
   } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
   finally { insightsBusy = false; }
@@ -469,6 +512,50 @@ async function refreshIncidents() {
 $('#incidents-refresh').addEventListener('click', refreshIncidents);
 
 let historyBusy = false;
+const historyColors = {cpu: 'var(--mint)', memory: 'var(--amber)', disk: '#8baeff'};
+function resampleSeries(points, key, count = 300) {
+  if (!points.length) return [];
+  if (points.length === 1) return Array(count).fill(Number(points[0][key]) || 0);
+  return Array.from({length: count}, (_, index) => {
+    const position = index * (points.length - 1) / (count - 1);
+    const left = Math.floor(position); const right = Math.min(points.length - 1, left + 1); const mix = position - left;
+    return (Number(points[left][key]) || 0) * (1 - mix) + (Number(points[right][key]) || 0) * mix;
+  });
+}
+function historyPath(values) {
+  return values.map((value, index) => `${index ? 'L' : 'M'} ${(index / Math.max(1, values.length - 1) * 1000).toFixed(2)} ${(195 - Math.min(100, Math.max(0, value)) * 1.9).toFixed(2)}`).join(' ');
+}
+function ensureHistorySVG(chart) {
+  let svg = chart.querySelector('svg');
+  if (svg) return svg;
+  chart.replaceChildren();
+  const ns = 'http://www.w3.org/2000/svg';
+  svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 1000 200'); svg.setAttribute('preserveAspectRatio', 'none');
+  const markers = document.createElementNS(ns, 'g'); markers.classList.add('history-markers'); svg.append(markers);
+  for (const [key, color] of Object.entries(historyColors)) {
+    const path = document.createElementNS(ns, 'path'); path.dataset.series = key; path.setAttribute('fill', 'none'); path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2'); path.setAttribute('vector-effect', 'non-scaling-stroke');
+    const dot = document.createElementNS(ns, 'circle'); dot.dataset.dot = key; dot.setAttribute('r', '3.5'); dot.setAttribute('fill', color); dot.setAttribute('vector-effect', 'non-scaling-stroke');
+    path.style.color = color; dot.style.color = color;
+    svg.append(path, dot);
+  }
+  chart.append(svg); return svg;
+}
+function morphHistorySeries(path, dot, next) {
+  if (path.motionFrame) cancelAnimationFrame(path.motionFrame);
+  const previous = path.motionValues?.length === next.length ? path.motionValues : next;
+  const reduced = window.prefersReducedMotion?.() || document.hidden;
+  const started = performance.now(); const duration = 820;
+  const draw = (now) => {
+    const progress = reduced ? 1 : Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const values = next.map((value, index) => previous[index] + (value - previous[index]) * eased);
+    path.setAttribute('d', historyPath(values));
+    dot.setAttribute('cx', '1000'); dot.setAttribute('cy', String(195 - Math.min(100, Math.max(0, values.at(-1))) * 1.9));
+    if (progress < 1) path.motionFrame = requestAnimationFrame(draw);
+    else { path.motionValues = next; path.motionFrame = 0; }
+  };
+  path.motionFrame = requestAnimationFrame(draw);
+}
 async function refreshHistory() {
   if (historyBusy || document.hidden) return;
   historyBusy = true;
@@ -479,24 +566,15 @@ async function refreshHistory() {
     $('#history-count').textContent = `${Number(data.sampleCount ?? points.length).toLocaleString('ru-RU')} замеров · шаг 1 секунда`;
     if (points.length < 2) { chart.textContent = 'История появится после второго замера (около 1 секунды).'; return; }
     const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 1000 200'); svg.setAttribute('preserveAspectRatio', 'none');
+    const svg = ensureHistorySVG(chart);
     const start = new Date(points[0].at).getTime(); const span = Math.max(1, new Date(points.at(-1).at).getTime() - start);
     const x = (point) => (new Date(point.at).getTime() - start) / span * 1000;
-    for (const [key, color] of [['cpu','var(--mint)'], ['memory','var(--amber)'], ['disk','#8baeff']]) {
-      const path = document.createElementNS(ns, 'polyline');
-      path.setAttribute('points', points.map((point) => `${x(point).toFixed(2)},${(195 - Math.min(100,Math.max(0,point[key])) * 1.9).toFixed(2)}`).join(' '));
-      path.setAttribute('fill', 'none'); path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2'); path.setAttribute('vector-effect', 'non-scaling-stroke'); svg.append(path);
-    }
+    for (const key of Object.keys(historyColors)) morphHistorySeries(svg.querySelector(`[data-series="${key}"]`), svg.querySelector(`[data-dot="${key}"]`), resampleSeries(points, key));
+    const markerGroup = svg.querySelector('.history-markers'); markerGroup.replaceChildren();
     for (let i = 1; i < points.length; i++) if (points[i].pid && points[i-1].pid && points[i].pid !== points[i-1].pid) {
-      const marker = document.createElementNS(ns, 'line'); marker.setAttribute('x1', x(points[i])); marker.setAttribute('x2', x(points[i])); marker.setAttribute('y1', '0'); marker.setAttribute('y2', '200'); marker.setAttribute('stroke', 'var(--red)'); marker.setAttribute('stroke-dasharray', '5 5'); svg.append(marker);
+      const marker = document.createElementNS(ns, 'line'); marker.setAttribute('x1', x(points[i])); marker.setAttribute('x2', x(points[i])); marker.setAttribute('y1', '0'); marker.setAttribute('y2', '200'); marker.setAttribute('stroke', 'var(--red)'); marker.setAttribute('stroke-dasharray', '5 5');
+      markerGroup.append(marker);
     }
-    const previous = chart.querySelector('svg:last-child');
-    if (previous && !window.prefersReducedMotion?.()) {
-      svg.classList.add('history-svg-enter');
-      chart.append(svg);
-      requestAnimationFrame(() => { svg.classList.add('is-visible'); previous.classList.add('is-leaving'); });
-      setTimeout(() => { if (chart.lastChild === svg) chart.replaceChildren(svg); }, 720);
-    } else chart.replaceChildren(svg);
   } catch (error) { $('#history-chart').textContent = `История недоступна: ${error.message}`; }
   finally { historyBusy = false; }
 }

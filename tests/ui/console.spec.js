@@ -33,8 +33,10 @@ for (const width of [390, 1440]) for (const theme of ['dark', 'light']) {
     await page.goto('/');
     await expect(page.locator('#version')).toContainText('Панель v2.2.17');
     for (const view of ['overview', 'logs', 'incidents', 'system']) {
+      if (view === 'incidents' && await page.locator('#journal-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('#journal-nav-toggle').click();
       await page.locator(`[data-view="${view}"]`).click();
       await expect(page.locator(`#${view}-view`)).toBeVisible();
+      if (view === 'incidents') await expect(page.locator('.incident-card')).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath(`${view}-${width}-${theme}.png`), fullPage: true, animations: 'disabled' });
     }
     await expect(page.locator('#history-chart svg')).toBeVisible();
@@ -42,6 +44,7 @@ for (const width of [390, 1440]) for (const theme of ['dark', 'light']) {
     await page.locator('.line-bookmark').first().click();
     await page.locator('#bookmarks-only').click();
     await expect(page.locator('#log .line')).toHaveCount(1);
+    if (await page.locator('#journal-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('#journal-nav-toggle').click();
     await page.locator('[data-view="incidents"]').click();
     await page.locator('.incident-card').first().click();
     await expect(page.locator('#logs-view')).toBeVisible();
@@ -57,8 +60,10 @@ test('visual regression of main views', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#version')).toContainText('v2.2.17');
   for (const view of ['overview', 'logs', 'incidents', 'system']) {
+    if (view === 'incidents' && await page.locator('#journal-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('#journal-nav-toggle').click();
     await page.locator(`[data-view="${view}"]`).click();
     await expect(page.locator(`#${view}-view`)).toBeVisible();
+    if (view === 'incidents') await expect(page.locator('.incident-card')).toBeVisible();
     await expect(page.locator(`#${view}-view`)).toHaveScreenshot(`${view}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.01 });
   }
 });
@@ -108,8 +113,23 @@ test('live resource endpoints refresh every second', async ({ page }) => {
   await expect(page.locator('#status-label')).toContainText('бот запущен');
   await page.locator('[data-view="system"]').click();
   await expect(page.locator('#history-chart svg')).toBeVisible();
+  await page.locator('#history-chart svg').evaluate((svg) => { svg.dataset.identity = 'persistent'; });
   const before = { ...hits };
   await page.clock.runFor(2200);
   await expect.poll(() => hits.history).toBeGreaterThan(before.history);
   for (const key of Object.keys(hits)) expect(hits[key], key).toBeGreaterThan(before[key]);
+  await expect(page.locator('#history-chart svg[data-identity="persistent"]')).toHaveCount(1);
+});
+
+test('journal incident drawer opens, persists and activates its nested view', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#journal-nav-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('#journal-nav-toggle').click();
+  await expect(page.locator('#journal-nav-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.nav-subitem')).toBeVisible();
+  await page.locator('.nav-subitem').click();
+  await expect(page.locator('#incidents-view')).toBeVisible();
+  await expect(page.locator('#journal-nav')).toHaveClass(/section-active/);
+  await page.reload();
+  await expect(page.locator('#journal-nav-toggle')).toHaveAttribute('aria-expanded', 'true');
 });
