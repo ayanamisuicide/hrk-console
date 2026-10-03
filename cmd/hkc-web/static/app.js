@@ -14,6 +14,7 @@ let stream;
 let activeLevel = 'ALL';
 let streamPaused = false;
 let pausedLines = [];
+let logClearedByUser = false;
 let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
@@ -141,10 +142,33 @@ function renderLines() {
   const visible = allLines.filter((line) => matchesLevel(line) && matchesAdvanced(line) && (!query || line.toLowerCase().includes(query)));
   const fragment = document.createDocumentFragment();
   for (const raw of visible) fragment.append(createLine(raw));
+  if (!visible.length) fragment.append(createLogEmpty());
   logEl.replaceChildren(fragment);
   animateValue($('#line-count'), visible.length);
+  $('#export-logs').disabled = visible.length === 0;
+  $('#clear').disabled = allLines.length === 0 && pausedLines.length === 0;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
   renderRecentEvents();
+}
+
+function createLogEmpty() {
+  const state = document.createElement('div');
+  state.className = 'log-empty';
+  const icon = document.createElement('span'); icon.textContent = logClearedByUser ? '✓' : '⌁';
+  const title = document.createElement('strong');
+  const detail = document.createElement('small');
+  if (logClearedByUser) {
+    title.textContent = 'Журнал очищен';
+    detail.textContent = 'Новые события появятся здесь автоматически.';
+  } else if (allLines.length) {
+    title.textContent = 'Ничего не найдено';
+    detail.textContent = 'Измените поиск или выбранные фильтры.';
+  } else {
+    title.textContent = 'Событий пока нет';
+    detail.textContent = 'Поток подключён — новые записи появятся автоматически.';
+  }
+  state.append(icon, title, detail);
+  return state;
 }
 
 function renderRecentEvents() {
@@ -199,9 +223,12 @@ function appendLiveLine(raw) {
   if (streamPaused) {
     pausedLines.push(raw);
     $('#pause-stream').innerHTML = `<span>▶</span> Продолжить · ${pausedLines.length}`;
+    $('#clear').disabled = false;
     return;
   }
+  logClearedByUser = false;
   allLines.push(raw);
+  $('#clear').disabled = false;
   const module = lineModule(raw);
   if (module && ![...$('#module-filter').options].some((option) => option.value === module)) $('#module-filter').add(new Option(module, module));
   renderRecentEvents();
@@ -216,9 +243,16 @@ function appendLiveLine(raw) {
     return;
   }
   if (trimmed && logEl.firstChild) logEl.firstChild.remove();
-  if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query))) return;
+  if (!matchesLevel(raw) || !matchesAdvanced(raw) || (query && !raw.toLowerCase().includes(query))) {
+    if (logEl.querySelector('.log-empty')) renderLines();
+    return;
+  }
+  logEl.querySelector('.log-empty')?.remove();
   logEl.append(createLine(raw, true));
-  animateValue($('#line-count'), logEl.childElementCount);
+  const visibleCount = logEl.querySelectorAll('.line').length;
+  animateValue($('#line-count'), visibleCount);
+  $('#export-logs').disabled = false;
+  $('#clear').disabled = false;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -415,6 +449,7 @@ $('#command-query').addEventListener('keydown', (event) => {
 
 async function loadHistory() {
   const data = await request('/api/logs?limit=800');
+  logClearedByUser = false;
   allLines = data.lines || [];
   refreshModuleOptions();
   renderLines();
@@ -455,7 +490,11 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 
 $('#clear').addEventListener('click', () => {
   allLines = [];
+  pausedLines = [];
+  logClearedByUser = true;
+  if (streamPaused) $('#pause-stream').innerHTML = '<span>▶</span> Продолжить';
   renderLines();
+  showNotice('Экран журнала очищен');
 });
 filterInput.addEventListener('input', renderLines);
 timestamps.addEventListener('change', renderLines);
