@@ -20,6 +20,7 @@ $('#admin-theme').addEventListener('click', () => {
 });
 let adminToken = sessionStorage.getItem('hkc-admin-token') || '';
 let refreshTimer;
+let refreshBusy = false;
 let usersSignature = '';
 let invitesSignature = '';
 let backupsSignature = '';
@@ -350,10 +351,12 @@ function renderBackups(backups) {
 }
 
 async function refresh() {
+  if (refreshBusy || document.hidden) return;
   if (!adminToken) {
     openAuth();
     return;
   }
+  refreshBusy = true;
   try {
     const [data, audit, backups] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups')]);
     animateValue($('#users-count'), data.users.length);
@@ -367,7 +370,7 @@ async function refresh() {
     await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
-  }
+  } finally { refreshBusy = false; }
 }
 
 document.querySelectorAll('[data-bot-action]').forEach((button) => {
@@ -547,4 +550,4 @@ function openUpdateWindow() {
 $('#updates-install').addEventListener('click', openUpdateWindow);
 
 refresh();
-refreshTimer = setInterval(refresh, 10000);
+refreshTimer = setInterval(refresh, 1000);

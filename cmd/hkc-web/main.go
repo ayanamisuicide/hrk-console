@@ -25,16 +25,18 @@ import (
 var staticFiles embed.FS
 
 type server struct {
-	bot         *botproc.Manager
-	auth        *authStore
-	sessions    *sessionStore
-	adminToken  string
-	audit       *auditStore
-	metrics     *metricStore
-	hostHistory *hostHistoryStore
-	notifier    *stateNotifier
-	configMu    sync.Mutex
-	updates     *updateChecker
+	bot          *botproc.Manager
+	auth         *authStore
+	sessions     *sessionStore
+	adminToken   string
+	audit        *auditStore
+	metrics      *metricStore
+	hostHistory  *hostHistoryStore
+	notifier     *stateNotifier
+	configMu     sync.Mutex
+	systemMu     sync.RWMutex
+	latestSystem systemStatus
+	updates      *updateChecker
 }
 
 type statusResponse struct {
@@ -101,7 +103,7 @@ func main() {
 	}
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
 		audit: newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
-	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.json"))
+	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.jsonl"))
 	go s.collectHostHistory(context.Background())
 	go watchBotState(context.Background(), notifier)
 	s.updates = &updateChecker{}
@@ -199,6 +201,9 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

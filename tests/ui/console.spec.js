@@ -94,3 +94,22 @@ test('admin terminal requires confirmation and shows execution metadata', async 
   await expect(page.locator('#terminal-meta')).toContainText('tester · exit 0 · 12 мс');
   expect(executions).toBe(1);
 });
+
+test('live resource endpoints refresh every second', async ({ page }) => {
+  const hits = {status: 0, insights: 0, metrics: 0, system: 0, history: 0};
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const key = path === '/api/system/history' ? 'history' : path.slice('/api/'.length);
+    if (key in hits) hits[key]++;
+    return route.fallback();
+  });
+  await page.clock.install({ time: new Date('2026-10-03T10:00:00Z') });
+  await page.goto('/');
+  await expect(page.locator('#status-label')).toContainText('бот запущен');
+  await page.locator('[data-view="system"]').click();
+  await expect(page.locator('#history-chart svg')).toBeVisible();
+  const before = { ...hits };
+  await page.clock.runFor(2200);
+  await expect.poll(() => hits.history).toBeGreaterThan(before.history);
+  for (const key of Object.keys(hits)) expect(hits[key], key).toBeGreaterThan(before[key]);
+});

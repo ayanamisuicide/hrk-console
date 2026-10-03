@@ -18,10 +18,16 @@ let logClearedByUser = false;
 let currentView = 'overview';
 let lastStatus = null;
 let lastInsights = null;
+let statusBusy = false;
+let insightsBusy = false;
+let diagnosticsBusy = false;
+let incidentsBusy = false;
+let diagnosticsSignature = '';
+let incidentsSignature = '';
 let savedFilters = {};
 let bookmarks = new Set();
 let bookmarksOnly = false;
-let historyRange = '1h';
+let historyRange = 'live';
 try { bookmarks = new Set(JSON.parse(localStorage.getItem('hkc-log-bookmarks') || '[]')); } catch (_) { localStorage.removeItem('hkc-log-bookmarks'); }
 function lineKey(raw) { let hash = 2166136261; for (let i = 0; i < raw.length; i++) hash = Math.imul(hash ^ raw.charCodeAt(i), 16777619); return (hash >>> 0).toString(36); }
 function animateValue(element, value) {
@@ -295,6 +301,8 @@ $('#pause-stream').addEventListener('click', () => {
 });
 
 async function refreshStatus() {
+  if (statusBusy) return;
+  statusBusy = true;
   try {
     const status = await request('/api/status');
     lastStatus = status;
@@ -317,7 +325,7 @@ async function refreshStatus() {
   } catch (error) {
     $('#status-label').textContent = 'сервер недоступен';
     $('#status-meta').textContent = error.message;
-  }
+  } finally { statusBusy = false; }
 }
 
 function formatMemory(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} МБ` : '—'; }
@@ -346,7 +354,7 @@ async function refreshSystem() {
     const cpu = data.cpuPercent || 0;
     const ram = percent(data.memoryUsedBytes, data.memoryTotalBytes);
     const disk = percent(data.diskUsedBytes, data.diskTotalBytes);
-    animateValue($('#system-cpu'), !data.supported ? '—' : cpu === 0 ? 'сбор…' : `${cpu.toFixed(1)}%`);
+    animateValue($('#system-cpu'), !data.supported ? '—' : `${cpu.toFixed(1)}%`);
     animateValue($('#system-ram'), !data.memoryTotalBytes ? '—' : `${ram.toFixed(1)}%`);
     animateValue($('#system-disk'), !data.diskTotalBytes ? '—' : `${disk.toFixed(1)}%`);
     $('#system-cpu-bar').style.width = `${cpu}%`;
@@ -373,13 +381,15 @@ async function refreshMetrics() {
   try {
     const data = await request('/api/metrics');
     const value = formatMemory(data.rssBytes);
-    $('#metric-memory').textContent = value;
+    animateValue($('#metric-memory'), value);
   } catch (_) {
     $('#metric-memory').textContent = '—';
   } finally { metricsBusy = false; }
 }
 
 async function refreshInsights() {
+  if (insightsBusy) return;
+  insightsBusy = true;
   try {
     const data = await request('/api/insights');
     lastInsights = data;
@@ -387,11 +397,17 @@ async function refreshInsights() {
     animateValue($('#metric-warnings'), data.logCounts.warning);
     $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
   } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
+  finally { insightsBusy = false; }
 }
 
 async function refreshDiagnostics() {
+  if (diagnosticsBusy) return;
+  diagnosticsBusy = true;
   try {
     const data = await request('/api/diagnostics');
+    const signature = JSON.stringify(data.checks || []);
+    if (signature === diagnosticsSignature) return;
+    diagnosticsSignature = signature;
     const container = $('#diagnostic-checks'); container.replaceChildren();
     for (const check of data.checks || []) {
       const item = document.createElement('div'); item.className = `diagnostic-item ${check.ok ? 'ok' : 'missing'}`;
@@ -402,6 +418,7 @@ async function refreshDiagnostics() {
       copy.append(title, detail); item.append(symbol, copy); container.append(item);
     }
   } catch (error) { $('#diagnostic-checks').textContent = `Проверка недоступна: ${error.message}`; }
+  finally { diagnosticsBusy = false; }
 }
 $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
@@ -415,9 +432,14 @@ async function refreshPanelVersion() {
 }
 
 async function refreshIncidents() {
+  if (incidentsBusy) return;
+  incidentsBusy = true;
   const container = $('#incident-list');
   try {
     const data = await request('/api/incidents');
+    const signature = JSON.stringify(data.incidents || []);
+    if (signature === incidentsSignature) return;
+    incidentsSignature = signature;
     container.replaceChildren();
     if (!data.incidents?.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = 'В доступной части журнала происшествий нет.'; container.append(empty); return; }
     for (const incident of data.incidents) {
@@ -442,16 +464,20 @@ async function refreshIncidents() {
       container.append(card);
     }
   } catch (error) { container.textContent = `Не удалось загрузить происшествия: ${error.message}`; }
+  finally { incidentsBusy = false; }
 }
 $('#incidents-refresh').addEventListener('click', refreshIncidents);
 
+let historyBusy = false;
 async function refreshHistory() {
+  if (historyBusy || document.hidden) return;
+  historyBusy = true;
   try {
     const data = await request(`/api/system/history?range=${historyRange}`);
     const points = data.points || [];
-    const chart = $('#history-chart'); chart.replaceChildren();
-    $('#history-count').textContent = `${points.length} замеров · каждые 30 секунд`;
-    if (points.length < 2) { chart.textContent = 'История появится после нескольких замеров (до 30 секунд).'; return; }
+    const chart = $('#history-chart');
+    $('#history-count').textContent = `${Number(data.sampleCount ?? points.length).toLocaleString('ru-RU')} замеров · шаг 1 секунда`;
+    if (points.length < 2) { chart.textContent = 'История появится после второго замера (около 1 секунды).'; return; }
     const ns = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 1000 200'); svg.setAttribute('preserveAspectRatio', 'none');
     const start = new Date(points[0].at).getTime(); const span = Math.max(1, new Date(points.at(-1).at).getTime() - start);
@@ -464,12 +490,20 @@ async function refreshHistory() {
     for (let i = 1; i < points.length; i++) if (points[i].pid && points[i-1].pid && points[i].pid !== points[i-1].pid) {
       const marker = document.createElementNS(ns, 'line'); marker.setAttribute('x1', x(points[i])); marker.setAttribute('x2', x(points[i])); marker.setAttribute('y1', '0'); marker.setAttribute('y2', '200'); marker.setAttribute('stroke', 'var(--red)'); marker.setAttribute('stroke-dasharray', '5 5'); svg.append(marker);
     }
-    chart.append(svg);
+    const previous = chart.querySelector('svg:last-child');
+    if (previous && !window.prefersReducedMotion?.()) {
+      svg.classList.add('history-svg-enter');
+      chart.append(svg);
+      requestAnimationFrame(() => { svg.classList.add('is-visible'); previous.classList.add('is-leaving'); });
+      setTimeout(() => { if (chart.lastChild === svg) chart.replaceChildren(svg); }, 720);
+    } else chart.replaceChildren(svg);
   } catch (error) { $('#history-chart').textContent = `История недоступна: ${error.message}`; }
+  finally { historyBusy = false; }
 }
 document.querySelectorAll('[data-history-range]').forEach((button) => button.addEventListener('click', () => {
   historyRange = button.dataset.historyRange;
   document.querySelectorAll('[data-history-range]').forEach((item) => item.classList.toggle('active', item === button));
+  $('#history-chart').replaceChildren();
   refreshHistory();
 }));
 $('#bookmarks-only').addEventListener('click', (event) => { bookmarksOnly = !bookmarksOnly; event.currentTarget.setAttribute('aria-pressed', String(bookmarksOnly)); renderLines(); });
@@ -665,11 +699,11 @@ async function bootstrap() {
 
 bootstrap();
 setInterval(() => {
-  if (authenticated) refreshStatus();
-}, 1500);
-setInterval(() => { if (authenticated) refreshInsights(); }, 10000);
+  if (authenticated && !document.hidden) refreshStatus();
+}, 1000);
+setInterval(() => { if (authenticated && !document.hidden) refreshInsights(); }, 1000);
 setInterval(() => { if (authenticated) refreshMetrics(); }, 1000);
-setInterval(() => { if (authenticated && currentView === 'system') refreshSystem(); }, 2000);
-setInterval(() => { if (authenticated && currentView === 'system') refreshHistory(); }, 30000);
-setInterval(() => { if (authenticated && currentView === 'incidents') refreshIncidents(); }, 15000);
+setInterval(() => { if (authenticated && currentView === 'system') { refreshSystem(); refreshHistory(); } }, 1000);
+setInterval(() => { if (authenticated && currentView === 'incidents' && !document.hidden) refreshIncidents(); }, 1000);
+setInterval(() => { if (authenticated && currentView === 'overview' && !document.hidden) refreshDiagnostics(); }, 1000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

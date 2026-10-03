@@ -95,7 +95,7 @@ func (s *server) incidents(w http.ResponseWriter, _ *http.Request) {
 	lines := logfeed.TailLines(s.bot.LogFile, 3000)
 	items := detectIncidents(lines)
 	if s.hostHistory != nil {
-		points := s.hostHistory.since(time.Now().Add(-24 * time.Hour))
+		restarts := s.hostHistory.restartTimes(time.Now().Add(-24 * time.Hour))
 		for index := range items {
 			start, err := time.ParseInLocation("2006-01-02 15:04:05", items[index].Start, time.Local)
 			if err != nil {
@@ -105,13 +105,11 @@ func (s *server) incidents(w http.ResponseWriter, _ *http.Request) {
 			if err != nil {
 				continue
 			}
-			for p := 1; p < len(points); p++ {
-				if points[p].At.Before(start.Add(-5*time.Minute)) || points[p].At.After(end.Add(5*time.Minute)) {
+			for _, at := range restarts {
+				if at.Before(start.Add(-5*time.Minute)) || at.After(end.Add(5*time.Minute)) {
 					continue
 				}
-				if points[p].PID != points[p-1].PID {
-					items[index].Restarts++
-				}
+				items[index].Restarts++
 			}
 		}
 	}

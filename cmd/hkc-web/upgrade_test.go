@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestHostHistoryPersistsAndFilters(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "host-history.json")
+	path := filepath.Join(t.TempDir(), "host-history.jsonl")
 	history := newHostHistoryStore(path)
 	now := time.Now()
 	if err := history.add(hostPoint{At: now.Add(-2 * time.Hour), CPU: 5, PID: 10}); err != nil {
@@ -27,6 +28,52 @@ func TestHostHistoryPersistsAndFilters(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("history permissions: %v %v", info, err)
+	}
+}
+
+func TestHostHistoryMigratesLegacyAndPreservesRestartMarkers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "host-history.jsonl")
+	now := time.Now().UTC().Truncate(time.Second)
+	legacy := []hostPoint{{At: now.Add(-time.Minute), CPU: 10, PID: 100}}
+	data, _ := json.Marshal(legacy)
+	if err := os.WriteFile(filepath.Join(dir, "host-history.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	history := newHostHistoryStore(path)
+	if err := history.add(hostPoint{At: now, CPU: 20, PID: 200}); err != nil {
+		t.Fatal(err)
+	}
+	reopened := newHostHistoryStore(path)
+	points, count := reopened.sampledSince(now.Add(-time.Hour), 1200)
+	if count != 2 || len(points) != 2 || points[0].PID != 100 || points[1].PID != 200 {
+		t.Fatalf("migration lost points: %+v", points)
+	}
+	if times := reopened.restartTimes(now.Add(-time.Hour)); len(times) != 1 {
+		t.Fatalf("restart markers: %+v", times)
+	}
+}
+
+func TestHostHistoryDownsamplesWithoutLosingRestart(t *testing.T) {
+	start := time.Now().Add(-2 * time.Hour)
+	points := make([]hostPoint, 5000)
+	for i := range points {
+		points[i] = hostPoint{At: start.Add(time.Duration(i) * time.Second), CPU: float64(i % 100), PID: 1}
+	}
+	points[2500].PID = 2
+	points[2501].PID = 2
+	result := downsampleHostPoints(points, 1200)
+	if len(result) < 1200 || len(result) > 1204 {
+		t.Fatalf("unexpected sample size: %d", len(result))
+	}
+	found := false
+	for _, point := range result {
+		if point.PID == 2 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("restart was lost during downsampling")
 	}
 }
 

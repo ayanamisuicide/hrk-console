@@ -27,5 +27,11 @@ type systemStatus struct {
 }
 
 func (s *server) systemHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, readSystemStatus(s.bot.HerokuDir))
+	s.systemMu.RLock()
+	status := s.latestSystem
+	s.systemMu.RUnlock()
+	if status.SampledAt.IsZero() {
+		status = readSystemStatus(s.bot.HerokuDir)
+	}
+	writeJSON(w, http.StatusOK, status)
 }

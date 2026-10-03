@@ -1,19 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"heroku-console/botproc"
 )
 
-const hostHistoryLimit = 24 * 60 * 2 // 30-second samples for 24 hours
+const (
+	hostHistoryLimit  = 24 * 60 * 60 // one-second samples for 24 hours
+	historyGraphLimit = 1200
+)
 
 type hostPoint struct {
 	At     time.Time `json:"at"`
@@ -24,30 +30,43 @@ type hostPoint struct {
 }
 
 type hostHistoryStore struct {
-	mu     sync.RWMutex
-	path   string
-	points []hostPoint
+	mu          sync.RWMutex
+	path        string
+	points      []hostPoint
+	lastCompact time.Time
 }
 
 func newHostHistoryStore(path string) *hostHistoryStore {
 	store := &hostHistoryStore{path: path}
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) && strings.HasSuffix(path, ".jsonl") {
+		// Keep the history recorded by older releases.
+		data, err = os.ReadFile(strings.TrimSuffix(path, "l"))
+	}
 	if err == nil {
-		_ = json.Unmarshal(data, &store.points)
+		if len(bytes.TrimSpace(data)) > 0 && bytes.TrimSpace(data)[0] == '[' {
+			_ = json.Unmarshal(data, &store.points)
+			_ = store.compact()
+		} else {
+			for _, line := range bytes.Split(data, []byte{'\n'}) {
+				var point hostPoint
+				if json.Unmarshal(line, &point) == nil {
+					store.points = append(store.points, point)
+				}
+			}
+		}
 		store.trim(time.Now())
 	}
+	store.lastCompact = time.Now()
 	return store
 }
 
 func (h *hostHistoryStore) trim(now time.Time) {
 	cutoff := now.Add(-24 * time.Hour)
-	kept := h.points[:0]
-	for _, point := range h.points {
-		if !point.At.Before(cutoff) && !point.At.After(now.Add(time.Minute)) {
-			kept = append(kept, point)
-		}
-	}
-	h.points = kept
+	start := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
+	h.points = h.points[start:]
+	end := sort.Search(len(h.points), func(i int) bool { return h.points[i].At.After(now.Add(time.Minute)) })
+	h.points = h.points[:end]
 	if len(h.points) > hostHistoryLimit {
 		h.points = h.points[len(h.points)-hostHistoryLimit:]
 	}
@@ -58,11 +77,34 @@ func (h *hostHistoryStore) add(point hostPoint) error {
 	defer h.mu.Unlock()
 	h.points = append(h.points, point)
 	h.trim(point.At)
-	data, err := json.Marshal(h.points)
+	data, err := json.Marshal(point)
 	if err != nil {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(h.path), 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(h.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(append(data, '\n'))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if point.At.Sub(h.lastCompact) >= time.Hour {
+		if err = h.compact(); err == nil {
+			h.lastCompact = point.At
+		}
+	}
+	return err
+}
+
+func (h *hostHistoryStore) compact() error {
+	if err := os.MkdirAll(filepath.Dir(h.path), 0700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(h.path), "host-history-*.tmp")
@@ -71,7 +113,17 @@ func (h *hostHistoryStore) add(point hostPoint) error {
 	}
 	defer os.Remove(tmp.Name())
 	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(data)
+		for _, point := range h.points {
+			var data []byte
+			data, err = json.Marshal(point)
+			if err != nil {
+				break
+			}
+			_, err = tmp.Write(append(data, '\n'))
+			if err != nil {
+				break
+			}
+		}
 	}
 	if err == nil {
 		err = tmp.Close()
@@ -83,7 +135,16 @@ func (h *hostHistoryStore) add(point hostPoint) error {
 	}
 	if err = os.Rename(tmp.Name(), h.path); err != nil && runtime.GOOS == "windows" {
 		// Windows cannot atomically rename over an existing destination.
-		return os.WriteFile(h.path, data, 0600)
+		var output bytes.Buffer
+		for _, point := range h.points {
+			data, marshalErr := json.Marshal(point)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			output.Write(data)
+			output.WriteByte('\n')
+		}
+		return os.WriteFile(h.path, output.Bytes(), 0600)
 	}
 	return err
 }
@@ -91,13 +152,29 @@ func (h *hostHistoryStore) add(point hostPoint) error {
 func (h *hostHistoryStore) since(cutoff time.Time) []hostPoint {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	points := make([]hostPoint, 0, len(h.points))
-	for _, point := range h.points {
-		if !point.At.Before(cutoff) {
-			points = append(points, point)
+	index := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
+	return append([]hostPoint(nil), h.points[index:]...)
+}
+
+func (h *hostHistoryStore) sampledSince(cutoff time.Time, limit int) ([]hostPoint, int) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	index := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
+	points := h.points[index:]
+	return downsampleHostPoints(points, limit), len(points)
+}
+
+func (h *hostHistoryStore) restartTimes(cutoff time.Time) []time.Time {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	index := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
+	result := []time.Time{}
+	for i := max(1, index); i < len(h.points); i++ {
+		if h.points[i].PID != h.points[i-1].PID {
+			result = append(result, h.points[i].At)
 		}
 	}
-	return points
+	return result
 }
 
 func hostPercent(used, total uint64) float64 {
@@ -110,6 +187,9 @@ func hostPercent(used, total uint64) float64 {
 func (s *server) collectHostHistory(ctx context.Context) {
 	collect := func() {
 		status := readSystemStatus(s.bot.HerokuDir)
+		s.systemMu.Lock()
+		s.latestSystem = status
+		s.systemMu.Unlock()
 		if !status.Supported {
 			return
 		}
@@ -118,7 +198,7 @@ func (s *server) collectHostHistory(ctx context.Context) {
 			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: botproc.PID()})
 	}
 	collect()
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -132,12 +212,42 @@ func (s *server) collectHostHistory(ctx context.Context) {
 
 func (s *server) systemHistory(w http.ResponseWriter, r *http.Request) {
 	duration := time.Hour
-	if r.URL.Query().Get("range") == "24h" {
+	switch r.URL.Query().Get("range") {
+	case "live":
+		duration = 5 * time.Minute
+	case "24h":
 		duration = 24 * time.Hour
 	}
 	points := []hostPoint{}
+	count := 0
 	if s.hostHistory != nil {
-		points = s.hostHistory.since(time.Now().Add(-duration))
+		points, count = s.hostHistory.sampledSince(time.Now().Add(-duration), historyGraphLimit)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"range": duration.String(), "points": points})
+	writeJSON(w, http.StatusOK, map[string]any{"range": duration.String(), "sampleCount": count, "intervalSeconds": 1, "points": points})
+}
+
+func downsampleHostPoints(points []hostPoint, limit int) []hostPoint {
+	if len(points) <= limit {
+		return append([]hostPoint(nil), points...)
+	}
+	result := make([]hostPoint, 0, limit+16)
+	step := float64(len(points)-1) / float64(limit-1)
+	last := -1
+	for i := 0; i < limit; i++ {
+		index := int(float64(i)*step + 0.5)
+		if index <= last {
+			continue
+		}
+		result = append(result, points[index])
+		last = index
+	}
+	// Preserve process-change markers even if they fall between plotted samples.
+	for i := 1; i < len(points); i++ {
+		if points[i].PID != points[i-1].PID {
+			result = append(result, points[i-1], points[i])
+		}
+	}
+	// The extra markers are rare; sort by timestamp for the chart.
+	sort.Slice(result, func(i, j int) bool { return result[i].At.Before(result[j].At) })
+	return result
 }
