@@ -15,14 +15,10 @@ let activeLevel = 'ALL';
 let streamPaused = false;
 let pausedLines = [];
 let logClearedByUser = false;
-let currentView = 'overview';
+let currentView = 'logs';
 let lastStatus = null;
-let lastInsights = null;
 let statusBusy = false;
-let insightsBusy = false;
-let diagnosticsBusy = false;
 let incidentsBusy = false;
-let diagnosticsSignature = '';
 let incidentsSignature = '';
 let savedFilters = {};
 let bookmarks = new Set();
@@ -112,13 +108,13 @@ function refreshPresetOptions() {
 refreshPresetOptions();
 
 function setView(view) {
-  if (!['overview', 'logs', 'system', 'incidents'].includes(view)) view = 'overview';
+  if (!['logs', 'system', 'incidents'].includes(view)) view = 'logs';
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
   $('#journal-nav').classList.toggle('section-active', view === 'logs' || view === 'incidents');
   if (view === 'incidents' && typeof setJournalNavOpen === 'function') setJournalNavOpen(true);
-  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', system: 'Состояние системы', incidents: 'Происшествия'}[view]);
+  animateValue($('#view-title'), {logs: 'Журнал событий', system: 'Состояние системы', incidents: 'Происшествия'}[view]);
   if (view === 'incidents' && authenticated) refreshIncidents();
   if (view === 'system' && authenticated) refreshHistory();
   localStorage.setItem('hkc-view', view);
@@ -133,7 +129,7 @@ function setJournalNavOpen(open) {
 }
 setJournalNavOpen(localStorage.getItem('hkc-journal-nav-open') === 'true');
 $('#journal-nav-toggle').addEventListener('click', () => setJournalNavOpen(!$('#journal-nav').classList.contains('open')));
-setView(localStorage.getItem('hkc-view') || 'overview');
+setView(localStorage.getItem('hkc-view') || 'logs');
 
 function setTheme(theme, animate = false) {
   if (animate) window.motionTheme?.();
@@ -202,7 +198,6 @@ function renderLines() {
   $('#export-logs').disabled = visible.length === 0;
   $('#clear').disabled = allLines.length === 0 && pausedLines.length === 0;
   if (autoscroll.checked) logEl.scrollTop = logEl.scrollHeight;
-  renderRecentEvents();
 }
 
 function createLogEmpty() {
@@ -223,19 +218,6 @@ function createLogEmpty() {
   }
   state.append(icon, title, detail);
   return state;
-}
-
-function renderRecentEvents() {
-  const container = $('#recent-events');
-  const recent = allLines.filter((line) => /\[(INFO|WARNING|ERROR|CRITICAL)\]/.test(line)).slice(-6).reverse();
-  container.replaceChildren();
-  if (!recent.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = 'События появятся после запуска бота.'; container.append(empty); return; }
-  for (const raw of recent) {
-    const row = document.createElement('div'); row.className = 'recent-row';
-    const level = document.createElement('span'); level.className = `recent-level ${lineLevel(raw).toLowerCase()}`; level.textContent = lineLevel(raw);
-    const message = document.createElement('span'); message.textContent = raw.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[A-Z]+\] /, '');
-    row.append(level, message); container.append(row);
-  }
 }
 
 function createLine(raw, live = false) {
@@ -295,7 +277,6 @@ function appendLiveLine(raw) {
   $('#clear').disabled = false;
   const module = lineModule(raw);
   if (module && ![...$('#module-filter').options].some((option) => option.value === module)) $('#module-filter').add(new Option(module, module));
-  renderRecentEvents();
   let trimmed = false;
   if (allLines.length > maxLines) {
     allLines.splice(0, allLines.length - maxLines);
@@ -356,12 +337,6 @@ async function refreshStatus() {
     document.querySelector('[data-action="stop"]').disabled = !status.running;
     document.querySelector('[data-action="restart"]').disabled = !status.running;
     if (!status.running && status.startupLog) $('#status-meta').title = status.startupLog;
-    animateValue($('#metric-process'), status.running ? 'Работает' : 'Остановлен');
-    $('#metric-process-meta').textContent = status.running ? `PID ${status.pid} · ${status.uptime}` : 'Можно запустить из панели';
-    $('#service-description').textContent = status.running ? `Процесс активен ${status.uptime}` : 'Бот сейчас не запущен';
-    $('#service-version').textContent = status.version || 'Не определена';
-    $('#service-pid').textContent = status.pid || '—';
-    $('#service-log').textContent = status.logReady ? 'Доступен' : 'Не найден';
   } catch (error) {
     $('#status-label').textContent = 'сервер недоступен';
     $('#status-meta').textContent = error.message;
@@ -416,54 +391,6 @@ async function refreshSystem() {
     $('#system-sampled').textContent = `Ошибка: ${error.message}`;
   } finally { systemBusy = false; }
 }
-
-let metricsBusy = false;
-async function refreshMetrics() {
-  if (metricsBusy || document.hidden) return;
-  metricsBusy = true;
-  try {
-    const data = await request('/api/metrics');
-    if (data.rssBytes) animateNumber($('#metric-memory'), data.rssBytes / 1048576, {decimals: 1, suffix: ' МБ'});
-    else animateValue($('#metric-memory'), '—');
-  } catch (_) {
-    $('#metric-memory').textContent = '—';
-  } finally { metricsBusy = false; }
-}
-
-async function refreshInsights() {
-  if (insightsBusy) return;
-  insightsBusy = true;
-  try {
-    const data = await request('/api/insights');
-    lastInsights = data;
-    animateNumber($('#metric-errors'), Number(data.logCounts.error || 0));
-    animateNumber($('#metric-warnings'), Number(data.logCounts.warning || 0));
-    $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
-  } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
-  finally { insightsBusy = false; }
-}
-
-async function refreshDiagnostics() {
-  if (diagnosticsBusy) return;
-  diagnosticsBusy = true;
-  try {
-    const data = await request('/api/diagnostics');
-    const signature = JSON.stringify(data.checks || []);
-    if (signature === diagnosticsSignature) return;
-    diagnosticsSignature = signature;
-    const container = $('#diagnostic-checks'); container.replaceChildren();
-    for (const check of data.checks || []) {
-      const item = document.createElement('div'); item.className = `diagnostic-item ${check.ok ? 'ok' : 'missing'}`;
-      const symbol = document.createElement('span'); symbol.textContent = check.ok ? '✓' : '!';
-      const copy = document.createElement('div');
-      const title = document.createElement('strong'); title.textContent = check.name;
-      const detail = document.createElement('small'); detail.textContent = check.detail;
-      copy.append(title, detail); item.append(symbol, copy); container.append(item);
-    }
-  } catch (error) { $('#diagnostic-checks').textContent = `Проверка недоступна: ${error.message}`; }
-  finally { diagnosticsBusy = false; }
-}
-$('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
 $('#system-refresh').addEventListener('click', refreshSystem);
 async function refreshPanelVersion() {
@@ -617,7 +544,6 @@ $('#preset-delete').addEventListener('click', () => {
 });
 
 const commands = [
-  {name: 'Открыть обзор', run: () => setView('overview')},
   {name: 'Открыть журнал', run: () => setView('logs')},
   {name: 'Открыть происшествия', run: () => setView('incidents')},
   {name: 'Открыть состояние системы', run: () => setView('system')},
@@ -766,7 +692,7 @@ async function bootstrap() {
     $('#username').textContent = me.username;
     const viewer = me.role === 'viewer';
     document.querySelectorAll('[data-action]').forEach((button) => { if (viewer) { button.hidden = true; } });
-    await Promise.all([refreshPanelVersion(), refreshStatus(), loadHistory(), refreshInsights(), refreshMetrics(), refreshDiagnostics(), refreshSystem()]);
+    await Promise.all([refreshPanelVersion(), refreshStatus(), loadHistory(), refreshSystem()]);
     if (currentView === 'incidents') refreshIncidents();
     if (currentView === 'system') refreshHistory();
     connectStream();
@@ -779,9 +705,6 @@ bootstrap();
 setInterval(() => {
   if (authenticated && !document.hidden) refreshStatus();
 }, 1000);
-setInterval(() => { if (authenticated && !document.hidden) refreshInsights(); }, 1000);
-setInterval(() => { if (authenticated) refreshMetrics(); }, 1000);
 setInterval(() => { if (authenticated && currentView === 'system') { refreshSystem(); refreshHistory(); } }, 1000);
 setInterval(() => { if (authenticated && currentView === 'incidents' && !document.hidden) refreshIncidents(); }, 1000);
-setInterval(() => { if (authenticated && currentView === 'overview' && !document.hidden) refreshDiagnostics(); }, 1000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

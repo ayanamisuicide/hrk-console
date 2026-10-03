@@ -16,7 +16,6 @@ test.beforeEach(async ({ page }) => {
       '/api/logs': { lines: sampleLog },
       '/api/insights': { logCounts: { error: 2, warning: 0 } },
       '/api/metrics': { rssBytes: 104857600 },
-      '/api/diagnostics': { checks: [] },
       '/api/system': { supported: true, cpuPercent: 20, cpuCores: 8, memoryTotalBytes: 1000, memoryUsedBytes: 500, memoryAvailableBytes: 500, diskTotalBytes: 1000, diskUsedBytes: 300, diskFreeBytes: 700, os: 'linux', arch: 'amd64', hostname: 'test', kernel: 'test', uptimeSeconds: 1000, sampledAt: new Date().toISOString() },
       '/api/system/history': { points: [{ at: '2026-10-03T10:00:00Z', cpu: 20, memory: 50, disk: 30, pid: 1 }, { at: '2026-10-03T10:00:30Z', cpu: 40, memory: 55, disk: 30, pid: 2 }] },
       '/api/incidents': { incidents: [{ start: '2026-10-03 10:00:01', end: '2026-10-03 10:00:02', level: 'ERROR', module: 'Core', title: 'failed request', count: 2, context: sampleLog[0] }] },
@@ -32,7 +31,9 @@ for (const width of [390, 1440]) for (const theme of ['dark', 'light']) {
     await page.addInitScript((selectedTheme) => localStorage.setItem('hkc-theme', selectedTheme), theme);
     await page.goto('/');
     await expect(page.locator('#version')).toContainText('Панель v2.2.17');
-    for (const view of ['overview', 'logs', 'incidents', 'system']) {
+    await expect(page.locator('[data-view="overview"], #overview-view')).toHaveCount(0);
+    await expect(page.locator('#logs-view')).toBeVisible();
+    for (const view of ['logs', 'incidents', 'system']) {
       if (view === 'incidents' && await page.locator('#journal-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('#journal-nav-toggle').click();
       await page.locator(`[data-view="${view}"]`).click();
       await expect(page.locator(`#${view}-view`)).toBeVisible();
@@ -59,7 +60,7 @@ test('visual regression of main views', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await expect(page.locator('#version')).toContainText('v2.2.17');
-  for (const view of ['overview', 'logs', 'incidents', 'system']) {
+  for (const view of ['logs', 'incidents', 'system']) {
     if (view === 'incidents' && await page.locator('#journal-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('#journal-nav-toggle').click();
     await page.locator(`[data-view="${view}"]`).click();
     await expect(page.locator(`#${view}-view`)).toBeVisible();
@@ -101,7 +102,7 @@ test('admin terminal requires confirmation and shows execution metadata', async 
 });
 
 test('live resource endpoints refresh every second', async ({ page }) => {
-  const hits = {status: 0, insights: 0, metrics: 0, system: 0, history: 0};
+  const hits = {status: 0, system: 0, history: 0};
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const key = path === '/api/system/history' ? 'history' : path.slice('/api/'.length);

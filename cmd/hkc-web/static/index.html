@@ -31,7 +31,6 @@
       </div>
 
       <nav class="side-nav" aria-label="Разделы панели">
-        <button class="nav-item active" data-view="overview"><span>◫</span> Обзор</button>
         <div id="journal-nav" class="nav-group">
           <div class="nav-group-row"><button class="nav-item" data-view="logs"><span>≡</span> Журнал</button><button id="journal-nav-toggle" class="nav-group-toggle" type="button" aria-label="Раскрыть раздел журнала" aria-expanded="false"><span aria-hidden="true">⌄</span></button></div>
           <div class="nav-submenu"><button class="nav-subitem" data-view="incidents"><span>!</span><span><b>Происшествия</b><small>Ошибки и предупреждения</small></span></button></div>
@@ -73,20 +72,6 @@
       </header>
 
       <section id="notice" class="notice" hidden></section>
-      <section id="overview-view" class="workspace-view overview-view">
-        <div class="view-intro"><div><span class="eyebrow">SYSTEM SNAPSHOT</span><h3>Всё важное на одном экране</h3><p>Состояние бота и данные из последних записей журнала.</p></div><span id="overview-updated" class="muted">Обновление…</span></div>
-        <div class="dashboard-grid">
-          <article class="metric-card metric-primary"><span>ПРОЦЕСС</span><strong id="metric-process">—</strong><small id="metric-process-meta">Проверка состояния</small></article>
-          <article class="metric-card"><span>ПАМЯТЬ БОТА</span><strong id="metric-memory">—</strong><small>Фактическое потребление RAM</small></article>
-          <article class="metric-card"><span>ОШИБКИ</span><strong id="metric-errors">—</strong><small>В последних 1000 строках</small></article>
-          <article class="metric-card"><span>ПРЕДУПРЕЖДЕНИЯ</span><strong id="metric-warnings">—</strong><small>В последних 1000 строках</small></article>
-        </div>
-        <div class="dashboard-columns">
-          <article class="surface-card"><div class="card-heading"><div><span class="eyebrow">ACTIVITY</span><h3>Последние события</h3></div><button data-jump="logs" class="compact">Весь журнал →</button></div><div id="recent-events" class="recent-events"></div></article>
-          <article class="surface-card service-card"><span class="eyebrow">SERVICE</span><h3>Heroku bot</h3><p id="service-description">Получаем сведения о процессе…</p><div class="service-details"><span>Версия</span><strong id="service-version">—</strong><span>PID</span><strong id="service-pid">—</strong><span>Лог</span><strong id="service-log">—</strong></div><button data-jump="system" class="compact">Состояние системы →</button></article>
-        </div>
-        <article class="surface-card diagnostics-card"><div class="card-heading"><div><span class="eyebrow">SETUP CHECK</span><h3>Готовность к запуску</h3></div><button id="diagnostics-refresh" class="compact">↻ Проверить</button></div><div id="diagnostic-checks" class="diagnostic-checks"></div></article>
-      </section>
       <section id="system-view" class="workspace-view system-view" hidden>
         <div class="view-intro"><div><span class="eyebrow">HOST HEALTH</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>
         <div class="system-kpis">
