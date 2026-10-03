@@ -69,11 +69,11 @@ function refreshPresetOptions() {
 refreshPresetOptions();
 
 function setView(view) {
-  if (!['overview', 'logs', 'monitor', 'system'].includes(view)) return;
+  if (!['overview', 'logs', 'system'].includes(view)) view = 'overview';
   currentView = view;
   document.querySelectorAll('.workspace-view').forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; });
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
-  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', monitor: 'Мониторинг', system: 'Состояние системы'}[view]);
+  animateValue($('#view-title'), {overview: 'Обзор системы', logs: 'Журнал событий', system: 'Состояние системы'}[view]);
   localStorage.setItem('hkc-view', view);
 }
 
@@ -314,16 +314,6 @@ async function refreshSystem() {
   } finally { systemBusy = false; }
 }
 
-function renderChart(points) {
-  const values = points.filter((point) => point.rssBytes > 0).slice(-120);
-  $('#chart-empty').hidden = values.length > 1;
-  if (values.length < 2) { $('#memory-area').setAttribute('d', ''); $('#memory-line').setAttribute('d', ''); return; }
-  const max = Math.max(...values.map((point) => point.rssBytes), 1) * 1.15;
-  const coordinates = values.map((point, index) => `${(index / (values.length - 1) * 800).toFixed(1)},${(205 - point.rssBytes / max * 180).toFixed(1)}`);
-  $('#memory-line').setAttribute('d', `M${coordinates.join(' L')}`);
-  $('#memory-area').setAttribute('d', `M${coordinates.join(' L')} L800,220 L0,220 Z`);
-}
-
 let metricsBusy = false;
 async function refreshMetrics() {
   if (metricsBusy || document.hidden) return;
@@ -332,11 +322,8 @@ async function refreshMetrics() {
     const data = await request('/api/metrics');
     const value = formatMemory(data.rssBytes);
     $('#metric-memory').textContent = value;
-    $('#monitor-memory').textContent = value;
-    renderChart(data.points || []);
   } catch (_) {
     $('#metric-memory').textContent = '—';
-    $('#monitor-memory').textContent = '—';
   } finally { metricsBusy = false; }
 }
 
@@ -346,9 +333,6 @@ async function refreshInsights() {
     lastInsights = data;
     animateValue($('#metric-errors'), data.logCounts.error);
     animateValue($('#metric-warnings'), data.logCounts.warning);
-    animateValue($('#monitor-status'), data.running ? 'Работает' : 'Остановлен');
-    animateValue($('#monitor-errors'), data.logCounts.error);
-    animateValue($('#monitor-lines'), data.sampledLines);
     $('#overview-updated').textContent = `Обновлено ${new Intl.DateTimeFormat('ru-RU', {timeStyle: 'medium'}).format(new Date())}`;
   } catch (error) { $('#overview-updated').textContent = `Нет данных: ${error.message}`; }
 }
@@ -369,7 +353,6 @@ async function refreshDiagnostics() {
 }
 $('#diagnostics-refresh').addEventListener('click', refreshDiagnostics);
 
-$('#metrics-refresh').addEventListener('click', () => { refreshMetrics(); refreshInsights(); });
 $('#system-refresh').addEventListener('click', refreshSystem);
 $('#export-logs').addEventListener('click', () => {
   const query = filterInput.value.trim().toLowerCase();
@@ -404,7 +387,7 @@ $('#preset-delete').addEventListener('click', () => {
 const commands = [
   {name: 'Открыть обзор', run: () => setView('overview')},
   {name: 'Открыть журнал', run: () => setView('logs')},
-  {name: 'Открыть мониторинг', run: () => setView('monitor')},
+  {name: 'Открыть состояние системы', run: () => setView('system')},
   {name: 'Найти в журнале', run: () => { setView('logs'); filterInput.focus(); }},
   {name: 'Открыть админку', run: () => { location.href = '/admin/'; }},
   {name: 'Сменить тему', run: () => $('#theme-toggle').click()},
