@@ -151,19 +151,56 @@
   isolation: isolate;
   overflow: hidden;
   border-left-color: var(--arrival-accent);
-  box-shadow: inset 2px 0 0 var(--arrival-accent);
-  animation: log-row-enter 620ms var(--motion-enter-ease) both;
+  box-shadow: inset 3px 0 0 var(--arrival-accent), 0 0 20px rgba(var(--arrival-rgb), .1);
+  animation: log-record-enter 1350ms var(--motion-enter-ease) both;
 }
 .line.live::before,
 .line.live::after { content: ""; position: absolute; inset-block: 0; pointer-events: none; }
-.line.live::before, .line.live::after { display: none; }
+.line.live::before {
+  z-index: 0;
+  inset-inline: 0;
+  background: linear-gradient(90deg, rgba(var(--arrival-rgb), .22), rgba(var(--arrival-rgb), .09) 32%, transparent 82%);
+  animation: log-arrival-glow 1350ms var(--motion-ease) both;
+}
+.line.live::after {
+  z-index: 0;
+  left: -50%;
+  width: 46%;
+  background: linear-gradient(100deg, transparent, rgba(231, 255, 248, .3), rgba(var(--arrival-rgb), .24), transparent);
+  animation: log-arrival-sweep 1100ms var(--motion-enter-ease) both;
+}
+.line.live > * { position: relative; z-index: 1; }
+.line.live time,
+.line.live .level,
+.line.live .module,
+.line.live .message { animation: log-field-enter 680ms var(--motion-enter-ease) both; }
+.line.live .level { animation-delay: 55ms; }
+.line.live .module { animation-delay: 105ms; }
+.line.live .message { animation-delay: 155ms; }
 .line { transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), transform var(--motion-base) var(--motion-spring), box-shadow var(--motion-base) var(--motion-ease); }
 .line[data-level="WARNING"].live { --arrival-rgb: 242, 191, 98; --arrival-accent: var(--amber); }
 .line[data-level="ERROR"].live,
 .line[data-level="CRITICAL"].live { --arrival-rgb: 255, 107, 117; --arrival-accent: var(--red); }
 .log:empty::after { animation: none; }
 .line-count b.value-change { animation-duration: 420ms; }
-@keyframes log-row-enter { from { opacity: .45; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes log-record-enter {
+  from { opacity: 0; transform: translate3d(14px, 2px, 0) scale(.994); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes log-field-enter {
+  from { opacity: .3; transform: translate3d(8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes log-arrival-glow {
+  0% { opacity: 0; }
+  22% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes log-arrival-sweep {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) skewX(-10deg); }
+  20% { opacity: .9; }
+  100% { opacity: 0; transform: translate3d(430%, 0, 0) skewX(-10deg); }
+}
 footer .footer-separator { padding: 0 7px; color: var(--mint); }
 
 @media (max-width: 900px) {
@@ -195,6 +232,12 @@ footer .footer-separator { padding: 0 7px; color: var(--mint); }
 
 @media (prefers-reduced-motion: reduce) {
   .line.live,
+  .line.live::before,
+  .line.live::after,
+  .line.live time,
+  .line.live .level,
+  .line.live .module,
+  .line.live .message,
   .log-advanced-grid,
   #stream-state.online i { animation: none; transition: none; }
 }
