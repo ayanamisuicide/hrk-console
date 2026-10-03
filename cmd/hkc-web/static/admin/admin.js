@@ -108,6 +108,15 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('ru-RU', {dateStyle: 'medium', timeStyle: 'short'}).format(new Date(value));
 }
 
+function sessionLabel(count) {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return `${count} активных сессий`;
+  if (mod10 === 1) return `${count} активная сессия`;
+  if (mod10 >= 2 && mod10 <= 4) return `${count} активные сессии`;
+  return `${count} активных сессий`;
+}
+
 function showNotice(message, kind = 'ok') {
   const node = $('#admin-notice');
   node.textContent = message;
@@ -130,7 +139,7 @@ function renderUsers(users) {
     const name = document.createElement('td');
     name.innerHTML = `<strong></strong><small></small>`;
     name.querySelector('strong').textContent = user.username;
-    name.querySelector('small').textContent = `${user.activeSessions} активных сессий`;
+    name.querySelector('small').textContent = sessionLabel(user.activeSessions);
 
     const roleCell = document.createElement('td');
     const role = document.createElement('select');
@@ -164,6 +173,7 @@ function renderUsers(users) {
     const remove = document.createElement('button');
     remove.className = 'danger compact';
     remove.textContent = 'Удалить';
+    remove.setAttribute('aria-label', `Удалить пользователя ${user.username}`);
     remove.addEventListener('click', () => deleteUser(user.username));
     actions.append(remove);
     row.append(name, roleCell, status, created, seen, actions);

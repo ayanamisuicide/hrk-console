@@ -32,7 +32,8 @@
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { color: var(--muted); font-size: 10px; letter-spacing: .09em; text-align: left; font-weight: 400; }
 th, td { padding: 13px 18px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-td:first-child { display: grid; gap: 4px; }
+td:first-child strong, td:first-child small { display: block; }
+td:first-child small { margin-top: 4px; }
 td small { color: var(--muted); }
 td:last-child { text-align: right; }
 .presence { color: var(--muted); }
@@ -47,7 +48,7 @@ td:last-child { text-align: right; }
 .invite-card code { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--mint); font-size: 11px; }
 .invite-card p { margin: 10px 0 14px; color: var(--muted); font-size: 11px; }
 .invite-card div { display: flex; gap: 8px; }
-.empty { padding: 20px; }
+.empty { padding: 16px 20px; }
 #admin-notice { position: fixed; right: 24px; bottom: 24px; z-index: 10; max-width: min(420px, calc(100vw - 48px)); }
 
 @media (max-width: 720px) {
@@ -94,10 +95,10 @@ td:last-child { text-align: right; }
 .admin-tree-group[open] > .admin-tree-clip { grid-template-rows:1fr; opacity:1; }
 .admin-tree-group.is-closing > .admin-tree-clip { grid-template-rows:0fr; opacity:0; }
 .admin-tree-children { position:relative; min-height:0; overflow:hidden; display:grid; gap:12px; padding:0; border-top:1px solid var(--line); }
-.admin-tree-children::before { content:''; position:absolute; left:23px; top:16px; bottom:30px; width:1px; background:color-mix(in srgb,var(--mint) 28%,var(--line)); }
-.admin-tree-children > .admin-section { position:relative; margin:16px 16px 0 34px; }
+.admin-tree-children::before { display:none; }
+.admin-tree-children > .admin-section { position:relative; margin:16px 16px 0; }
 .admin-tree-children > .admin-section:last-child { margin-bottom:18px; }
-.admin-tree-children > .admin-section::after { content:''; position:absolute; width:11px; height:1px; left:-12px; top:36px; background:color-mix(in srgb,var(--mint) 35%,var(--line)); }
+.admin-tree-children > .admin-section::after { display:none; }
 .admin-tree .summary { margin:8px 0; }
 .admin-tree .bot-deck { margin:0 0 4px; }
 .update-actions { display:flex; flex-wrap:wrap; gap:8px; }
@@ -121,7 +122,7 @@ td:last-child { text-align: right; }
 .audit-occurrence { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:10px 16px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
 .audit-occurrence time { color:var(--text); }
 .audit-more { margin:0 18px 18px; }
-@media (max-width:720px) { .admin-tree-group > summary { grid-template-columns:1fr 24px; gap:5px 8px; } .tree-index,.admin-tree-group > summary strong,.admin-tree-group > summary small { grid-column:1; } .admin-tree-group > summary::after { grid-row:1/4; grid-column:2; } .admin-tree-children > .admin-section { margin-right:8px; margin-left:18px; } .admin-tree-children > .admin-section:last-child { margin-bottom:12px; } .admin-tree-children::before { left:10px; } .admin-tree-children > .admin-section::after { left:-9px; width:8px; } .audit-group-head { align-items:flex-start; } }
+@media (max-width:720px) { .admin-tree-group > summary { grid-template-columns:1fr 24px; gap:5px 8px; } .tree-index,.admin-tree-group > summary strong,.admin-tree-group > summary small { grid-column:1; } .admin-tree-group > summary::after { grid-row:1/4; grid-column:2; } .admin-tree-children > .admin-section { margin-right:8px; margin-left:8px; } .admin-tree-children > .admin-section:last-child { margin-bottom:12px; } .audit-group-head { align-items:flex-start; } }
 @media (prefers-reduced-motion:reduce) { .admin-tree-clip,.audit-expander,.admin-tree-group > summary,.admin-tree-group > summary::after,.audit-group { transition:none; } }
 
 /* Keep admin-specific states on the shared motion scale above. */
