@@ -12,7 +12,7 @@
     const root = document.documentElement;
     clearTimeout(root.motionThemeTimer);
     root.classList.add('theme-transition');
-    root.motionThemeTimer = setTimeout(() => root.classList.remove('theme-transition'), 480);
+    root.motionThemeTimer = setTimeout(() => root.classList.remove('theme-transition'), 700);
   };
   window.motionValue = (element, value) => {
     const next = String(value);
@@ -22,7 +22,7 @@
     if (reducedMotion() || document.hidden || ['—', '-', '', '0'].includes(previous)) return;
 
     const now = performance.now();
-    if (lastValueMotion.has(element) && now - lastValueMotion.get(element) < 440) return;
+    if (lastValueMotion.has(element) && now - lastValueMotion.get(element) < 640) return;
     lastValueMotion.set(element, now);
     element.classList.remove('value-change');
     void element.offsetWidth;
@@ -43,7 +43,7 @@
       element.motionHideTimer = setTimeout(() => {
         element.hidden = true;
         element.classList.remove('is-leaving');
-      }, 300);
+      }, 480);
     }, duration);
   };
 
@@ -83,7 +83,7 @@
         if (!disclosure.classList.contains('is-closing')) return;
         disclosure.open = false;
         disclosure.classList.remove('is-closing');
-      }, 360);
+      }, 600);
     });
   });
 
@@ -100,12 +100,20 @@
       observer.observe(element);
     });
 
+    let pointerFrame = 0;
+    let pointerEvent;
     document.addEventListener('pointermove', (event) => {
-      const card = event.target.closest?.('.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card');
-      if (!card) return;
-      const rect = card.getBoundingClientRect();
-      card.style.setProperty('--pointer-x', `${event.clientX - rect.left}px`);
-      card.style.setProperty('--pointer-y', `${event.clientY - rect.top}px`);
+      pointerEvent = event;
+      if (pointerFrame) return;
+      pointerFrame = requestAnimationFrame(() => {
+        pointerFrame = 0;
+        const current = pointerEvent;
+        const card = current?.target.closest?.('.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card');
+        if (!card) return;
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty('--pointer-x', `${current.clientX - rect.left}px`);
+        card.style.setProperty('--pointer-y', `${current.clientY - rect.top}px`);
+      });
     }, {passive: true});
 
     document.addEventListener('pointerdown', (event) => {

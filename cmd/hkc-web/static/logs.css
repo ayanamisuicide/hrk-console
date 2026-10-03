@@ -152,17 +152,17 @@
   overflow: hidden;
   border-left-color: var(--arrival-accent);
   box-shadow: inset 2px 0 0 var(--arrival-accent);
-  animation: log-row-enter 380ms var(--motion-enter-ease) both;
+  animation: log-row-enter 620ms var(--motion-enter-ease) both;
 }
 .line.live::before,
 .line.live::after { content: ""; position: absolute; inset-block: 0; pointer-events: none; }
 .line.live::before, .line.live::after { display: none; }
-.line { transition: background-color 240ms var(--motion-ease), border-color 260ms var(--motion-ease), transform 280ms var(--motion-spring), box-shadow 300ms var(--motion-ease); }
+.line { transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), transform var(--motion-base) var(--motion-spring), box-shadow var(--motion-base) var(--motion-ease); }
 .line[data-level="WARNING"].live { --arrival-rgb: 242, 191, 98; --arrival-accent: var(--amber); }
 .line[data-level="ERROR"].live,
 .line[data-level="CRITICAL"].live { --arrival-rgb: 255, 107, 117; --arrival-accent: var(--red); }
 .log:empty::after { animation: none; }
-.line-count b.value-change { animation-duration: 180ms; }
+.line-count b.value-change { animation-duration: 420ms; }
 @keyframes log-row-enter { from { opacity: .45; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 footer .footer-separator { padding: 0 7px; color: var(--mint); }
 

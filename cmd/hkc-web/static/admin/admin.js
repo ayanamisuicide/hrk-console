@@ -66,7 +66,7 @@ document.querySelectorAll('.admin-tree-group').forEach((branch) => {
       saveTreeState();
     };
     clip.addEventListener('transitionend', finish, {once: true});
-    branch.closeTimer = setTimeout(() => finish(), 240);
+    branch.closeTimer = setTimeout(() => finish(), 700);
   });
 });
 
