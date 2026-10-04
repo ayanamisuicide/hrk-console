@@ -101,6 +101,51 @@ test('admin terminal requires confirmation and shows execution metadata', async 
   expect(executions).toBe(1);
 });
 
+test('maintenance mode and scheduler are manageable from admin', async ({ page }) => {
+  let maintenance = {enabled: false, message: ''};
+  const schedules = [];
+  await page.addInitScript(() => {
+    sessionStorage.setItem('hkc-admin-token', 'test-token');
+    localStorage.setItem('hkc-admin-tree', JSON.stringify(['operations']));
+  });
+  await page.route('**/api/admin/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let status = 200;
+    let body = path === '/api/admin/overview' ? {users: [], invites: [], bot: {running: false, herokuDir: '/srv/Heroku'}}
+      : path === '/api/admin/audit' ? {events: []}
+      : path === '/api/admin/backups' ? {backups: []}
+      : path === '/api/admin/config/history' ? {history: []}
+      : path === '/api/admin/security' ? {rateLimiter: {}, features: {}}
+      : path === '/api/admin/maintenance' ? maintenance
+      : path === '/api/admin/schedules' ? {schedules} : {};
+    if (path === '/api/admin/maintenance' && request.method() === 'PUT') {
+      maintenance = request.postDataJSON();
+      body = maintenance;
+    }
+    if (path === '/api/admin/schedules' && request.method() === 'POST') {
+      const input = request.postDataJSON();
+      schedules.push({id: 'schedule-1', action: input.action, runAt: input.runAt, status: 'pending'});
+      body = schedules[0]; status = 201;
+    }
+    return route.fulfill({status, contentType: 'application/json', body: JSON.stringify(body)});
+  });
+  await page.goto('/admin/');
+  await page.locator('#maintenance-enabled').check();
+  await page.locator('#maintenance-message').fill('Плановые работы');
+  await page.locator('#maintenance-form button[type="submit"]').click();
+  await expect(page.locator('#maintenance-state')).toHaveText('Включён');
+  await expect(page.locator('[data-bot-action="start"]')).toBeDisabled();
+
+  const future = new Date(Date.now() + 10 * 60 * 1000);
+  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  await page.locator('#schedule-action').selectOption('stop');
+  await page.locator('#schedule-run-at').fill(local);
+  await page.locator('#schedule-form button[type="submit"]').click();
+  await expect(page.locator('#schedule-list')).toContainText('Остановка');
+  await expect(page.locator('#schedule-list')).toContainText('ожидает');
+});
+
 test('live resource endpoints refresh every second', async ({ page }) => {
   const hits = {status: 0, system: 0, history: 0};
   await page.route('**/api/**', async (route) => {

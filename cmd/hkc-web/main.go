@@ -37,6 +37,7 @@ type server struct {
 	latestSystem systemStatus
 	updates      *updateChecker
 	authLimiter  *authRateLimiter
+	operations   *operationStore
 }
 
 type statusResponse struct {
@@ -104,9 +105,14 @@ func main() {
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
 		authLimiter: newAuthRateLimiter(20, 5*time.Minute),
 		audit:       newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
+	s.operations, err = openOperationStore(filepath.Join(filepath.Dir(authFile), "operations.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.jsonl"))
 	go s.collectHostHistory(context.Background())
 	go watchBotState(context.Background(), notifier, s.bot)
+	go s.runSchedules(context.Background())
 	s.updates = &updateChecker{}
 	s.updates.check()
 	go func() {
@@ -138,6 +144,11 @@ func main() {
 	mux.HandleFunc("POST /api/admin/config/history/{name}/restore", s.restoreConfigHistory)
 	mux.HandleFunc("GET /api/admin/diagnostic-bundle", s.diagnosticBundle)
 	mux.HandleFunc("GET /api/admin/security", s.securityOverview)
+	mux.HandleFunc("GET /api/admin/maintenance", s.getMaintenance)
+	mux.HandleFunc("PUT /api/admin/maintenance", s.setMaintenance)
+	mux.HandleFunc("GET /api/admin/schedules", s.listSchedules)
+	mux.HandleFunc("POST /api/admin/schedules", s.createSchedule)
+	mux.HandleFunc("DELETE /api/admin/schedules/{id}", s.deleteSchedule)
 	mux.HandleFunc("POST /api/admin/diagnostics/{command}", s.adminDiagnosticCommand)
 	mux.HandleFunc("POST /api/admin/terminal", s.adminTerminal)
 	mux.HandleFunc("GET /api/admin/tokens", s.listAPITokens)
@@ -574,6 +585,20 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) performAction(action string) (actionResponse, int) {
+	if s.operations != nil && action != "stop" {
+		maintenance := s.operations.maintenanceState()
+		if maintenance.Enabled {
+			message := "режим обслуживания включён"
+			if maintenance.Message != "" {
+				message += ": " + maintenance.Message
+			}
+			return actionResponse{Message: message}, http.StatusConflict
+		}
+	}
+	return s.performActionUnchecked(action)
+}
+
+func (s *server) performActionUnchecked(action string) (actionResponse, int) {
 	result := actionResponse{OK: true}
 	switch action {
 	case "start":

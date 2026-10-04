@@ -26,6 +26,8 @@ let invitesSignature = '';
 let backupsSignature = '';
 let configHistorySignature = '';
 let securitySignature = '';
+let schedulesSignature = '';
+let maintenanceEnabled = false;
 try {
   const openBranches = JSON.parse(localStorage.getItem('hkc-admin-tree') || 'null');
   if (Array.isArray(openBranches)) document.querySelectorAll('.admin-tree-group').forEach((branch) => { branch.open = openBranches.includes(branch.dataset.tree); });
@@ -395,6 +397,44 @@ function renderSecurity(data) {
   }
 }
 
+function renderMaintenance(data) {
+  maintenanceEnabled = Boolean(data.enabled);
+  $('#maintenance-enabled').checked = maintenanceEnabled;
+  if (document.activeElement !== $('#maintenance-message')) $('#maintenance-message').value = data.message || '';
+  $('#maintenance-state').textContent = maintenanceEnabled ? 'Включён' : 'Выключен';
+  $('#maintenance-state').classList.toggle('active', maintenanceEnabled);
+  if (maintenanceEnabled) {
+    document.querySelector('[data-bot-action="start"]').disabled = true;
+    document.querySelector('[data-bot-action="restart"]').disabled = true;
+  }
+}
+
+function renderSchedules(items) {
+  const signature = JSON.stringify(items);
+  if (signature === schedulesSignature) return;
+  schedulesSignature = signature;
+  const list = $('#schedule-list'); list.replaceChildren();
+  $('#schedule-empty').hidden = items.length !== 0;
+  const actionLabels = {start: 'Запуск', stop: 'Остановка', restart: 'Перезапуск'};
+  const statusLabels = {pending: 'ожидает', running: 'выполняется', completed: 'выполнено', failed: 'ошибка'};
+  for (const item of items) {
+    const row = document.createElement('div'); row.className = `backup-row schedule-${item.status}`;
+    const info = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = `${actionLabels[item.action] || item.action} · ${formatDate(item.runAt)}`;
+    const detail = document.createElement('small'); detail.textContent = `${statusLabels[item.status] || item.status}${item.result ? ` · ${item.result}` : ''}`;
+    info.append(title, detail); row.append(info);
+    if (item.status === 'pending') {
+      const remove = document.createElement('button'); remove.className = 'compact danger'; remove.textContent = 'Отменить';
+      remove.addEventListener('click', async () => {
+        try { await adminRequest(`/api/admin/schedules/${encodeURIComponent(item.id)}`, {method: 'DELETE'}); await refresh(); }
+        catch (error) { showNotice(error.message, 'error'); }
+      });
+      row.append(remove);
+    }
+    list.append(row);
+  }
+}
+
 async function refresh() {
   if (refreshBusy || document.hidden) return;
   if (!adminToken) {
@@ -403,9 +443,10 @@ async function refresh() {
   }
   refreshBusy = true;
   try {
-    const [data, audit, backups, configHistory, security] = await Promise.all([
+    const [data, audit, backups, configHistory, security, maintenance, schedules] = await Promise.all([
       adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups'),
       adminRequest('/api/admin/config/history'), adminRequest('/api/admin/security'),
+      adminRequest('/api/admin/maintenance'), adminRequest('/api/admin/schedules'),
     ]);
     animateValue($('#users-count'), data.users.length);
     animateValue($('#online-count'), data.users.filter((user) => user.online).length);
@@ -417,6 +458,8 @@ async function refresh() {
     renderBackups(backups.backups || []);
     renderConfigHistory(configHistory.history || []);
     renderSecurity(security);
+    renderMaintenance(maintenance);
+    renderSchedules(schedules.schedules || []);
     await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
@@ -528,6 +571,31 @@ $('#download-diagnostics').addEventListener('click', async (event) => {
     showNotice('Диагностический архив подготовлен');
   } catch (error) { showNotice(error.message, 'error'); }
   button.disabled = false;
+});
+
+$('#maintenance-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const enabled = $('#maintenance-enabled').checked;
+  const stopBot = $('#maintenance-stop').checked;
+  if (enabled && stopBot && !await confirmAction('Включить обслуживание и остановить бота?', 'Новые запуски и перезапуски будут заблокированы до выключения режима.')) return;
+  try {
+    await adminRequest('/api/admin/maintenance', {method: 'PUT', body: JSON.stringify({enabled, stopBot, message: $('#maintenance-message').value})});
+    $('#maintenance-stop').checked = false;
+    showNotice(enabled ? 'Режим обслуживания включён' : 'Режим обслуживания выключен');
+    await refresh();
+  } catch (error) { showNotice(error.message, 'error'); }
+});
+
+$('#schedule-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const localTime = $('#schedule-run-at').value;
+  const runAt = new Date(localTime);
+  if (!localTime || Number.isNaN(runAt.getTime())) { showNotice('Укажите корректную дату и время', 'error'); return; }
+  try {
+    await adminRequest('/api/admin/schedules', {method: 'POST', body: JSON.stringify({action: $('#schedule-action').value, runAt: runAt.toISOString()})});
+    showNotice('Действие добавлено в расписание');
+    await refresh();
+  } catch (error) { showNotice(error.message, 'error'); }
 });
 
 document.querySelectorAll('[data-diagnostic]').forEach((button) => button.addEventListener('click', async () => {
