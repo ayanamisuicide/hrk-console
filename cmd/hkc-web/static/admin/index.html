@@ -67,6 +67,7 @@
       <div class="section-heading"><div><span class="eyebrow">DIAGNOSTIC CONSOLE</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
       <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
       <pre id="diagnostic-output">Выберите проверку выше.</pre>
+      <div class="bundle-actions"><button id="download-diagnostics" class="primary compact" type="button">Скачать диагностический ZIP</button><small>Секреты конфигурации не включаются; типичные токены в логах маскируются.</small></div>
       <form id="terminal-form" class="terminal-form">
         <label for="terminal-command"><span>WSL / HEROKU_DIR</span><small>Команда выполняется с правами службы панели · Ctrl+Enter для запуска</small></label>
         <div class="terminal-prompt"><b>$</b><textarea id="terminal-command" rows="2" maxlength="4096" spellcheck="false" placeholder="git status --short"></textarea></div>
@@ -130,6 +131,17 @@
       <p class="backup-note">Копии сохраняются на сервере рядом с базой авторизации. При восстановлении текущая база сначала сохраняется автоматически.</p>
       <div id="backup-list" class="backup-list"></div>
       <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
+    </section>
+
+    <section class="admin-section">
+      <div class="section-heading"><div><span class="eyebrow">CONFIG RECOVERY</span><h2>История конфигурации</h2></div><span class="muted">До 50 автоматических снимков перед изменениями</span></div>
+      <div id="config-history-list" class="backup-list"></div>
+      <p id="config-history-empty" class="empty" hidden>Снимков конфигурации пока нет.</p>
+    </section>
+
+    <section class="admin-section">
+      <div class="section-heading"><div><span class="eyebrow">SECURITY POSTURE</span><h2>Контур безопасности</h2></div><span class="muted">Только агрегаты — без ключей и токенов</span></div>
+      <div id="security-overview" class="security-grid" aria-live="polite"></div>
     </section>
       </div></div>
     </details>

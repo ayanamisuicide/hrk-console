@@ -24,6 +24,8 @@ let refreshBusy = false;
 let usersSignature = '';
 let invitesSignature = '';
 let backupsSignature = '';
+let configHistorySignature = '';
+let securitySignature = '';
 try {
   const openBranches = JSON.parse(localStorage.getItem('hkc-admin-tree') || 'null');
   if (Array.isArray(openBranches)) document.querySelectorAll('.admin-tree-group').forEach((branch) => { branch.open = openBranches.includes(branch.dataset.tree); });
@@ -350,6 +352,49 @@ function renderBackups(backups) {
   }
 }
 
+function renderConfigHistory(history) {
+  const signature = JSON.stringify(history);
+  if (signature === configHistorySignature) return;
+  configHistorySignature = signature;
+  const list = $('#config-history-list'); list.replaceChildren();
+  $('#config-history-empty').hidden = history.length !== 0;
+  for (const version of history) {
+    const row = document.createElement('div'); row.className = 'backup-row';
+    const info = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = formatDate(version.createdAt);
+    const detail = document.createElement('small'); detail.textContent = `${version.name} · ${(version.size / 1024).toFixed(1)} КБ`;
+    info.append(title, detail);
+    const restore = document.createElement('button'); restore.className = 'compact'; restore.textContent = 'Восстановить';
+    restore.addEventListener('click', async () => {
+      if (!await confirmAction('Восстановить конфигурацию?', `Текущая конфигурация сначала будет сохранена. После восстановления ${version.name} перезапустите бота.`)) return;
+      try {
+        const result = await adminRequest(`/api/admin/config/history/${encodeURIComponent(version.name)}/restore`, {method: 'POST'});
+        showNotice(result.message); await refresh();
+      } catch (error) { showNotice(error.message, 'error'); }
+    });
+    row.append(info, restore); list.append(row);
+  }
+}
+
+function renderSecurity(data) {
+  const signature = JSON.stringify(data);
+  if (signature === securitySignature) return;
+  securitySignature = signature;
+  const labels = [
+    ['Пользователи', data.users], ['Активные сессии', data.sessions],
+    ['API-токены', data.apiTokens], ['Заблокированные клиенты', data.rateLimiter?.blockedClients || 0],
+    ['Терминал', data.features?.terminal ? 'включён' : 'выключен'],
+    ['Доверенный proxy', data.features?.trustedProxy ? 'включён' : 'выключен'],
+  ];
+  const grid = $('#security-overview'); grid.replaceChildren();
+  for (const [label, value] of labels) {
+    const card = document.createElement('article');
+    const caption = document.createElement('span'); caption.textContent = label;
+    const strong = document.createElement('strong'); strong.textContent = value;
+    card.append(caption, strong); grid.append(card);
+  }
+}
+
 async function refresh() {
   if (refreshBusy || document.hidden) return;
   if (!adminToken) {
@@ -358,7 +403,10 @@ async function refresh() {
   }
   refreshBusy = true;
   try {
-    const [data, audit, backups] = await Promise.all([adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups')]);
+    const [data, audit, backups, configHistory, security] = await Promise.all([
+      adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups'),
+      adminRequest('/api/admin/config/history'), adminRequest('/api/admin/security'),
+    ]);
     animateValue($('#users-count'), data.users.length);
     animateValue($('#online-count'), data.users.filter((user) => user.online).length);
     animateValue($('#invites-count'), data.invites.length);
@@ -367,6 +415,8 @@ async function refresh() {
     renderInvites(data.invites);
     renderAudit(audit.events || []);
     renderBackups(backups.backups || []);
+    renderConfigHistory(configHistory.history || []);
+    renderSecurity(security);
     await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
@@ -457,6 +507,26 @@ $('#create-backup').addEventListener('click', async (event) => {
   const button = event.currentTarget; button.disabled = true;
   try { await adminRequest('/api/admin/backups', {method: 'POST'}); showNotice('Резервная копия создана'); await refresh(); }
   catch (error) { showNotice(error.message, 'error'); }
+  button.disabled = false;
+});
+
+$('#download-diagnostics').addEventListener('click', async (event) => {
+  const button = event.currentTarget; button.disabled = true;
+  try {
+    const response = await fetch('/api/admin/diagnostic-bundle', {headers: {Authorization: `Bearer ${adminToken}`}});
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.message || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob); link.download = match?.[1] || 'hkc-diagnostics.zip';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    showNotice('Диагностический архив подготовлен');
+  } catch (error) { showNotice(error.message, 'error'); }
   button.disabled = false;
 });
 

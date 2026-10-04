@@ -160,6 +160,9 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	s.configMu.Lock()
 	values, err := s.readConfigLocked()
 	if err == nil {
+		err = s.snapshotConfigLocked()
+	}
+	if err == nil {
 		for key, value := range encoded {
 			values[key] = value
 		}
@@ -187,6 +190,9 @@ func (s *server) deleteConfigKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Lock()
 	values, err := s.readConfigLocked()
+	if err == nil {
+		err = s.snapshotConfigLocked()
+	}
 	if err == nil {
 		delete(values, key)
 		err = s.writeConfigLocked(values)
