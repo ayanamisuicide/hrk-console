@@ -15,7 +15,7 @@ import (
 // SIGKILL, если не помогло. Возврат: 0 — остановлен штатно, 2 — пришлось
 // убивать, 1 — не был запущен.
 func (m *Manager) Stop() int {
-	pids := PIDs()
+	pids := m.PIDs()
 	if len(pids) == 0 {
 		return 1
 	}
@@ -23,12 +23,12 @@ func (m *Manager) Stop() int {
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 	}
 	for i := 0; i < 50; i++ {
-		if !Alive() {
+		if !m.Alive() {
 			return 0
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	for _, pid := range PIDs() {
+	for _, pid := range m.PIDs() {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -53,7 +53,7 @@ func (m *Manager) Start() StartResult {
 	// Проверка живости именно здесь, под локом: вызывающий проверял её до
 	// захвата, и два окна, стартовавшие одновременно, успевали поднять двух
 	// ботов — лок лишь выстраивал их в очередь, а не отменял второй запуск.
-	if pid := PID(); pid != 0 {
+	if pid := m.PID(); pid != 0 {
 		return StartResult{PID: pid}
 	}
 
@@ -81,5 +81,8 @@ func (m *Manager) Start() StartResult {
 	_ = cmd.Process.Release() // не ждём завершения — процесс живёт своей жизнью
 
 	time.Sleep(300 * time.Millisecond) // дать процессу зацепиться за свою группу
+	if !m.AliveAt(pid) {
+		return StartResult{Err: fmt.Errorf("процесс завершился сразу после запуска; проверьте %s", m.StartupLog)}
+	}
 	return StartResult{PID: pid}
 }

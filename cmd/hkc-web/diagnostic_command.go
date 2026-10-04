@@ -22,7 +22,7 @@ func (s *server) adminDiagnosticCommand(w http.ResponseWriter, r *http.Request) 
 	var output string
 	switch command {
 	case "process":
-		pid := botproc.PID()
+		pid := s.bot.PID()
 		output = fmt.Sprintf("Система: %s/%s\nHeroku: %s\nPID: %d\nВремя работы: %s\nПамять: %.1f МБ", runtime.GOOS, runtime.GOARCH, map[bool]string{true: "работает", false: "остановлен"}[pid != 0], pid, botproc.Uptime(pid), float64(processRSS(pid))/1048576)
 	case "startup-log":
 		output = tailText(s.bot.StartupLog, 60)

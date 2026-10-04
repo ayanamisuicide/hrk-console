@@ -250,7 +250,11 @@ func (s *server) installUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := exec.CommandContext(ctx, "systemctl", "start", "--no-block", "hkc-update.service").Run(); err != nil {
+	command := []string{"systemctl", "start", "--no-block", "hkc-update.service"}
+	if user := strings.TrimSpace(os.Getenv("HKC_SERVICE_USER")); user != "" && user != "root" {
+		command = []string{"/usr/bin/sudo", "-n", "/usr/bin/systemctl", "start", "--no-block", "hkc-update.service"}
+	}
+	if err := exec.CommandContext(ctx, command[0], command[1:]...).Run(); err != nil {
 		writeJSON(w, 500, actionResponse{Message: "не удалось запустить hkc-update.service"})
 		return
 	}

@@ -5,14 +5,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=__HKC_SERVICE_USER__
 EnvironmentFile=/etc/hkc/hkc.env
-WorkingDirectory=/root/heroku-console
-ExecStart=/root/heroku-console/bin/hkc-web
+WorkingDirectory=__HKC_SOURCE_DIR__
+ExecStart=__HKC_SOURCE_DIR__/bin/hkc-web
 Restart=always
 RestartSec=2
-KillMode=process
+KillMode=control-group
 UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

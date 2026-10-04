@@ -1,10 +1,28 @@
 package main
 
 import (
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestSecureRequestOnlyTrustsConfiguredLocalProxy(t *testing.T) {
+	request := httptest.NewRequest("GET", "http://console.example/", nil)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.RemoteAddr = "127.0.0.1:1234"
+	if secureRequest(request) {
+		t.Fatal("forwarded protocol trusted without proxy opt-in")
+	}
+	t.Setenv("HKC_TRUST_PROXY", "1")
+	if !secureRequest(request) {
+		t.Fatal("configured local proxy was not trusted")
+	}
+	request.RemoteAddr = "192.0.2.5:1234"
+	if secureRequest(request) {
+		t.Fatal("non-local forwarded protocol was trusted")
+	}
+}
 
 func TestInviteRegistrationAndLogin(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")

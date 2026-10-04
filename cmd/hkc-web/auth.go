@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,10 @@ import (
 const sessionCookie = "hkc_session"
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{3,32}$`)
+
+// Comparing against a real bcrypt hash also for unknown users prevents login
+// names from being discovered through response-time differences.
+var dummyPasswordHash = []byte("$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
 
 type userRecord struct {
 	PasswordHash string    `json:"passwordHash"`
@@ -112,6 +117,15 @@ func (s *authStore) register(invite, username, password string) error {
 	if len(password) < 10 {
 		return errors.New("пароль должен содержать минимум 10 символов")
 	}
+	// Reject missing and expired invitations before running the deliberately
+	// expensive password hash. The invitation is checked again under the lock
+	// below before it is consumed.
+	s.mu.Lock()
+	record, exists := s.data.Invites[invite]
+	s.mu.Unlock()
+	if !exists || time.Now().After(record.ExpiresAt) {
+		return errors.New("инвайт недействителен или истёк")
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -122,7 +136,7 @@ func (s *authStore) register(invite, username, password string) error {
 	if _, exists := s.data.Users[username]; exists {
 		return errors.New("такой логин уже занят")
 	}
-	record, exists := s.data.Invites[invite]
+	record, exists = s.data.Invites[invite]
 	if !exists || time.Now().After(record.ExpiresAt) {
 		return errors.New("инвайт недействителен или истёк")
 	}
@@ -144,7 +158,12 @@ func (s *authStore) authenticate(username, password string) bool {
 	s.mu.Lock()
 	record, exists := s.data.Users[strings.TrimSpace(username)]
 	s.mu.Unlock()
-	return exists && bcrypt.CompareHashAndPassword([]byte(record.PasswordHash), []byte(password)) == nil
+	hash := dummyPasswordHash
+	if exists {
+		hash = []byte(record.PasswordHash)
+	}
+	valid := bcrypt.CompareHashAndPassword(hash, []byte(password)) == nil
+	return exists && valid
 }
 
 type storedUser struct {
@@ -282,6 +301,11 @@ type sessionStore struct {
 	sessions map[string]session
 }
 
+const (
+	maxSessionsPerUser = 10
+	maxSessionsTotal   = 10000
+)
+
 func newSessionStore() *sessionStore {
 	return &sessionStore{sessions: make(map[string]session)}
 }
@@ -294,9 +318,40 @@ func (s *sessionStore) create(username string) (string, time.Time, error) {
 	expires := time.Now().Add(30 * 24 * time.Hour)
 	now := time.Now()
 	s.mu.Lock()
+	for existingToken, entry := range s.sessions {
+		if now.After(entry.ExpiresAt) {
+			delete(s.sessions, existingToken)
+		}
+	}
+	for sessionCount(s.sessions, username) >= maxSessionsPerUser || len(s.sessions) >= maxSessionsTotal {
+		oldestToken := ""
+		var oldest time.Time
+		for existingToken, entry := range s.sessions {
+			if len(s.sessions) < maxSessionsTotal && entry.Username != username {
+				continue
+			}
+			if oldestToken == "" || entry.CreatedAt.Before(oldest) {
+				oldestToken, oldest = existingToken, entry.CreatedAt
+			}
+		}
+		if oldestToken == "" {
+			break
+		}
+		delete(s.sessions, oldestToken)
+	}
 	s.sessions[token] = session{Username: username, CreatedAt: now, LastSeen: now, ExpiresAt: expires}
 	s.mu.Unlock()
 	return token, expires, nil
+}
+
+func sessionCount(sessions map[string]session, username string) int {
+	count := 0
+	for _, entry := range sessions {
+		if entry.Username == username {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *sessionStore) get(token string) (string, bool) {
@@ -368,7 +423,13 @@ func randomToken(size int) (string, error) {
 }
 
 func secureRequest(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	if r.TLS != nil {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	proxyIP := net.ParseIP(host)
+	trustedProxy := os.Getenv("HKC_TRUST_PROXY") == "1" && err == nil && proxyIP != nil && proxyIP.IsLoopback()
+	return trustedProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {

@@ -19,10 +19,11 @@ func newTestServer(t *testing.T) *server {
 		t.Fatal(err)
 	}
 	return &server{
-		bot:        botproc.New(t.TempDir()),
-		auth:       auth,
-		sessions:   newSessionStore(),
-		adminToken: "admin-secret",
+		bot:         botproc.New(t.TempDir()),
+		auth:        auth,
+		sessions:    newSessionStore(),
+		adminToken:  "admin-secret",
+		authLimiter: newAuthRateLimiter(20, 5*time.Minute),
 	}
 }
 

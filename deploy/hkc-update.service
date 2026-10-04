@@ -7,6 +7,6 @@ Wants=network-online.target
 Type=oneshot
 User=root
 EnvironmentFile=/etc/hkc/hkc.env
-ExecStart=/usr/bin/python3 /root/heroku-console/deploy/update.py
+ExecStart=/usr/bin/python3 __HKC_SOURCE_DIR__/deploy/update.py
 TimeoutStartSec=600
 UMask=0077

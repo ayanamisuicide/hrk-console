@@ -93,6 +93,7 @@ func TestDetectIncidentsGroupsErrorsAndWarningBursts(t *testing.T) {
 }
 
 func TestTerminalRequiresExplicitConfirmation(t *testing.T) {
+	t.Setenv("HKC_TERMINAL_ENABLED", "1")
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd"}`))
 	r.Header.Set("Authorization", "Bearer admin-secret")

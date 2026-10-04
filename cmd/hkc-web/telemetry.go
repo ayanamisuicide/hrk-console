@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"heroku-console/botproc"
 	"heroku-console/logfeed"
 )
 
@@ -204,7 +203,7 @@ func processRSS(pid int) uint64 {
 }
 
 func (s *server) sampleMetrics() (int, uint64, []metricPoint) {
-	pid := botproc.PID()
+	pid := s.bot.PID()
 	rss := processRSS(pid)
 	points := []metricPoint{}
 	if s.metrics != nil {
@@ -267,6 +266,6 @@ func (s *server) publicStatus(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, actionResponse{Message: "публичный статус выключен"})
 		return
 	}
-	pid := botproc.PID()
+	pid := s.bot.PID()
 	writeJSON(w, http.StatusOK, map[string]any{"service": "Heroku bot", "running": pid != 0, "checkedAt": time.Now().UTC()})
 }

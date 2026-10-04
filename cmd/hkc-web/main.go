@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -37,6 +36,7 @@ type server struct {
 	systemMu     sync.RWMutex
 	latestSystem systemStatus
 	updates      *updateChecker
+	authLimiter  *authRateLimiter
 }
 
 type statusResponse struct {
@@ -99,13 +99,14 @@ func main() {
 
 	notifier := configuredWebhook()
 	if notifier != nil {
-		notifier.observe(botproc.PID() != 0)
+		notifier.observe(botproc.New(herokuDir).PID() != 0)
 	}
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
-		audit: newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
+		authLimiter: newAuthRateLimiter(20, 5*time.Minute),
+		audit:       newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
 	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.jsonl"))
 	go s.collectHostHistory(context.Background())
-	go watchBotState(context.Background(), notifier)
+	go watchBotState(context.Background(), notifier, s.bot)
 	s.updates = &updateChecker{}
 	s.updates.check()
 	go func() {
@@ -171,6 +172,7 @@ func main() {
 		Addr:              addr,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20,
 	}
@@ -201,6 +203,9 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'")
+		if secureRequest(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
@@ -251,10 +256,15 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректный запрос"})
 		return
 	}
+	limitKey := "login:" + clientAddress(r)
+	if !s.allowAuthAttempt(w, limitKey) {
+		return
+	}
 	if !s.auth.authenticate(input.Username, input.Password) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный логин или пароль"})
 		return
 	}
+	s.authLimiter.success(limitKey)
 	token, expires, err := s.sessions.create(strings.TrimSpace(input.Username))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
@@ -275,10 +285,15 @@ func (s *server) register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректный запрос"})
 		return
 	}
+	limitKey := "register:" + clientAddress(r)
+	if !s.allowAuthAttempt(w, limitKey) {
+		return
+	}
 	if err := s.auth.register(input.Invite, input.Username, input.Password); err != nil {
 		writeJSON(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
 		return
 	}
+	s.authLimiter.success(limitKey)
 	token, expires, err := s.sessions.create(strings.TrimSpace(input.Username))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
@@ -387,7 +402,7 @@ func (s *server) adminOverview(w http.ResponseWriter, r *http.Request) {
 			RegistrationURL: fmt.Sprintf("%s://%s/?invite=%s", scheme, r.Host, invite.Token),
 		})
 	}
-	pid := botproc.PID()
+	pid := s.bot.PID()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"users": userViews, "invites": inviteViews, "onlineWindowSeconds": 30,
 		"bot": statusResponse{Running: pid != 0, PID: pid, Uptime: botproc.Uptime(pid), Version: s.bot.Version(), HerokuDir: s.bot.HerokuDir},
@@ -401,7 +416,7 @@ func (s *server) adminBotAction(w http.ResponseWriter, r *http.Request) {
 	}
 	result, status := s.performAction(r.PathValue("action"))
 	if status == http.StatusOK {
-		s.notifier.observe(botproc.PID() != 0)
+		s.notifier.observe(s.bot.PID() != 0)
 	}
 	if status == http.StatusOK {
 		s.record(r, "admin", "bot."+r.PathValue("action"), result.Message)
@@ -474,7 +489,7 @@ func (s *server) changeRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) status(w http.ResponseWriter, _ *http.Request) {
-	pid := botproc.PID()
+	pid := s.bot.PID()
 	_, logErr := os.Stat(s.bot.LogFile)
 	writeJSON(w, http.StatusOK, statusResponse{
 		Running:    pid != 0,
@@ -537,7 +552,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 func (s *server) action(w http.ResponseWriter, r *http.Request) {
 	result, status := s.performAction(r.PathValue("action"))
 	if status == http.StatusOK {
-		s.notifier.observe(botproc.PID() != 0)
+		s.notifier.observe(s.bot.PID() != 0)
 	}
 	if status == http.StatusOK {
 		actor := "user"
@@ -605,13 +620,5 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func tailText(path string, maxLines int) string {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) || err != nil {
-		return ""
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(logfeed.TailLines(path, maxLines), "\n")
 }

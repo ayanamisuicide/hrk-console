@@ -4,11 +4,34 @@ package botproc
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
+
+func TestManagerOnlyFindsBotInItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	cmd := exec.Command("python3", "-c", "import os,time; os.chdir("+strconv.Quote(dir)+"); time.sleep(30)", "python3", "-m", "heroku")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("python3 unavailable: %v", err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() }()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !New(dir).AliveAt(cmd.Process.Pid) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !New(dir).AliveAt(cmd.Process.Pid) {
+		t.Fatal("manager did not find bot in its directory")
+	}
+	if New(other).AliveAt(cmd.Process.Pid) {
+		t.Fatal("manager matched a bot from another directory")
+	}
+}
 
 // Без venv запускать нечего: bash ушёл бы в `source venv/bin/activate` и
 // умер бы молча в .startup.log, а консоль отрапортовала бы об успехе.

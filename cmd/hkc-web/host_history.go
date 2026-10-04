@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"heroku-console/botproc"
 )
 
 const (
@@ -45,14 +44,27 @@ func newHostHistoryStore(path string) *hostHistoryStore {
 	}
 	if err == nil {
 		if len(bytes.TrimSpace(data)) > 0 && bytes.TrimSpace(data)[0] == '[' {
-			_ = json.Unmarshal(data, &store.points)
-			_ = store.compact()
+			if decodeErr := json.Unmarshal(data, &store.points); decodeErr != nil {
+				log.Printf("host history: preserving unreadable legacy file %s: %v", path, decodeErr)
+				store.points = nil
+			} else if compactErr := store.compact(); compactErr != nil {
+				log.Printf("host history: migration failed: %v", compactErr)
+			}
 		} else {
+			invalid := 0
 			for _, line := range bytes.Split(data, []byte{'\n'}) {
+				if len(bytes.TrimSpace(line)) == 0 {
+					continue
+				}
 				var point hostPoint
 				if json.Unmarshal(line, &point) == nil {
 					store.points = append(store.points, point)
+				} else {
+					invalid++
 				}
+			}
+			if invalid > 0 {
+				log.Printf("host history: ignored %d unreadable records in %s; original file preserved", invalid, path)
 			}
 		}
 		store.trim(time.Now())
@@ -195,7 +207,7 @@ func (s *server) collectHostHistory(ctx context.Context) {
 		}
 		_ = s.hostHistory.add(hostPoint{At: time.Now(), CPU: status.CPUPercent,
 			Memory: hostPercent(status.MemoryUsed, status.MemoryTotal),
-			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: botproc.PID()})
+			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: s.bot.PID()})
 	}
 	collect()
 	ticker := time.NewTicker(time.Second)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -63,6 +64,10 @@ func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotImplemented, actionResponse{Message: "консоль доступна только на Linux/WSL"})
 		return
 	}
+	if strings.TrimSpace(os.Getenv("HKC_TERMINAL_ENABLED")) != "1" {
+		writeJSON(w, http.StatusForbidden, actionResponse{Message: "административный терминал отключён; задайте HKC_TERMINAL_ENABLED=1 для явного включения"})
+		return
+	}
 	var request terminalRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, terminalMaxInput+1024))
 	decoder.DisallowUnknownFields()
@@ -88,10 +93,14 @@ func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	started := time.Now()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", request.Command)
+	configureCommandProcess(cmd)
 	cmd.Dir = s.bot.HerokuDir
 	var capture cappedOutput
 	cmd.Stdout, cmd.Stderr = &capture, &capture
 	err := cmd.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		killCommandProcessGroup(cmd)
+	}
 	duration := time.Since(started)
 	output := strings.TrimSpace(strings.ToValidUTF8(capture.buffer.String(), "�"))
 	if capture.cut {

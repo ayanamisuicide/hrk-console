@@ -56,6 +56,14 @@ func (m *Manager) VirtualEnv() string {
 
 // PIDs возвращает все pid процессов бота (обычно один, но не гарантировано).
 func PIDs() []int {
+	return pidsInDir("")
+}
+
+// PIDs returns only bot processes whose working directory is this manager's
+// Heroku directory. This prevents one console from controlling another bot.
+func (m *Manager) PIDs() []int { return pidsInDir(m.HerokuDir) }
+
+func pidsInDir(herokuDir string) []int {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
@@ -70,7 +78,7 @@ func PIDs() []int {
 		if err != nil {
 			continue // процесс исчез между ReadDir и чтением — не бот
 		}
-		if bytes.Contains(bytes.ReplaceAll(data, []byte{0}, []byte{' '}), []byte(needle)) {
+		if bytes.Contains(bytes.ReplaceAll(data, []byte{0}, []byte{' '}), []byte(needle)) && processInDir(pid, herokuDir) {
 			pids = append(pids, pid)
 		}
 	}
@@ -79,6 +87,21 @@ func PIDs() []int {
 	// процессах возвращает то один, то другой.
 	sort.Ints(pids)
 	return pids
+}
+
+func processInDir(pid int, herokuDir string) bool {
+	if herokuDir == "" {
+		return true
+	}
+	want, err := filepath.EvalSymlinks(herokuDir)
+	if err != nil {
+		want = filepath.Clean(herokuDir)
+	}
+	got, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(got) == filepath.Clean(want)
 }
 
 // PID — первый найденный pid бота, 0 если не запущен.
@@ -90,7 +113,16 @@ func PID() int {
 	return pids[0]
 }
 
-func Alive() bool { return PID() != 0 }
+func (m *Manager) PID() int {
+	pids := m.PIDs()
+	if len(pids) == 0 {
+		return 0
+	}
+	return pids[0]
+}
+
+func Alive() bool              { return PID() != 0 }
+func (m *Manager) Alive() bool { return m.PID() != 0 }
 
 // AliveAt проверяет один конкретный pid вместо полного обхода /proc —
 // читает единственный файл, а не листинг + cmdline на каждый процесс в
@@ -105,6 +137,8 @@ func AliveAt(pid int) bool {
 	}
 	return bytes.Contains(bytes.ReplaceAll(data, []byte{0}, []byte{' '}), []byte(needle))
 }
+
+func (m *Manager) AliveAt(pid int) bool { return AliveAt(pid) && processInDir(pid, m.HerokuDir) }
 
 // Uptime форматирует время жизни процесса: "1ч 12м" / "34м 05с" / "—".
 func Uptime(pid int) string {

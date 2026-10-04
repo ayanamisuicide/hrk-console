@@ -72,11 +72,11 @@ func (n *stateNotifier) send(ctx context.Context, running bool) {
 	}
 }
 
-func watchBotState(ctx context.Context, notifier *stateNotifier) {
+func watchBotState(ctx context.Context, notifier *stateNotifier, bot *botproc.Manager) {
 	if notifier == nil {
 		return
 	}
-	notifier.observe(botproc.PID() != 0)
+	notifier.observe(bot.PID() != 0)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -84,7 +84,7 @@ func watchBotState(ctx context.Context, notifier *stateNotifier) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			notifier.observe(botproc.PID() != 0)
+			notifier.observe(bot.PID() != 0)
 		}
 	}
 }

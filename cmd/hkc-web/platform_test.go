@@ -71,10 +71,25 @@ func TestAdminTerminalRequiresToken(t *testing.T) {
 	}
 }
 
+func TestAdminTerminalDisabledByDefault(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("terminal is available only on Linux")
+	}
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd","confirmed":true}`))
+	r.Header.Set("Authorization", "Bearer admin-secret")
+	w := httptest.NewRecorder()
+	s.adminTerminal(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unexpected code: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("terminal is available only on Linux")
 	}
+	t.Setenv("HKC_TERMINAL_ENABLED", "1")
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd; printf terminal-ok","confirmed":true}`))
 	r.Header.Set("Authorization", "Bearer admin-secret")
