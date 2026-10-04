@@ -159,6 +159,20 @@
       <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
     </section>
 
+    <section class="admin-section config-section">
+      <div class="section-heading"><div><span class="eyebrow">SAFE CONFIG</span><h2>Конфигурация Heroku</h2></div><span class="muted">Текущие значения никогда не возвращаются в браузер</span></div>
+      <form id="config-form" class="config-form" autocomplete="off">
+        <label>API ID <input name="api_id" inputmode="numeric" placeholder="Новое значение"></label>
+        <label>API hash <input name="api_hash" type="password" placeholder="Новое значение"></label>
+        <label>Redis URI <input name="redis_uri" type="password" placeholder="Новое значение"></label>
+        <label>Database URI <input name="db_uri" type="password" placeholder="Новое значение"></label>
+        <label>App name <input name="app_name" placeholder="Новое значение"></label>
+        <div class="config-actions"><button id="config-preview" type="button" class="compact">Проверить изменения</button><button type="submit" class="primary">Сохранить</button></div>
+      </form>
+      <div id="config-status" class="config-status"></div>
+      <p id="config-preview-output" class="backup-note">Заполните только параметры, которые нужно изменить.</p>
+    </section>
+
     <section class="admin-section">
       <div class="section-heading"><div><span class="eyebrow">CONFIG RECOVERY</span><h2>История конфигурации</h2></div><span class="muted">До 50 автоматических снимков перед изменениями</span></div>
       <div id="config-history-list" class="backup-list"></div>

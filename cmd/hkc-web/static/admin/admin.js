@@ -28,6 +28,7 @@ let configHistorySignature = '';
 let securitySignature = '';
 let schedulesSignature = '';
 let maintenanceEnabled = false;
+let configSignature = '';
 try {
   const openBranches = JSON.parse(localStorage.getItem('hkc-admin-tree') || 'null');
   if (Array.isArray(openBranches)) document.querySelectorAll('.admin-tree-group').forEach((branch) => { branch.open = openBranches.includes(branch.dataset.tree); });
@@ -366,6 +367,15 @@ function renderConfigHistory(history) {
     const title = document.createElement('strong'); title.textContent = formatDate(version.createdAt);
     const detail = document.createElement('small'); detail.textContent = `${version.name} · ${(version.size / 1024).toFixed(1)} КБ`;
     info.append(title, detail);
+    const actions = document.createElement('span'); actions.className = 'row-actions';
+    const inspect = document.createElement('button'); inspect.className = 'compact'; inspect.textContent = 'Сравнить';
+    inspect.addEventListener('click', async () => {
+      try {
+        const diff = await adminRequest(`/api/admin/config/history/${encodeURIComponent(version.name)}/diff`);
+        const labels = {added: 'будет добавлен', removed: 'будет удалён', changed: 'будет изменён'};
+        showNotice(diff.changes?.length ? diff.changes.map((item) => `${item.key}: ${labels[item.change] || item.change}`).join('\n') : 'Отличий от текущей конфигурации нет');
+      } catch (error) { showNotice(error.message, 'error'); }
+    });
     const restore = document.createElement('button'); restore.className = 'compact'; restore.textContent = 'Восстановить';
     restore.addEventListener('click', async () => {
       if (!await confirmAction('Восстановить конфигурацию?', `Текущая конфигурация сначала будет сохранена. После восстановления ${version.name} перезапустите бота.`)) return;
@@ -374,8 +384,46 @@ function renderConfigHistory(history) {
         showNotice(result.message); await refresh();
       } catch (error) { showNotice(error.message, 'error'); }
     });
-    row.append(info, restore); list.append(row);
+    actions.append(inspect, restore); row.append(info, actions); list.append(row);
   }
+}
+
+function renderConfig(data) {
+  const signature = JSON.stringify(data);
+  if (signature === configSignature) return;
+  configSignature = signature;
+  const labels = {api_id: 'API ID', api_hash: 'API hash', redis_uri: 'Redis', db_uri: 'Database', app_name: 'App name'};
+  const status = $('#config-status'); status.replaceChildren();
+  for (const [key, label] of Object.entries(labels)) {
+    const item = document.createElement('div');
+    const text = document.createElement('span'); text.textContent = label;
+    const state = document.createElement('strong'); state.textContent = data.configured?.[key] ? 'настроен' : 'не задан';
+    item.append(text, state);
+    if (data.configured?.[key]) {
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'compact danger'; remove.textContent = 'Удалить';
+      remove.addEventListener('click', async () => {
+        if (!await confirmAction(`Удалить ${label}?`, 'Перед удалением будет создан снимок. Для применения потребуется перезапуск бота.')) return;
+        try { await adminRequest(`/api/admin/config/${encodeURIComponent(key)}`, {method: 'DELETE'}); await refresh(); }
+        catch (error) { showNotice(error.message, 'error'); }
+      });
+      item.append(remove);
+    }
+    status.append(item);
+  }
+}
+
+function configPayload() {
+  return Object.fromEntries([...new FormData($('#config-form')).entries()].filter(([, value]) => String(value).trim() !== ''));
+}
+
+async function previewConfig() {
+  const payload = configPayload();
+  const result = await adminRequest('/api/admin/config/validate', {method: 'POST', body: JSON.stringify(payload)});
+  const labels = {added: 'будет добавлен', changed: 'будет изменён'};
+  $('#config-preview-output').textContent = result.changes.length
+    ? result.changes.map((item) => `${item.key}: ${labels[item.change] || item.change}`).join(' · ')
+    : 'Фактических изменений нет.';
+  return result;
 }
 
 function renderSecurity(data) {
@@ -443,10 +491,11 @@ async function refresh() {
   }
   refreshBusy = true;
   try {
-    const [data, audit, backups, configHistory, security, maintenance, schedules] = await Promise.all([
+    const [data, audit, backups, configHistory, security, maintenance, schedules, config] = await Promise.all([
       adminRequest('/api/admin/overview'), adminRequest('/api/admin/audit'), adminRequest('/api/admin/backups'),
       adminRequest('/api/admin/config/history'), adminRequest('/api/admin/security'),
       adminRequest('/api/admin/maintenance'), adminRequest('/api/admin/schedules'),
+      adminRequest('/api/admin/config'),
     ]);
     animateValue($('#users-count'), data.users.length);
     animateValue($('#online-count'), data.users.filter((user) => user.online).length);
@@ -460,6 +509,7 @@ async function refresh() {
     renderSecurity(security);
     renderMaintenance(maintenance);
     renderSchedules(schedules.schedules || []);
+    renderConfig(config);
     await refreshUpdates();
   } catch (error) {
     if (adminToken) showNotice(error.message, 'error');
@@ -595,6 +645,25 @@ $('#schedule-form').addEventListener('submit', async (event) => {
     await adminRequest('/api/admin/schedules', {method: 'POST', body: JSON.stringify({action: $('#schedule-action').value, runAt: runAt.toISOString()})});
     showNotice('Действие добавлено в расписание');
     await refresh();
+  } catch (error) { showNotice(error.message, 'error'); }
+});
+
+$('#config-preview').addEventListener('click', async () => {
+  try { await previewConfig(); }
+  catch (error) { $('#config-preview-output').textContent = error.message; }
+});
+
+$('#config-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const preview = await previewConfig();
+    if (!preview.changes.length) return;
+    const summary = $('#config-preview-output').textContent;
+    if (!await confirmAction('Сохранить конфигурацию?', `${summary}\n\nТекущая версия будет сохранена автоматически. Для применения потребуется перезапуск бота.`)) return;
+    const result = await adminRequest('/api/admin/config', {method: 'PATCH', body: JSON.stringify(configPayload())});
+    $('#config-form').reset();
+    $('#config-preview-output').textContent = 'Заполните только параметры, которые нужно изменить.';
+    showNotice(result.message); await refresh();
   } catch (error) { showNotice(error.message, 'error'); }
 });
 

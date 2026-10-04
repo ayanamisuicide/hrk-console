@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,6 +107,87 @@ func encodeConfigValue(key, value string) (json.RawMessage, error) {
 	return json.Marshal(value)
 }
 
+func decodeConfigInput(r *http.Request) (map[string]json.RawMessage, []string, error) {
+	var input map[string]string
+	if err := json.NewDecoder(io.LimitReader(r.Body, 32*1024)).Decode(&input); err != nil || len(input) == 0 {
+		return nil, nil, errors.New("некорректные параметры")
+	}
+	encoded := make(map[string]json.RawMessage, len(input))
+	keys := make([]string, 0, len(input))
+	for key, value := range input {
+		if !validHerokuKey(key) {
+			return nil, nil, errors.New("неизвестный параметр: " + key)
+		}
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		item, err := encodeConfigValue(key, value)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", key, err)
+		}
+		encoded[key] = item
+		keys = append(keys, key)
+	}
+	if len(keys) == 0 {
+		return nil, nil, errors.New("укажите хотя бы одно новое значение")
+	}
+	sort.Strings(keys)
+	return encoded, keys, nil
+}
+
+type configChange struct {
+	Key    string `json:"key"`
+	Change string `json:"change"`
+}
+
+func configChanges(before, after map[string]json.RawMessage) []configChange {
+	changes := make([]configChange, 0)
+	for _, key := range herokuConfigKeys {
+		oldValue, hadOld := before[key]
+		newValue, hasNew := after[key]
+		change := ""
+		switch {
+		case !hadOld && hasNew:
+			change = "added"
+		case hadOld && !hasNew:
+			change = "removed"
+		case hadOld && hasNew && !bytes.Equal(oldValue, newValue):
+			change = "changed"
+		}
+		if change != "" {
+			changes = append(changes, configChange{Key: key, Change: change})
+		}
+	}
+	return changes
+}
+
+func (s *server) validateConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAuthorized(r) {
+		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
+		return
+	}
+	encoded, _, err := decodeConfigInput(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
+		return
+	}
+	s.configMu.Lock()
+	current, err := s.readConfigLocked()
+	s.configMu.Unlock()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
+		return
+	}
+	next := make(map[string]json.RawMessage, len(current)+len(encoded))
+	for key, value := range current {
+		next[key] = value
+	}
+	for key, value := range encoded {
+		next[key] = value
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"valid": true, "changes": configChanges(current, next), "restartRequired": true})
+}
+
 func (s *server) adminConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -130,31 +212,9 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
 		return
 	}
-	var input map[string]string
-	if err := json.NewDecoder(io.LimitReader(r.Body, 32*1024)).Decode(&input); err != nil || len(input) == 0 {
-		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректные параметры"})
-		return
-	}
-	encoded := make(map[string]json.RawMessage, len(input))
-	keys := make([]string, 0, len(input))
-	for key, value := range input {
-		if !validHerokuKey(key) {
-			writeJSON(w, http.StatusBadRequest, actionResponse{Message: "неизвестный параметр: " + key})
-			return
-		}
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		item, err := encodeConfigValue(key, value)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, actionResponse{Message: key + ": " + err.Error()})
-			return
-		}
-		encoded[key] = item
-		keys = append(keys, key)
-	}
-	if len(keys) == 0 {
-		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "укажите хотя бы одно новое значение"})
+	encoded, keys, err := decodeConfigInput(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
 		return
 	}
 	s.configMu.Lock()
@@ -173,7 +233,6 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
 		return
 	}
-	sort.Strings(keys)
 	s.record(r, "admin", "config.update", strings.Join(keys, ", "))
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "настройки сохранены; для применения перезапустите бота"})
 }

@@ -141,3 +141,36 @@ func (s *server) restoreConfigHistory(w http.ResponseWriter, r *http.Request) {
 	s.record(r, "admin", "config.restore", name)
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "конфигурация восстановлена; перезапустите бот для применения"})
 }
+
+func (s *server) diffConfigHistory(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAuthorized(r) {
+		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
+		return
+	}
+	name := r.PathValue("name")
+	if !configHistoryName.MatchString(name) {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректное имя версии"})
+		return
+	}
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	path := filepath.Join(s.configHistoryDir(), name)
+	info, err := os.Lstat(path)
+	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		err = errors.New("config history entry is not a regular file")
+	}
+	var historical map[string]json.RawMessage
+	if err == nil {
+		data, readErr := os.ReadFile(path)
+		err = readErr
+		if err == nil {
+			err = json.Unmarshal(data, &historical)
+		}
+	}
+	current, currentErr := s.readConfigLocked()
+	if err != nil || currentErr != nil || historical == nil {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "версия конфигурации повреждена или недоступна"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "changes": configChanges(current, historical)})
+}

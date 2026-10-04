@@ -146,6 +146,44 @@ test('maintenance mode and scheduler are manageable from admin', async ({ page }
   await expect(page.locator('#schedule-list')).toContainText('ожидает');
 });
 
+test('config changes are previewed without exposing values', async ({ page }) => {
+  let savedPayload;
+  await page.addInitScript(() => {
+    sessionStorage.setItem('hkc-admin-token', 'test-token');
+    localStorage.setItem('hkc-admin-tree', JSON.stringify(['history']));
+  });
+  await page.route('**/api/admin/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let body = path === '/api/admin/overview' ? {users: [], invites: [], bot: {running: false}}
+      : path === '/api/admin/audit' ? {events: []}
+      : path === '/api/admin/backups' ? {backups: []}
+      : path === '/api/admin/config/history' ? {history: []}
+      : path === '/api/admin/security' ? {rateLimiter: {}, features: {}}
+      : path === '/api/admin/maintenance' ? {enabled: false}
+      : path === '/api/admin/schedules' ? {schedules: []}
+      : path === '/api/admin/config' && request.method() === 'GET' ? {configured: {api_id: true, api_hash: true, redis_uri: false, db_uri: false, app_name: true}}
+      : path === '/api/admin/config/validate' ? {valid: true, changes: [{key: 'api_hash', change: 'changed'}], restartRequired: true}
+      : {};
+    if (path === '/api/admin/config' && request.method() === 'PATCH') {
+      savedPayload = request.postDataJSON();
+      body = {ok: true, message: 'saved'};
+    }
+    return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(body)});
+  });
+  await page.goto('/admin/');
+  await expect(page.locator('#config-status')).toContainText('API hash');
+  await page.locator('[name="api_hash"]').fill('0123456789abcdef0123456789abcdef');
+  await page.locator('#config-preview').click();
+  await expect(page.locator('#config-preview-output')).toContainText('api_hash: будет изменён');
+  await expect(page.locator('body')).not.toContainText('0123456789abcdef0123456789abcdef');
+  await page.locator('#config-form button[type="submit"]').click();
+  await expect(page.locator('#confirm-dialog')).toBeVisible();
+  await page.locator('#confirm-accept').click();
+  await expect.poll(() => savedPayload).toEqual({api_hash: '0123456789abcdef0123456789abcdef'});
+  await expect(page.locator('[name="api_hash"]')).toHaveValue('');
+});
+
 test('live resource endpoints refresh every second', async ({ page }) => {
   const hits = {status: 0, system: 0, history: 0};
   await page.route('**/api/**', async (route) => {

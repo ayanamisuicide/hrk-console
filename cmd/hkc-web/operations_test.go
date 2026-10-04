@@ -62,6 +62,47 @@ func TestConfigHistorySnapshotAndRestore(t *testing.T) {
 	}
 }
 
+func TestConfigValidationAndHistoryDiffHideValues(t *testing.T) {
+	s := newTestServer(t)
+	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := "0123456789abcdef0123456789abcdef"
+	if err := os.WriteFile(s.configPath(), []byte(`{"api_id":123,"app_name":"before"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	s.validateConfig(response, adminRequest(http.MethodPost, "/api/admin/config/validate", strings.NewReader(`{"api_hash":"`+secret+`","app_name":"after"}`)))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"key":"api_hash","change":"added"`) || !strings.Contains(response.Body.String(), `"key":"app_name","change":"changed"`) {
+		t.Fatalf("validate: %d %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), secret) {
+		t.Fatal("validation response leaked the submitted value")
+	}
+
+	s.configMu.Lock()
+	if err := s.snapshotConfigLocked(); err != nil {
+		s.configMu.Unlock()
+		t.Fatal(err)
+	}
+	history, _ := s.configHistoryLocked()
+	s.configMu.Unlock()
+	if err := os.WriteFile(s.configPath(), []byte(`{"api_id":456,"api_hash":"`+secret+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := adminRequest(http.MethodGet, "/api/admin/config/history/diff", nil)
+	request.SetPathValue("name", history[0].Name)
+	response = httptest.NewRecorder()
+	s.diffConfigHistory(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"change":"removed"`) {
+		t.Fatalf("diff: %d %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), secret) {
+		t.Fatal("history diff leaked a configuration value")
+	}
+}
+
 func TestDiagnosticBundleRedactsSecrets(t *testing.T) {
 	s := newTestServer(t)
 	s.audit = newAuditStore(filepath.Join(t.TempDir(), "audit.jsonl"))
