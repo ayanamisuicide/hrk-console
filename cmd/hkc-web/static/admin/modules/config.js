@@ -129,8 +129,6 @@ export function createConfig(ctx) {
     const labels = {
       api_id: "API ID",
       api_hash: "API hash",
-      redis_uri: "Redis",
-      db_uri: "Database",
       app_name: "App name",
     };
     const status = ctx.$("#config-status");

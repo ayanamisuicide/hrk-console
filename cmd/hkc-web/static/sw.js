@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v24-watchdog";
+const CACHE = "hkc-shell-v25-cards-motion";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -13,7 +13,6 @@ const ASSETS = [
   "/icon.svg",
   "/manifest.webmanifest",
   "/styles/controls.css",
-  "/styles/diagnostics.css",
   "/styles/dialogs.css",
   "/styles/foundation.css",
   "/styles/interactions.css",

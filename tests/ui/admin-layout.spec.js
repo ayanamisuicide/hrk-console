@@ -63,7 +63,7 @@ async function mockAdmin(page) {
         sessions: 2,
         apiTokens: 1,
         rateLimiter: { blockedClients: 0 },
-        features: { terminal: false, trustedProxy: true },
+        features: { trustedProxy: true },
       },
       "/api/admin/watchdog": {
         settings: { enabled: true, timeoutSeconds: 180 },
@@ -103,7 +103,6 @@ for (const width of [390, 1440])
         "access",
         "settings",
         "history",
-        "service",
         "updates",
       ]) {
         await page.locator(`[data-admin-view="${view}"]`).click();
@@ -122,13 +121,33 @@ for (const width of [390, 1440])
         ).toBe(false);
       }
       await page.locator('[data-admin-view="history"]').click();
-      await expect(page.locator(".audit-group")).toHaveCount(8);
-      await page.locator(".audit-group summary").first().click();
-      await expect(page.locator(".audit-detail").first()).toBeVisible();
+      await expect(
+        page.locator(
+          '[data-admin-view="service"], #terminal-form, #diagnostic-output',
+        ),
+      ).toHaveCount(0);
+      await page.locator("#audit-more").click();
+      await expect(page.locator("#audit-page")).toHaveText(
+        width === 390 ? "2 / 8" : "2 / 5",
+      );
+      await page.locator("#audit-prev").click();
+      await expect(page.locator(".audit-group")).toHaveCount(
+        width === 390 ? 4 : 6,
+      );
+      await page.locator(".audit-group").first().click();
+      await expect(page.locator("#audit-inspector")).toBeVisible();
+      if (width === 390) {
+        await page.screenshot({
+          path: testInfo.outputPath("audit-mobile-detail.png"),
+          animations: "disabled",
+        });
+        await page.keyboard.press("Escape");
+        await expect(page.locator(".audit-dialog")).not.toBeVisible();
+      }
       await page.locator("#admin-refresh").click();
       await expect(page.locator(".audit-group").first()).toHaveAttribute(
-        "open",
-        "",
+        "aria-pressed",
+        "true",
       );
       await page.locator("#audit-search").fill("watchdog");
       await expect(page.locator("#audit-count")).toContainText("15 групп");
@@ -157,4 +176,59 @@ test("навигация сохраняет несохранённые поля 
   await page.locator('[data-admin-view="history"]').click();
   await page.locator('[data-admin-view="settings"]').click();
   await expect(page.locator('[name="app_name"]')).toHaveValue("draft-name");
+});
+
+test("история анимирует смену подробностей, наведение не создаёт чужую плашку", async ({
+  page,
+}, testInfo) => {
+  await mockAdmin(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/admin/");
+  await page.locator('[data-admin-view="settings"]').click();
+  await expect(page.locator("#config-status")).not.toContainText("Redis");
+  await expect(page.locator("#config-status")).not.toContainText("Database");
+  await expect(page.locator('[name="redis_uri"], [name="db_uri"]')).toHaveCount(
+    0,
+  );
+  const stat = page.locator(".admin-overview .summary article").first();
+  const before = await stat.evaluate((el) => ({
+    background: getComputedStyle(el).backgroundColor,
+    transform: getComputedStyle(el).transform,
+  }));
+  await stat.hover();
+  expect(
+    await stat.evaluate((el) => ({
+      background: getComputedStyle(el).backgroundColor,
+      transform: getComputedStyle(el).transform,
+    })),
+  ).toEqual(before);
+  expect(
+    await stat.evaluate((el) => getComputedStyle(el, "::before").display),
+  ).toBe("none");
+  await page.locator('[data-admin-view="history"]').click();
+  await page.locator(".audit-group").nth(1).click();
+  await expect(page.locator("#audit-inspector h3")).toHaveText(
+    "Изменение настроек",
+  );
+  expect(
+    await page
+      .locator("#audit-inspector")
+      .evaluate((el) => el.getAnimations().length),
+  ).toBeGreaterThan(0);
+  await page.locator("#admin-refresh").click();
+  await expect(page.locator(".audit-group").nth(1)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.locator("#history-tab-audit").hover();
+  expect(
+    await page
+      .locator("#history-tab-audit")
+      .evaluate((el) => getComputedStyle(el).borderRadius),
+  ).toBe("10px");
+  await page.screenshot({
+    path: testInfo.outputPath("audit-selected.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
 });

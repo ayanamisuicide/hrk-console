@@ -82,7 +82,6 @@ def main():
                 "HKC_UPDATE_ENABLED": "1", "HKC_WEB_ADDR": "127.0.0.1:8080",
                 "HKC_UPDATE_HEALTH_URL": "http://127.0.0.1:8080"})
     env["HKC_SERVICE_USER"] = args.service_user
-    env.setdefault("HKC_TERMINAL_ENABLED", "0")
     if local:
         env["HKC_LOCAL_SOURCE_DIR"] = str(local)
     else:

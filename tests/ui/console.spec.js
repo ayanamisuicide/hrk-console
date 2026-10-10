@@ -218,59 +218,6 @@ test.describe("PWA", () => {
   });
 });
 
-test("терминал требует подтверждение и показывает результат выполнения", async ({
-  page,
-}) => {
-  let executions = 0;
-  await page.addInitScript(() => {
-    sessionStorage.setItem("hkc-admin-token", "test-token");
-    localStorage.setItem("hkc-admin-tree", JSON.stringify(["service"]));
-  });
-  await page.route("**/api/admin/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    const body =
-      path === "/api/admin/overview"
-        ? {
-            users: [],
-            invites: [],
-            bot: { running: false, herokuDir: "/srv/Heroku" },
-          }
-        : path === "/api/admin/audit"
-          ? { events: [] }
-          : path === "/api/admin/backups"
-            ? { backups: [] }
-            : path === "/api/admin/terminal"
-              ? { output: "ok", actor: "tester", exitCode: 0, durationMs: 12 }
-              : {};
-    if (path === "/api/admin/terminal") {
-      executions++;
-      expect(route.request().postDataJSON()).toEqual({
-        command: "pwd",
-        confirmed: true,
-      });
-    }
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(body),
-    });
-  });
-  await page.goto("/admin/");
-  await page.locator("#terminal-command").fill("pwd");
-  await page.locator("#terminal-run").click();
-  await expect(page.locator("#confirm-dialog")).toBeVisible();
-  expect(executions).toBe(0);
-  await page.locator('#confirm-dialog [value="cancel"]').click();
-  expect(executions).toBe(0);
-  await page.locator("#terminal-run").click();
-  await page.locator("#confirm-accept").click();
-  await expect(page.locator("#terminal-output")).toContainText("ok");
-  await expect(page.locator("#terminal-meta")).toContainText(
-    "tester · exit 0 · 12 мс",
-  );
-  expect(executions).toBe(1);
-});
-
 test("админка настраивает автоматическое восстановление", async ({ page }, testInfo) => {
   let settings = { enabled: true, timeoutSeconds: 180 };
   const oldRequests = [];

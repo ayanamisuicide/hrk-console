@@ -82,13 +82,6 @@
               ><small>События и откат</small></span
             >
           </button>
-          <button data-admin-view="service" type="button">
-            <span aria-hidden="true">⌘</span
-            ><span
-              ><strong>Диагностика</strong
-              ><small>Проверки и терминал</small></span
-            >
-          </button>
           <button data-admin-view="updates" type="button">
             <span aria-hidden="true">↑</span
             ><span
@@ -268,18 +261,6 @@
                     type="password"
                     placeholder="Новое значение" /></label
                 ><label
-                  >Адрес Redis
-                  <input
-                    name="redis_uri"
-                    type="password"
-                    placeholder="Новое значение" /></label
-                ><label
-                  >Адрес базы данных
-                  <input
-                    name="db_uri"
-                    type="password"
-                    placeholder="Новое значение" /></label
-                ><label
                   >Имя приложения
                   <input name="app_name" placeholder="Новое значение"
                 /></label>
@@ -375,16 +356,27 @@
                     aria-label="Поиск по истории действий" /></label
                 ><span class="muted">Подробности — по нажатию</span>
               </div>
-              <div id="audit-groups" class="audit-groups"></div>
+              <div class="audit-workspace">
+                <div
+                  id="audit-groups"
+                  class="audit-groups"
+                  aria-label="События"
+                ></div>
+                <aside
+                  id="audit-inspector"
+                  class="audit-inspector"
+                  aria-label="Подробности события"
+                ></aside>
+              </div>
               <div class="audit-footer">
-                <button
-                  id="audit-more"
-                  class="compact audit-more"
-                  type="button"
-                  hidden
-                >
-                  Показать ещё
-                </button>
+                <div class="audit-pagination">
+                  <button id="audit-prev" class="compact" type="button">
+                    ← Назад</button
+                  ><span id="audit-page" class="muted"></span
+                  ><button id="audit-more" class="compact" type="button">
+                    Далее →
+                  </button>
+                </div>
                 <p class="muted">Последние 100 событий · повторы объединены</p>
               </div>
               <p id="audit-empty" class="empty" hidden>Действий пока нет.</p>
@@ -434,87 +426,6 @@
               <p id="config-history-empty" class="empty" hidden>
                 Снимков конфигурации пока нет.
               </p>
-            </section>
-          </section>
-
-          <section
-            class="admin-page"
-            id="admin-service"
-            data-admin-page="service"
-            aria-labelledby="admin-page-title"
-            hidden
-          >
-            <section class="admin-section console-section">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">ПРОВЕРКИ HEROKU</span>
-                  <h2>Диагностика</h2>
-                </div>
-                <span class="muted">Фиксированные команды</span>
-              </div>
-              <div class="console-actions">
-                <button data-diagnostic="process" class="compact">
-                  Процесс</button
-                ><button data-diagnostic="startup-log" class="compact">
-                  Лог запуска</button
-                ><button data-diagnostic="git-status" class="compact">
-                  Git</button
-                ><button data-diagnostic="python-version" class="compact">
-                  Python
-                </button>
-              </div>
-              <pre id="diagnostic-output">Выберите проверку выше.</pre>
-              <div class="bundle-actions">
-                <button
-                  id="download-diagnostics"
-                  class="primary compact"
-                  type="button"
-                >
-                  Скачать ZIP</button
-                ><small
-                  >Конфигурационные секреты исключены; типичные токены в логах
-                  маскируются.</small
-                >
-              </div>
-            </section>
-            <section class="admin-section">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">WSL / HEROKU_DIR</span>
-                  <h2>Терминал</h2>
-                </div>
-                <span class="muted">Ctrl + Enter</span>
-              </div>
-              <form id="terminal-form" class="terminal-form">
-                <label for="terminal-command"
-                  ><span>Команда</span
-                  ><small>Выполняется с правами службы панели</small></label
-                >
-                <div class="terminal-prompt">
-                  <b>$</b
-                  ><textarea
-                    id="terminal-command"
-                    rows="2"
-                    maxlength="4096"
-                    spellcheck="false"
-                    placeholder="git status --short"
-                  ></textarea>
-                </div>
-                <div class="terminal-actions">
-                  <button
-                    id="terminal-run"
-                    type="submit"
-                    class="primary compact"
-                  >
-                    ▶ Выполнить</button
-                  ><button id="terminal-clear" type="button" class="compact">
-                    Очистить</button
-                  ><span id="terminal-meta">Готово к команде</span>
-                </div>
-              </form>
-              <pre id="terminal-output" class="terminal-output">
-Команды ещё не выполнялись.</pre
-              >
             </section>
           </section>
 

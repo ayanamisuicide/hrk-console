@@ -2,12 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 )
@@ -94,18 +91,5 @@ func TestDetectIncidentsGroupsErrorsAndWarningBursts(t *testing.T) {
 	got := detectIncidents(lines)
 	if len(got) != 2 || got[0].Module != "Net" || got[0].Count != 3 || got[1].Count != 2 || got[1].Context == "" {
 		t.Fatalf("incidents: %+v", got)
-	}
-}
-
-// TestTerminalRequiresExplicitConfirmation проверяет отказ команды без отдельного подтверждения.
-func TestTerminalRequiresExplicitConfirmation(t *testing.T) {
-	t.Setenv("HKC_TERMINAL_ENABLED", "1")
-	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd"}`))
-	r.Header.Set("Authorization", "Bearer admin-secret")
-	w := httptest.NewRecorder()
-	s.adminTerminal(w, r)
-	if w.Code != http.StatusPreconditionRequired && w.Code != http.StatusNotImplemented {
-		t.Fatalf("unexpected status %d: %s", w.Code, w.Body.String())
 	}
 }

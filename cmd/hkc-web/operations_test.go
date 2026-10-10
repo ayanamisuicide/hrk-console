@@ -1,14 +1,12 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -104,57 +102,6 @@ func TestConfigValidationAndHistoryDiffHideValues(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), secret) {
 		t.Fatal("history diff leaked a configuration value")
-	}
-}
-
-// TestDiagnosticBundleRedactsSecrets проверяет маскирование известных форматов секретов в диагностическом
-// архиве.
-func TestDiagnosticBundleRedactsSecrets(t *testing.T) {
-	s := newTestServer(t)
-	s.audit = newAuditStore(filepath.Join(t.TempDir(), "audit.jsonl"))
-	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	secret := "very-secret-value"
-	config := `{"api_hash":"` + secret + `","api_id":123}`
-	if err := os.WriteFile(s.configPath(), []byte(config), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	logLine := "bot_token=" + secret + " hkc.identifier.another-secret"
-	if err := os.WriteFile(s.bot.LogFile, []byte(logLine), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	response := httptest.NewRecorder()
-	s.diagnosticBundle(response, adminRequest(http.MethodGet, "/api/admin/diagnostic-bundle", nil))
-	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/zip" {
-		t.Fatalf("bundle: %d %s", response.Code, response.Body.String())
-	}
-	archive, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	all := bytes.Buffer{}
-	names := make(map[string]bool)
-	for _, file := range archive.File {
-		names[file.Name] = true
-		reader, err := file.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = io.Copy(&all, reader)
-		_ = reader.Close()
-	}
-	for _, name := range []string{"version.json", "status.json", "system.json", "config-summary.json", "audit.json", "bot.log"} {
-		if !names[name] {
-			t.Errorf("bundle is missing %s", name)
-		}
-	}
-	if strings.Contains(all.String(), secret) || strings.Contains(all.String(), "another-secret") {
-		t.Fatalf("bundle leaked a secret: %s", all.String())
-	}
-	if !strings.Contains(all.String(), "[REDACTED]") {
-		t.Fatal("bundle did not contain a redaction marker")
 	}
 }
 

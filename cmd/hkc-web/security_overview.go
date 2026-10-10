@@ -89,7 +89,6 @@ func (s *server) securityOverview(w http.ResponseWriter, r *http.Request) {
 		Sessions: sessions, SessionUsers: sessionUsers,
 		RateLimiter: s.authLimiter.overview(),
 		Features: map[string]bool{
-			"terminal":     enabledEnv("HKC_TERMINAL_ENABLED"),
 			"trustedProxy": enabledEnv("HKC_TRUST_PROXY"),
 			"publicStatus": enabledEnv("HKC_PUBLIC_STATUS"),
 			"updates":      enabledEnv("HKC_UPDATE_ENABLED"),

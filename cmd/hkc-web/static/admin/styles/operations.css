@@ -1,15 +1,5 @@
 /* Автоматическое восстановление, безопасность и настройки.
  * Положение файла в списке импортов определяет приоритет этих правил. */
-.bundle-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 20px 20px;
-}
-.bundle-actions small {
-  color: var(--muted);
-  font-size: 10px;
-}
 .security-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -34,10 +24,6 @@
 }
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 720px) {
-  .bundle-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
   .security-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -89,7 +75,9 @@
   border-radius: 20px;
   background: var(--bg);
   cursor: pointer;
-  transition: background 250ms ease, border-color 250ms ease;
+  transition:
+    background 250ms ease,
+    border-color 250ms ease;
 }
 .watchdog-switch input::after {
   content: "";
@@ -100,10 +88,12 @@
   height: 14px;
   border-radius: 50%;
   background: var(--muted);
-  transition: transform 250ms var(--ease), background 250ms ease;
+  transition:
+    transform 250ms var(--ease),
+    background 250ms ease;
 }
 .watchdog-switch input:checked {
-  background: rgba(97, 242, 202, .15);
+  background: rgba(97, 242, 202, 0.15);
   border-color: var(--mint);
 }
 .watchdog-switch input:checked::after {
@@ -176,7 +166,7 @@
 .watchdog-live span {
   color: var(--muted);
   font-size: 8px;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
 }
 .watchdog-live strong {
   color: var(--mint);

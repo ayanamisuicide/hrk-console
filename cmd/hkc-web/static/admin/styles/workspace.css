@@ -122,6 +122,27 @@
 .admin-overview .summary article::after {
   display: none;
 }
+.admin-overview .summary article::before {
+  display: none;
+}
+.admin-overview .summary article:hover {
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+  border-color: var(--line);
+}
+.admin-overview .summary article {
+  cursor: default;
+}
+.admin-page .config-status {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.history-tabs {
+  padding-bottom: 12px;
+}
+.history-tabs button::after {
+  display: none;
+}
 .admin-overview .summary strong {
   font-size: 22px;
   line-height: 1;
@@ -256,18 +277,22 @@
 .history-tabs button {
   background: transparent;
   border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
   padding: 12px 16px;
   color: var(--muted);
   font-size: 11px;
 }
 .history-tabs button[aria-selected="true"] {
   color: var(--mint);
-  border-bottom-color: var(--mint);
+  border-color: color-mix(in srgb, var(--mint) 24%, var(--line));
+  background: color-mix(in srgb, var(--mint) 6%, var(--panel));
 }
 .history-tabs button:hover {
-  color: var(--text);
+  color: var(--mint);
+  background: color-mix(in srgb, var(--mint) 4%, var(--panel));
+  box-shadow: none;
+  transform: none;
 }
 #admin-history .backup-list {
   max-height: 410px;
@@ -297,12 +322,6 @@
 }
 .admin-page .invite-form {
   padding: 14px 18px;
-}
-.admin-page #diagnostic-output,
-.admin-page .terminal-output {
-  min-height: 70px;
-  max-height: 220px;
-  overflow: auto;
 }
 .admin-page .watchdog-intro {
   margin: 14px 18px;

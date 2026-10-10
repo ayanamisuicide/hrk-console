@@ -106,12 +106,6 @@
     margin-left: auto;
   }
 }
-/* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
-@media (prefers-reduced-motion: reduce) {
-  .admin-tree-clip {
-    transition: none;
-  }
-}
 #confirm-message {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

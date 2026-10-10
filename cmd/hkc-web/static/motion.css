@@ -13,6 +13,65 @@
 html {
   scroll-behavior: smooth;
 }
+.shell-arrival {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  top: 0;
+  left: 0;
+  width: 35vw;
+  height: 2px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent, var(--mint), transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--mint) 50%, transparent);
+  animation: shell-arrive 1500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes shell-arrive {
+  0% {
+    opacity: 0;
+    transform: translateX(-35vw) scaleX(0.2);
+  }
+  25% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(100vw) scaleX(1.6);
+  }
+}
+.sidebar .nav-item {
+  animation: shell-nav-enter 700ms var(--motion-enter-ease) both;
+}
+.sidebar .nav-item:nth-child(2) {
+  animation-delay: 60ms;
+}
+.sidebar .nav-item:nth-child(3) {
+  animation-delay: 120ms;
+}
+.sidebar .nav-item:nth-child(4) {
+  animation-delay: 180ms;
+}
+@keyframes shell-nav-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-arrival {
+    display: none;
+  }
+  .sidebar .nav-item {
+    animation: none;
+  }
+}
 
 button {
   transition:
@@ -77,7 +136,6 @@ html.theme-transition select {
 .bot-deck,
 .admin-section,
 .invite-card,
-.diagnostic-item,
 .token-row,
 .backup-row,
 .audit-group,
@@ -95,7 +153,6 @@ html.theme-transition select {
 .surface-card:hover {
   border-color: color-mix(in srgb, var(--mint) 32%, var(--line));
 }
-.diagnostic-item:hover,
 .token-row:hover,
 .backup-row:hover {
   transform: translateX(4px);

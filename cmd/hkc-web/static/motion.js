@@ -18,6 +18,62 @@
   const lastValueMotion = new WeakMap();
 
   window.prefersReducedMotion = reducedMotion;
+  // Один живой световой проход при входе, без блокирующей заставки и фиктивных процентов.
+  if (!reducedMotion()) {
+    const arrival = document.createElement("div");
+    arrival.className = "shell-arrival";
+    arrival.setAttribute("aria-hidden", "true");
+    document.body.append(arrival);
+    arrival.addEventListener("animationend", () => arrival.remove(), {
+      once: true,
+    });
+    setTimeout(() => arrival.remove(), 2000);
+  }
+  // Реальная высота details анимируется в обе стороны; повторный клик меняет направление.
+  window.motionDisclosure = (element, panel) => {
+    const summary = element.querySelector("summary");
+    let animation,
+      target = element.open;
+    summary.setAttribute("aria-expanded", String(target));
+    summary.addEventListener("click", (event) => {
+      event.preventDefault();
+      const from = element.getBoundingClientRect().height;
+      animation?.cancel();
+      target = !target;
+      summary.setAttribute("aria-expanded", String(target));
+      panel.inert = !target;
+      if (reducedMotion()) {
+        element.open = target;
+        element.style.height = "";
+        element.style.overflow = "";
+        return;
+      }
+      element.style.height = "";
+      element.open = true;
+      const to = target
+        ? element.getBoundingClientRect().height
+        : summary.getBoundingClientRect().height + 2;
+      element.style.overflow = "hidden";
+      animation = element.animate(
+        [{ height: from + "px" }, { height: to + "px" }],
+        { duration: 460, easing: "cubic-bezier(.16,1,.3,1)" },
+      );
+      animation.onfinish = () => {
+        element.open = target;
+        element.style.height = "";
+        element.style.overflow = "";
+        animation = undefined;
+      };
+      if (target)
+        panel.animate(
+          [
+            { opacity: 0, transform: "translateY(-6px)" },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: 380, easing: "ease-out" },
+        );
+    });
+  };
   window.motionTheme = () => {
     if (reducedMotion()) return;
     const root = document.documentElement;
@@ -67,21 +123,25 @@
     element.classList.remove("is-leaving");
     element.hidden = false;
     if (duration < 0) return;
-    element.motionDismissTimer =
-      setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
-      (() => {
+    element.motionDismissTimer = setTimeout(
+      // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+      () => {
         if (reducedMotion()) {
           element.hidden = true;
           return;
         }
         element.classList.add("is-leaving");
-        element.motionHideTimer =
-          setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
-          (() => {
+        element.motionHideTimer = setTimeout(
+          // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+          () => {
             element.hidden = true;
             element.classList.remove("is-leaving");
-          }, 480);
-      }, duration);
+          },
+          480,
+        );
+      },
+      duration,
+    );
   };
 
   // Нативный details закрывается после анимации; inert сразу исключает скрываемые поля из фокуса.
@@ -118,13 +178,15 @@
       panel.inert = true;
       disclosure.classList.remove("is-expanded");
       disclosure.classList.add("is-closing");
-      disclosure.motionCloseTimer =
-        setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
-        (() => {
+      disclosure.motionCloseTimer = setTimeout(
+        // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+        () => {
           if (!disclosure.classList.contains("is-closing")) return;
           disclosure.open = false;
           disclosure.classList.remove("is-closing");
-        }, 600);
+        },
+        600,
+      );
     });
   });
 
@@ -153,9 +215,9 @@
       (event) => {
         pointerEvent = event;
         if (pointerFrame) return;
-        pointerFrame =
-          requestAnimationFrame // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
-          (() => {
+        pointerFrame = requestAnimationFrame(
+          // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+          () => {
             pointerFrame = 0;
             const current = pointerEvent;
             const card = current?.target.closest?.(
@@ -171,7 +233,8 @@
               "--pointer-y",
               `${current.clientY - rect.top}px`,
             );
-          });
+          },
+        );
       },
       { passive: true },
     );

@@ -51,61 +51,6 @@ func TestHerokuConfigMasksSecretsAndPreservesOtherKeys(t *testing.T) {
 	}
 }
 
-// TestDiagnosticCommandRejectsUnknownAction проверяет отказ произвольной диагностической команды.
-func TestDiagnosticCommandRejectsUnknownAction(t *testing.T) {
-	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/diagnostics/arbitrary", nil)
-	r.SetPathValue("command", "arbitrary")
-	r.Header.Set("Authorization", "Bearer admin-secret")
-	w := httptest.NewRecorder()
-	s.adminDiagnosticCommand(w, r)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("unexpected code: %d", w.Code)
-	}
-}
-
-// TestAdminTerminalRequiresToken проверяет административную защиту терминала.
-func TestAdminTerminalRequiresToken(t *testing.T) {
-	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd"}`))
-	w := httptest.NewRecorder()
-	s.adminTerminal(w, r)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("unexpected code: %d", w.Code)
-	}
-}
-
-// TestAdminTerminalDisabledByDefault проверяет отказ терминала без явного включения.
-func TestAdminTerminalDisabledByDefault(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("terminal is available only on Linux")
-	}
-	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd","confirmed":true}`))
-	r.Header.Set("Authorization", "Bearer admin-secret")
-	w := httptest.NewRecorder()
-	s.adminTerminal(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("unexpected code: %d %s", w.Code, w.Body.String())
-	}
-}
-
-// TestAdminTerminalRunsInsideHerokuDirectory проверяет рабочий каталог команды терминала.
-func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("terminal is available only on Linux")
-	}
-	t.Setenv("HKC_TERMINAL_ENABLED", "1")
-	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd; printf terminal-ok","confirmed":true}`))
-	r.Header.Set("Authorization", "Bearer admin-secret")
-	w := httptest.NewRecorder()
-	s.adminTerminal(w, r)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), s.bot.HerokuDir) || !strings.Contains(w.Body.String(), "terminal-ok") {
-		t.Fatalf("terminal failed: %d %s", w.Code, w.Body.String())
-	}
-}
-
 // TestSystemHealthReturnsPlatform проверяет сведения платформы в системной сводке.
 func TestSystemHealthReturnsPlatform(t *testing.T) {
 	s := newTestServer(t)

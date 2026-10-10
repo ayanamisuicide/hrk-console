@@ -1,4 +1,3 @@
-import { createDiagnosticsBindings } from "./modules/diagnostics.js";
 import { createUsers } from "./modules/users.js";
 import { createAudit } from "./modules/audit.js";
 import { createConfig } from "./modules/config.js";
@@ -19,7 +18,6 @@ Object.assign(
   createAuth(ctx),
   createUpdates(ctx),
 );
-Object.assign(ctx, createDiagnosticsBindings(ctx));
 
 ctx.$ = (selector) => document.querySelector(selector);
 
@@ -54,13 +52,11 @@ ctx.configSignature = "";
 
 ctx.bindAdminNavigation();
 
-ctx.auditVisible = 8;
+ctx.auditPage = 0;
 
 ctx.auditSignature = "";
 
 ctx.auditEvents = [];
-
-ctx.auditOpen = new Set();
 
 ctx.bindAuditMore();
 
@@ -76,29 +72,11 @@ ctx.bindAdminRefresh();
 
 ctx.bindCreateBackup();
 
-ctx.bindDownloadDiagnostics();
-
 ctx.bindWatchdogForm();
 
 ctx.bindConfigPreview();
 
 ctx.bindConfigForm();
-
-ctx.bindDiagnosticOutput();
-
-ctx.terminalForm = ctx.$("#terminal-form");
-
-ctx.terminalCommand = ctx.$("#terminal-command");
-
-ctx.terminalOutput = ctx.$("#terminal-output");
-
-ctx.terminalMeta = ctx.$("#terminal-meta");
-
-ctx.bindTerminalRun();
-
-ctx.bindTerminalForm();
-
-ctx.bindTerminalClear();
 
 ctx.bindUpdatesCheck();
 

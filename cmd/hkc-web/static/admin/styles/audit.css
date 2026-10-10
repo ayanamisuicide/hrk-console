@@ -1,210 +1,242 @@
-/* История занимает ограниченную область; детали доступны без длинных карточек. */
-.audit-tools {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 18px;
-}
-.audit-tools label {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex: 1;
-  max-width: 420px;
-  padding: 0 10px;
+/* Две поверхности вместо раскрывающихся длинных строк. */
+.audit-dialog {
+  width: min(520px, calc(100vw - 28px));
+  max-height: 85dvh;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg);
-}
-.audit-tools label > span {
-  color: var(--muted);
-  font-size: 21px;
-}
-.audit-tools input {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
+  border-radius: 18px;
+  background: var(--panel);
   color: var(--text);
-  background: transparent;
-  font-size: 11px;
 }
-.audit-tools .muted {
-  font-size: 9px;
+.audit-dialog[open] {
+  animation: audit-dialog-enter 380ms var(--motion-enter-ease) both;
 }
-.audit-groups {
-  max-height: 400px;
-  overflow: auto;
-  padding: 0 18px;
-  scrollbar-color: var(--line) transparent;
+.audit-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
 }
-.audit-group {
-  border-bottom: 1px solid var(--line);
-  min-width: 0;
+.audit-close {
+  display: block;
+  margin: 0 0 12px auto;
 }
-.audit-group > summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 90px 130px 28px 14px;
-  gap: 12px;
-  align-items: center;
-  padding: 15px 0;
-  cursor: pointer;
-  list-style: none;
+.audit-dialog .audit-inspector {
+  min-height: 0;
 }
-.audit-group > summary::-webkit-details-marker {
-  display: none;
-}
-.audit-group > summary::after {
-  content: "⌄";
-  color: var(--muted);
-  transition: transform 240ms var(--ease);
-}
-.audit-group[open] > summary::after {
-  transform: rotate(180deg);
-}
-.audit-group > summary:hover strong {
-  color: var(--mint);
-}
-.audit-group > summary:focus-visible {
-  outline: 2px solid var(--mint);
-  outline-offset: -2px;
-  border-radius: 5px;
-}
-.audit-group strong {
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.audit-main {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-.audit-main small {
-  color: var(--muted);
-  font-size: 9px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.audit-actor,
-.audit-group time {
-  color: var(--muted);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.audit-repeat {
-  color: var(--mint);
-  font-size: 9px;
-  text-align: right;
-}
-.audit-detail {
-  padding: 0 0 16px;
-  animation: admin-audit-enter 220ms ease both;
-}
-.audit-detail p {
-  font-size: 11px;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-  margin-bottom: 8px;
-  white-space: pre-wrap;
-}
-.audit-detail small {
-  color: var(--muted);
-  font-size: 9px;
-  overflow-wrap: anywhere;
-}
-.audit-occurrences {
-  max-height: 140px;
-  overflow: auto;
-  display: grid;
-  gap: 7px;
-  padding-top: 12px;
-  color: var(--muted);
-  font-size: 10px;
-}
-.audit-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 18px;
-  gap: 12px;
-}
-.audit-footer .muted {
-  font-size: 9px;
-}
-.audit-more {
-  margin: 0;
-}
-@keyframes admin-audit-enter {
+@keyframes audit-dialog-enter {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(20px) scale(0.98);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-@media (max-width: 900px) {
-  .audit-group > summary {
-    grid-template-columns: minmax(0, 1fr) 115px 25px 14px;
-    gap: 8px;
+@media (prefers-reduced-motion: reduce) {
+  .audit-dialog[open] {
+    animation: none;
   }
-  .audit-actor {
-    display: none;
+}
+.audit-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+}
+.audit-tools label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, 100%);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.audit-tools label > span {
+  color: var(--mint);
+  font-size: 22px;
+}
+.audit-tools input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.audit-tools > .muted {
+  font-size: 10px;
+}
+.audit-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 18px;
+  padding: 0 18px 18px;
+  align-items: start;
+}
+.audit-groups {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.audit-group {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 12px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+}
+.audit-group:hover {
+  background: color-mix(in srgb, var(--mint) 3%, var(--panel));
+  border-color: var(--line);
+  transform: none;
+  box-shadow: none;
+}
+.audit-group[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--mint) 7%, var(--panel));
+  border-color: color-mix(in srgb, var(--mint) 24%, var(--line));
+}
+.audit-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--mint);
+  font-size: 18px;
+}
+.audit-main {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+.audit-main strong {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-main small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.audit-repeat {
+  font-size: 10px;
+  color: var(--mint);
+}
+.audit-inspector {
+  min-width: 0;
+  min-height: 340px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--mint) 2%, var(--bg));
+}
+.audit-inspector h3 {
+  margin: 12px 0;
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+.audit-description {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.audit-inspector dl {
+  display: grid;
+  grid-template-columns: 95px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 0;
+  margin: 18px 0 0;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+}
+.audit-inspector dt {
+  color: var(--muted);
+}
+.audit-inspector dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.audit-repeat-label {
+  color: var(--mint);
+  font-size: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.audit-occurrences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.audit-occurrences time,
+.audit-occurrences small {
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+}
+.audit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+.audit-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.audit-footer .muted {
+  font-size: 9px;
+}
+@media (max-width: 1050px) {
+  .audit-workspace {
+    grid-template-columns: 1fr;
+  }
+  .audit-inspector {
+    min-height: 0;
   }
 }
 @media (max-width: 560px) {
   .audit-tools {
-    padding: 12px 14px;
+    padding: 14px;
   }
   .audit-tools > .muted {
     display: none;
   }
-  .audit-groups {
-    padding: 0 14px;
-    max-height: 350px;
+  .audit-workspace {
+    padding: 0 14px 14px;
+    gap: 14px;
   }
-  .audit-group > summary {
-    grid-template-columns: minmax(0, 1fr) 24px 14px;
-    gap: 6px;
-    padding: 12px 0;
-  }
-  .audit-main {
-    grid-column: 1;
-  }
-  .audit-group time {
-    grid-column: 1;
-    grid-row: 2;
-    font-size: 9px;
-  }
-  .audit-repeat {
-    grid-column: 2;
-    grid-row: 1 / 3;
-  }
-  .audit-group > summary::after {
-    grid-column: 3;
-    grid-row: 1 / 3;
+  .audit-inspector {
+    padding: 18px;
   }
   .audit-footer {
     flex-wrap: wrap;
-    padding: 12px 14px;
+    padding: 14px;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .audit-detail {
-    animation: none;
-  }
-  .audit-group > summary::after {
-    transition: none;
+  .audit-pagination {
+    width: 100%;
+    justify-content: space-between;
   }
 }

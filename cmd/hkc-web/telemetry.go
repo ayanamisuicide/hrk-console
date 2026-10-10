@@ -259,28 +259,6 @@ func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
 // fileExists проверяет доступность пути через os.Stat.
 func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
 
-// diagnosticCheck — Название, результат и пояснение фиксированной проверки установки.
-type diagnosticCheck struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail"`
-}
-
-// diagnostics возвращает простые проверки каталога, окружения Python и журнала.
-func (s *server) diagnostics(w http.ResponseWriter, _ *http.Request) {
-	logExists := fileExists(s.bot.LogFile)
-	logDetail := "Появится после первого запуска бота"
-	if logExists {
-		logDetail = s.bot.LogFile
-	}
-	checks := []diagnosticCheck{
-		{Name: "Каталог Heroku", OK: fileExists(s.bot.HerokuDir), Detail: s.bot.HerokuDir},
-		{Name: "Виртуальное окружение", OK: s.bot.VirtualEnv() != "", Detail: "Поддерживаются .venv и venv"},
-		{Name: "Файл журнала", OK: logExists, Detail: logDetail},
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"checks": checks})
-}
-
 // publicStatus выдаёт минимальный статус без авторизации только при HKC_PUBLIC_STATUS=1.
 func (s *server) publicStatus(w http.ResponseWriter, _ *http.Request) {
 	if os.Getenv("HKC_PUBLIC_STATUS") != "1" {
