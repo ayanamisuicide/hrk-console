@@ -170,6 +170,30 @@ export function createModules(ctx) {
           : ctx.$(`[data-module-segment="${name}"]`);
       segment.style.width = `${counts.total ? (counts[name] / counts.total) * 100 : 0}%`;
     }
+    // Кольцо делится на доли по состояниям; цвета берутся из CSS-переменных HUD.
+    const ringColors = {
+      ready: "var(--hud-ok)",
+      loading: "var(--hud-warn)",
+      problems: "var(--hud-bad)",
+      unloaded: "var(--muted)",
+      unknown: "var(--hud-c2)",
+    };
+    let from = 0;
+    const stops = [];
+    for (const name of Object.keys(ringColors)) {
+      if (!counts[name]) continue;
+      const to = from + (counts[name] / counts.total) * 100;
+      stops.push(`${ringColors[name]} ${from.toFixed(2)}% ${to.toFixed(2)}%`);
+      from = to;
+    }
+    ctx
+      .$("#modules-ring")
+      .style.setProperty(
+        "--ring",
+        stops.length
+          ? `conic-gradient(${stops.join(", ")})`
+          : "conic-gradient(var(--line) 0 100%)",
+      );
     const currentMatrix = JSON.stringify(
       items.slice(0, 60).map((item) => [item.id, item.name, item.state]),
     );

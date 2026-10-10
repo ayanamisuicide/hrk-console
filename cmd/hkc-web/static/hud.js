@@ -5,7 +5,7 @@
   const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const touch = !!window.matchMedia?.("(hover: none)").matches;
   const ACCENTS = ["cyan", "magenta", "green", "amber"];
-  const FX = ["max", "mid", "min"];
+  const FX = ["min", "mid", "max"];
   const store = {
     get(key, fallback) {
       try {
@@ -23,8 +23,8 @@
     },
   };
 
-  let fx = store.get("hkc-fx", reduced ? "min" : "max");
-  if (!FX.includes(fx)) fx = "max";
+  let fx = store.get("hkc-fx", reduced ? "min" : "mid");
+  if (!FX.includes(fx)) fx = "mid";
   let accent = store.get("hkc-accent", "cyan");
   if (!ACCENTS.includes(accent)) accent = "cyan";
   root.dataset.fx = fx;
@@ -141,7 +141,7 @@
     drawStatic();
   };
   const seed = () => {
-    const density = fx === "max" ? 1 : fx === "mid" ? 0.5 : 0.25;
+    const density = fx === "max" ? 1 : fx === "mid" ? 0.4 : 0.2;
     const count = Math.round(Math.min(110, (W * H) / 16000) * density);
     particles = Array.from({ length: count }, () => ({
       x: Math.random() * W,
@@ -150,7 +150,7 @@
       vy: -0.1 - Math.random() * 0.45,
       r: 0.8 + Math.random() * 1.6,
     }));
-    const columns = fx === "max" ? Math.round(W / 130) : fx === "mid" ? Math.round(W / 260) : 0;
+    const columns = fx === "max" ? Math.round(W / 130) : 0;
     rain = Array.from({ length: columns }, () => ({
       x: Math.random() * W,
       y: Math.random() * H,
@@ -176,13 +176,13 @@
 
     // Перспективная сетка пола
     ctx2d.lineWidth = 1;
-    ctx2d.strokeStyle = rgba(rgb1, 0.22);
+    ctx2d.strokeStyle = rgba(rgb1, fx === "max" ? 0.22 : 0.13);
     ctx2d.beginPath();
     for (let i = -14; i <= 14; i++) {
       ctx2d.moveTo(vx, horizon);
       ctx2d.lineTo(vx + i * (W / 6), H);
     }
-    const scroll = (t / 1800) % 1;
+    const scroll = (t / (fx === "max" ? 1800 : 6000)) % 1;
     for (let i = 0; i < 16; i++) {
       const z = (i + scroll) / 16;
       const y = horizon + (H - horizon) * z * z;
@@ -205,7 +205,7 @@
     // Частицы и связи
     const mx = mouseX * W;
     const my = mouseY * H;
-    ctx2d.fillStyle = rgba(rgb1, 0.8);
+    ctx2d.fillStyle = rgba(rgb1, fx === "max" ? 0.8 : 0.5);
     for (const p of particles) {
       p.x += p.vx;
       p.y += p.vy;
@@ -256,7 +256,7 @@
 
     // Периодический лучевой проход сверху вниз
     const beam = ((t / 7000) % 1.4) - 0.2;
-    if (beam > 0 && beam < 1) {
+    if (fx === "max" && beam > 0 && beam < 1) {
       const by = beam * H;
       const g = ctx2d.createLinearGradient(0, by - 40, 0, by + 2);
       g.addColorStop(0, rgba(rgb1, 0));
@@ -374,7 +374,7 @@
     follow();
   }
   window.addEventListener("pointerdown", (event) => {
-    if (fx === "min") return;
+    if (fx !== "max") return;
     const burst = el("div", "hud-burst");
     burst.style.left = `${event.clientX}px`;
     burst.style.top = `${event.clientY}px`;
@@ -435,7 +435,7 @@
   const known = new WeakMap();
   const busy = new WeakMap();
   const observer = new MutationObserver((records) => {
-    if (fx === "min" || reduced) return;
+    if (fx !== "max" || reduced) return;
     for (const record of records) {
       const node = record.target.nodeType === 3 ? record.target.parentElement : record.target;
       const holder = node?.closest?.(SCRAMBLE);
@@ -488,7 +488,7 @@
     } catch {
       seen = false;
     }
-    if (seen || fx === "min" || reduced) return;
+    if (seen || fx !== "max" || reduced) return;
     const screen = el("div", "hud-boot");
     const body = el("div");
     const pre = el("pre");
