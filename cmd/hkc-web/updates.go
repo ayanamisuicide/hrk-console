@@ -553,33 +553,37 @@ func (s *server) updateRequestPath() string {
 func (s *server) startUpdateJob(w http.ResponseWriter, r *http.Request, request updateRequest, audit string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+	result, status := s.launchUpdate(ctx, request)
+	if status == http.StatusAccepted {
+		s.record(r, "admin", audit, request.Version+request.Backup)
+	}
+	writeJSON(w, status, result)
+}
+
+// launchUpdate проверяет, что установка возможна, оставляет задание службе обновления и запускает её.
+// Им пользуются и страница обновлений, и бот в Telegram; запись в аудит делает вызывающий.
+func (s *server) launchUpdate(ctx context.Context, request updateRequest) (actionResponse, int) {
 	overview := s.buildUpdateOverview(ctx)
 	if len(overview.Blockers) > 0 {
-		writeJSON(w, http.StatusConflict, actionResponse{Message: overview.Blockers[0].Text + " " + overview.Blockers[0].Fix})
-		return
+		return actionResponse{Message: overview.Blockers[0].Text + " " + overview.Blockers[0].Fix}, http.StatusConflict
 	}
 	if overview.Running {
-		writeJSON(w, http.StatusConflict, actionResponse{Message: "обновление уже выполняется"})
-		return
+		return actionResponse{Message: "обновление уже выполняется"}, http.StatusConflict
 	}
 	request.RequestedAt = time.Now().UTC().Format(time.RFC3339)
 	data, _ := json.Marshal(request)
 	path := s.updateRequestPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		writeJSON(w, 500, actionResponse{Message: "не удалось подготовить задание"})
-		return
+		return actionResponse{Message: "не удалось подготовить задание"}, 500
 	}
 	if err := writePrivateAtomic(path, data); err != nil {
-		writeJSON(w, 500, actionResponse{Message: "не удалось записать задание для службы обновления"})
-		return
+		return actionResponse{Message: "не удалось записать задание для службы обновления"}, 500
 	}
 	if err := startUpdateService(ctx); err != nil {
 		_ = os.Remove(path)
-		writeJSON(w, 500, actionResponse{Message: "не удалось запустить службу hkc-update"})
-		return
+		return actionResponse{Message: "не удалось запустить службу hkc-update"}, 500
 	}
-	s.record(r, "admin", audit, request.Version+request.Backup)
-	writeJSON(w, http.StatusAccepted, actionResponse{OK: true, Message: "Запущено. Панель перезапустится, страница переподключится сама."})
+	return actionResponse{OK: true, Message: "Запущено. Панель перезапустится, страница переподключится сама."}, http.StatusAccepted
 }
 
 // startUpdateService запускает отдельную службу; пользователь панели не root вызывает её

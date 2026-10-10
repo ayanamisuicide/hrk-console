@@ -823,7 +823,7 @@
   display: grid;
   align-content: end;
   gap: 6px;
-  min-height: 330px;
+  min-height: 380px;
   padding: 14px 12px;
 }
 .tg-msg,
@@ -858,6 +858,9 @@
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   max-width: 82%;
+}
+.tg-buttons.single {
+  grid-template-columns: 1fr;
 }
 .tg-buttons span {
   padding: 6px;
@@ -906,8 +909,14 @@
 .tg-chat > :nth-child(6) {
   animation-delay: 2700ms;
 }
+.tg-chat > :nth-child(7) {
+  animation-delay: 3300ms;
+}
+.tg-chat > :nth-child(8) {
+  animation-delay: 3450ms;
+}
 .tg-chat > .tg-typing {
-  animation-delay: 3200ms;
+  animation-delay: 4200ms;
 }
 @keyframes tg-message {
   from {
@@ -999,6 +1008,10 @@
 }
 .tg-event[data-action="bot.start"] i {
   background: var(--ok);
+}
+.tg-event[data-action="update.install"] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .tg-event[data-action="bot.restart"] i {
   background: var(--warn);

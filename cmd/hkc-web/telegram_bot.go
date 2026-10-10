@@ -47,6 +47,7 @@ var telegramCommands = []telegramCommand{
 	{Name: "run", Description: "Запустить бота", Action: "start"},
 	{Name: "restart", Description: "Перезапустить бота", Action: "restart", Confirm: true},
 	{Name: "stop", Description: "Остановить бота", Action: "stop", Confirm: true},
+	{Name: "update", Description: "Проверить обновление панели"},
 	{Name: "app", Description: "Открыть мини-приложение"},
 	{Name: "help", Description: "Список команд"},
 }
@@ -198,6 +199,10 @@ type telegramControl struct {
 	offset     int64
 	cancelPoll context.CancelFunc
 	web        telegramWebSessions
+	// Обновление из Telegram: наблюдатель за установкой и подмены для тестов.
+	watching   bool
+	updatePoll time.Duration
+	installed  func() string
 }
 
 func newTelegramControl(s *server, config telegramConfig) *telegramControl {
@@ -263,6 +268,8 @@ func (c *telegramControl) run(ctx context.Context) {
 	if c.api == nil {
 		return
 	}
+	// После перезапуска панели дописываем итог начатого из Telegram обновления; управление для этого не нужно.
+	go c.resumePendingUpdate()
 	backoff := 5 * time.Second
 	for ctx.Err() == nil {
 		if !c.settings().ControlEnabled {
@@ -447,6 +454,9 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 	case "status":
 		c.send(ctx, message.Chat.ID, c.statusText(), c.appKeyboard())
 		return
+	case "update":
+		c.cmdUpdate(ctx, message.Chat.ID)
+		return
 	case "app":
 		if keyboard := c.appKeyboard(); keyboard != nil {
 			c.send(ctx, message.Chat.ID, "Мини-приложение панели:", keyboard)
@@ -518,6 +528,10 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallba
 		return
 	}
 	kind, nonce, _ := strings.Cut(callback.Data, ":")
+	if kind == "upd" {
+		c.handleUpdateCallback(ctx, callback, nonce, answer)
+		return
+	}
 	c.mu.Lock()
 	pending, ok := c.pending[nonce]
 	delete(c.pending, nonce)

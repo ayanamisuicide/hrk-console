@@ -175,7 +175,7 @@ export function createTelegram(ctx) {
     const list = ctx.$("#tg-activity");
     list.replaceChildren();
     ctx.$("#tg-activity-empty").hidden = events.length > 0;
-    const labels = { "bot.start": "Запуск", "bot.stop": "Остановка", "bot.restart": "Перезапуск", "telegram.settings": "Настройки Telegram" };
+    const labels = { "bot.start": "Запуск", "bot.stop": "Остановка", "bot.restart": "Перезапуск", "update.install": "Обновление панели", "telegram.settings": "Настройки Telegram" };
     for (const event of events) {
       const row = document.createElement("div");
       row.className = "tg-event";

@@ -75,6 +75,8 @@ type alertEvent struct {
 	Message  string    `json:"message"`
 	Host     string    `json:"host"`
 	Time     time.Time `json:"time"`
+	// Version — версия, о которой сообщает событие (update.available): по ней бот предлагает кнопку установки.
+	Version string `json:"version,omitempty"`
 }
 
 type alertSink interface {
@@ -236,6 +238,8 @@ type telegramSink struct {
 	chatID  string
 	apiBase string
 	client  *http.Client
+	// markup добавляет к сообщению кнопки; nil или пустой ответ — сообщение без кнопок.
+	markup func(alertEvent) map[string]any
 }
 
 func (sink *telegramSink) name() string { return "telegram" }
@@ -261,8 +265,14 @@ func telegramText(event alertEvent) string {
 }
 
 func (sink *telegramSink) send(ctx context.Context, event alertEvent) error {
-	data, _ := json.Marshal(map[string]any{"chat_id": sink.chatID, "text": telegramText(event),
-		"parse_mode": "HTML", "disable_web_page_preview": true})
+	payload := map[string]any{"chat_id": sink.chatID, "text": telegramText(event),
+		"parse_mode": "HTML", "disable_web_page_preview": true}
+	if sink.markup != nil {
+		if keyboard := sink.markup(event); keyboard != nil {
+			payload["reply_markup"] = keyboard
+		}
+	}
+	data, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sink.apiBase+"/bot"+sink.token+"/sendMessage", bytes.NewReader(data))
 	if err != nil {
 		return errors.New("некорректный запрос к Telegram")

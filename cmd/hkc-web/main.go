@@ -158,13 +158,14 @@ func main() {
 		}
 	}
 	s.telegram = newTelegramControl(s, telegramConfig)
+	s.telegram.attachUpdateButton()
 	go s.telegram.run(context.Background())
 	s.updates = &updateChecker{onNewVersion: func(version string, notes []releaseNotes) {
 		message := "Обновить можно в админке, в разделе «Обновления»."
 		if len(notes) > 0 && len(notes[0].Sections) > 0 && len(notes[0].Sections[0].Items) > 0 {
 			message = notes[0].Sections[0].Items[0] + "\n" + message
 		}
-		s.alerts.notify(alertEvent{Kind: "update.available", Severity: "info", Title: "Доступна hrk-console " + version, Message: message})
+		s.alerts.notify(alertEvent{Kind: "update.available", Severity: "info", Version: version, Title: "Доступна hrk-console " + version, Message: message})
 	}}
 	s.updates.check()
 	go func() {
