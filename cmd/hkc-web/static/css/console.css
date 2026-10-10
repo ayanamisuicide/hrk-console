@@ -359,6 +359,10 @@ body {
 .view-intro h3 {
   font-size: 20px;
 }
+.view-intro > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .view-intro p {
   max-width: 640px;
   margin-top: 4px;

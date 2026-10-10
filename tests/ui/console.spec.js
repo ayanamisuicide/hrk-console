@@ -13,6 +13,7 @@ const sampleLog = [
   "2026-10-03 10:00:02 [ERROR] Core: retry failed",
 ];
 
+const GiB = 1073741824;
 // Пять минут истории с плавной нагрузкой, перезапуском и событиями ленты.
 const historyStart = Date.parse("2026-10-03T09:55:00Z");
 const systemHistory = {
@@ -46,7 +47,7 @@ const systemHistory = {
   },
 };
 const systemDetails = {
-  summary: { level: "warn", title: "Есть на что посмотреть", items: [{ level: "warn", text: "Диск занят на 86%" }] },
+  summary: { level: "warn", title: "Есть на что посмотреть", items: [{ level: "warn", text: "Память бота растёт на 9.4 МБ в час — возможна утечка" }] },
   bot: { running: true, pid: 123, uptime: "1ч", cpuPercent: 2.5, rssBytes: 209715200, threads: 9, children: 1, openFiles: 24, rssTrendPerHour: 0, rssTrendFit: 0 },
   network: { rxRate: 5120, txRate: 1024, rxTotal: 73400320, txTotal: 4194304 },
   probes: [
@@ -93,19 +94,25 @@ test.beforeEach(async ({ page }) => {
       "/api/metrics": { rssBytes: 104857600 },
       "/api/system": {
         supported: true,
-        cpuPercent: 20,
+        cpuPercent: 18.4,
         cpuCores: 8,
-        memoryTotalBytes: 1000,
-        memoryUsedBytes: 500,
-        memoryAvailableBytes: 500,
-        diskTotalBytes: 1000,
-        diskUsedBytes: 300,
-        diskFreeBytes: 700,
+        load1: 0.62,
+        load5: 0.48,
+        load15: 0.41,
+        memoryTotalBytes: 16 * GiB,
+        memoryUsedBytes: 6.2 * GiB,
+        memoryAvailableBytes: 9.8 * GiB,
+        memoryCachedBytes: 3.1 * GiB,
+        swapTotalBytes: 4 * GiB,
+        swapUsedBytes: 0,
+        diskTotalBytes: 512 * GiB,
+        diskUsedBytes: 160 * GiB,
+        diskFreeBytes: 352 * GiB,
         os: "linux",
         arch: "amd64",
-        hostname: "test",
-        kernel: "test",
-        uptimeSeconds: 1000,
+        hostname: "vps-amsterdam",
+        kernel: "6.8.0-45-generic",
+        uptimeSeconds: 1209600,
         sampledAt: new Date().toISOString(),
       },
       "/api/system/history": systemHistory,
@@ -511,7 +518,7 @@ test("вкладка системы: сводка, график, легенда,
   await page.locator('[data-view="system"]').click();
   await expect(page.locator("#system-summary")).toHaveAttribute("data-level", "warn");
   await expect(page.locator("#system-summary-title")).toHaveText("Есть на что посмотреть");
-  await expect(page.locator("#system-summary-items li")).toHaveText(["Диск занят на 86%"]);
+  await expect(page.locator("#system-summary-items li")).toHaveText(["Память бота растёт на 9.4 МБ в час — возможна утечка"]);
   await expect(page.locator("#history-legend .legend-chip")).toHaveCount(3);
   await expect(page.locator('#history-legend [data-series="cpu"] small')).toContainText("макс 66%");
   // Скрытие серии — отжатая кнопка легенды.
@@ -565,4 +572,24 @@ test("наблюдатель не видит процессы хоста", async
   await page.locator('[data-view="system"]').click();
   await expect(page.locator("#processes-hidden")).toBeVisible();
   await expect(page.locator(".process-table")).toBeHidden();
+});
+
+// Скриншоты для README на тестовых данных: README_SHOTS=1 npx playwright test -g "скриншоты для README".
+test("скриншоты для README", async ({ page }) => {
+  test.skip(!process.env.README_SHOTS, "только по запросу");
+  await page.addInitScript(() => localStorage.setItem("hkc-theme", "dark"));
+  await page.clock.install({ time: new Date("2026-10-03T10:00:00Z") });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.locator('[data-view="system"]').click();
+  await expect(page.locator("#system-summary")).toHaveAttribute("data-level", "warn");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "docs/images/system.png" });
+  await page.locator('[data-view="modules"]').click();
+  await expect(page.locator(".module-row").first()).toBeVisible();
+  await page.screenshot({ path: "docs/images/modules.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-view="system"]').click();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "docs/images/mobile.png" });
 });
