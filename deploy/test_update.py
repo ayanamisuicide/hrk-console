@@ -107,6 +107,100 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(any(call[0] == "merge" for call in calls))
             self.assertEqual(sum(call == ["systemctl","restart","hkc-web.service"] for call in calls), 2)
 
+    # Статус и индекс резервных копий читаемы панелью, сами копии закрыты, лишние удаляются.
+    def test_backup_index_is_public_and_pruned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state"
+            backups = update.prepare_state(state)
+            for index in range(7):
+                entry = backups / f"20261010T0000{index:02d}-v2.{index}.0"
+                entry.mkdir()
+                (entry / "hkc-web").write_bytes(b"\x7fELF" + bytes([index]))
+                (entry / "version.json").write_text(json.dumps({"version": f"v2.{index}.0", "commit": "c" * 40}))
+            (backups / "../evil").mkdir(exist_ok=True)
+            items = update.index_backups(state)
+            self.assertEqual([item["version"] for item in items], [f"v2.{index}.0" for index in range(6, 1, -1)])
+            self.assertEqual(len(list(backups.iterdir())), 5)
+            index = state / "backups.json"
+            self.assertEqual(oct(index.stat().st_mode & 0o777), "0o644")
+            self.assertEqual(oct(state.stat().st_mode & 0o777), "0o755")
+            self.assertEqual(oct(backups.stat().st_mode & 0o777), "0o700")
+            update.save_status(state, "checking", "проверка", step="prepare")
+            self.assertEqual(oct((state / "status.json").stat().st_mode & 0o777), "0o644")
+
+    # Задание панели: строгая схема, без ссылок, удаляется после чтения.
+    def test_request_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            backups = update.prepare_state(state)
+            (backups / "20261010T000000-v2.4.0").mkdir()
+            (backups / "20261010T000000-v2.4.0" / "hkc-web").write_bytes(b"\x7fELF")
+            request = root / "update-request.json"
+            self.assertEqual(update.read_request(str(request), state), {"action": "install"})
+            cases = [
+                ({"action": "install", "version": "v2.6.0"}, {"action": "install", "version": "v2.6.0"}),
+                ({"action": "rollback", "backup": "20261010T000000-v2.4.0"}, {"action": "rollback", "backup": "20261010T000000-v2.4.0"}),
+            ]
+            for payload, expected in cases:
+                request.write_text(json.dumps(payload))
+                self.assertEqual(update.read_request(str(request), state), expected)
+                self.assertFalse(request.exists(), "задание должно удаляться после чтения")
+            for payload in [{"action": "install", "version": "main; rm -rf /"}, {"action": "rollback", "backup": "../../etc"},
+                            {"action": "rollback", "backup": "missing"}, {"action": "shell"}, {"action": "install", "extra": 1}]:
+                request.write_text(json.dumps(payload))
+                with self.subTest(payload=payload), self.assertRaises(RuntimeError):
+                    update.read_request(str(request), state)
+            target = root / "target.json"
+            target.write_text(json.dumps({"action": "install"}))
+            request.unlink(missing_ok=True)
+            request.symlink_to(target)
+            with self.assertRaises(RuntimeError):
+                update.read_request(str(request), state)
+
+    # Откат: текущая сборка сохраняется, резервная ставится и проверяется по коммиту.
+    def test_rollback_installs_backup_and_keeps_current(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "bin").mkdir()
+            executable = root / "bin/hkc-web"
+            executable.write_bytes(b"\x7fELFcurrent")
+            state = root / "state"
+            backups = update.prepare_state(state)
+            target = backups / "20261010T000000-v2.4.0"
+            target.mkdir()
+            (target / "hkc-web").write_bytes(b"\x7fELFold")
+            old, new = "a" * 40, "b" * 40
+
+            def fake_run(args, **kwargs):
+                if args[-1] == "--version-json":
+                    binary = Path(args[0]).read_bytes()
+                    return json.dumps({"version": "v2.4.0", "commit": old} if binary.endswith(b"old") else {"version": "v2.5.0", "commit": new})
+                return ""
+
+            with patch.dict(os.environ, {"HKC_SOURCE_DIR": str(root), "HKC_UPDATE_DIR": str(state)}), \
+                 patch.object(update, "run", side_effect=fake_run), patch.object(update, "git", return_value=new), \
+                 patch.object(update, "await_health") as health:
+                update.rollback(target.name)
+            self.assertEqual(executable.read_bytes(), b"\x7fELFold")
+            health.assert_called_with("http://127.0.0.1:8080", old)
+            status = json.loads((state / "status.json").read_text())
+            self.assertEqual(status["phase"], "complete")
+            self.assertEqual(len(status["warnings"]), 1)
+            saved = [item["version"] for item in json.loads((state / "backups.json").read_text())["backups"]]
+            self.assertIn("v2.5.0", saved)
+
+    # Дополнительная копия исходников не блокирует установку, а попадает в предупреждения.
+    def test_optional_copy_is_warning(self):
+        def fake_clean(path):
+            if str(path).endswith("local"):
+                raise RuntimeError("есть изменения")
+
+        with patch.object(update, "require_clean", side_effect=fake_clean), patch.object(update, "git", return_value=""):
+            warnings = update.sync_sources(Path("/tmp/state"), Path("/srv/source"), Path("/srv/local"), "c" * 40, "v2.6.0")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Дополнительная копия", warnings[0])
+
 
 if __name__ == "__main__":
     unittest.main()

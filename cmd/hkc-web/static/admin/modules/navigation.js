@@ -24,7 +24,7 @@ export function createNavigation(ctx) {
     updates: [
       "05 / ОБНОВЛЕНИЯ",
       "Версии и установка",
-      "Сверка работающей сборки, исходников и релиза.",
+      "Что нового, установка новой версии и возврат к прошлой.",
     ],
   };
 
@@ -94,10 +94,14 @@ export function createNavigation(ctx) {
     });
   }
 
-  function confirmAction(title, message) {
+  // По умолчанию кнопка подтверждения «опасная»; для мирных действий передают tone: "primary".
+  function confirmAction(title, message, { accept = "Подтвердить", tone = "danger" } = {}) {
     const dialog = ctx.$("#confirm-dialog");
     ctx.$("#confirm-title").textContent = title;
     ctx.$("#confirm-message").textContent = message;
+    const button = ctx.$("#confirm-accept");
+    button.textContent = accept;
+    button.className = tone;
     dialog.showModal();
     return new Promise((resolve) =>
       dialog.addEventListener(

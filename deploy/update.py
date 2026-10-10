@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Устанавливает релиз hrk-console, сохраняя старую сборку и проверяя новую службу."""
+"""Служба обновления hrk-console: устанавливает выбранный релиз или возвращает резервную сборку.
+
+Запускается от root отдельной службой hkc-update.service, поэтому переживает перезапуск
+панели. Задание панель оставляет в файле запроса (каталог данных панели, рядом с
+HKC_AUTH_FILE): {"action": "install", "version": "vX.Y.Z"} или {"action": "rollback",
+"backup": "<имя>"}. Без файла устанавливается последний стабильный релиз.
+
+Ход работы пишется в HKC_UPDATE_DIR/status.json, список резервных сборок — в
+HKC_UPDATE_DIR/backups.json. Оба файла читаемы панелью (0644) и не содержат секретов;
+сами резервные сборки лежат в закрытом каталоге backups/.
+"""
 import contextlib
 import fcntl
 import hashlib
@@ -9,6 +19,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -18,7 +29,9 @@ from datetime import datetime, timezone
 
 REPOSITORY = "https://github.com/ayanamisuicide/hrk-console"
 TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
+BACKUP_NAME = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,80}$")
 MAX_ARCHIVE = 64 * 1024 * 1024
+KEEP_BACKUPS = 5
 # Имена машин из uname и соответствующие архитектуры релизных архивов.
 ARCHITECTURES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
@@ -68,15 +81,25 @@ def stable_release():
     return tag
 
 
-# Скачивает ограниченный по размеру ресурс по HTTPS, читая лишний байт для обнаружения превышения лимита.
-def download(url, limit):
+# Скачивает ограниченный по размеру ресурс по HTTPS частями; progress(получено, всего) вызывается по ходу.
+def download(url, limit, progress=None):
     with urllib.request.urlopen(url, timeout=60) as response:
         if not response.url.startswith("https://"):
             raise RuntimeError("небезопасный протокол загрузки релиза")
-        data = response.read(limit + 1)
-    if len(data) > limit:
-        raise RuntimeError("файл релиза превышает ограничение размера")
-    return data
+        total = int(response.headers.get("Content-Length") or 0)
+        chunks = []
+        received = 0
+        while True:
+            chunk = response.read(256 * 1024)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > limit:
+                raise RuntimeError("файл релиза превышает ограничение размера")
+            chunks.append(chunk)
+            if progress:
+                progress(received, total)
+    return b"".join(chunks)
 
 
 # Сверяет имя и SHA-256, допускает один обычный файл hkc-web и сигнатуру ELF. Ничего не распаковывает в произвольные пути.
@@ -128,7 +151,21 @@ def await_health(url, expected, attempts=30):
     raise RuntimeError("новый сервер не прошёл проверку версии и доступности")
 
 
-# Сохраняет фазу и последние 80 событий через временный JSON; reset начинает новую историю установки.
+# Пишет JSON атомарно с правами 0644: панель работает от другого пользователя и только читает.
+def write_public_json(path, content):
+    fd, name = tempfile.mkstemp(prefix=".status-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(content, handle, ensure_ascii=False)
+        os.chmod(name, 0o644)
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+# Сохраняет фазу, этап и последние 80 событий; reset начинает новую историю.
+# step — машинный этап для интерфейса: prepare, download, verify, backup, switch, health, sources, done.
 def save_status(directory, phase, message, **extra):
     now = datetime.now(timezone.utc).isoformat()
     previous = {}
@@ -138,120 +175,315 @@ def save_status(directory, phase, message, **extra):
             previous = json.loads((directory / "status.json").read_text(encoding="utf-8"))
     events = previous.get("events", [])
     progress = extra.pop("progress", previous.get("progress", 0))
-    events.append({"at": now, "phase": phase, "message": message, "progress": progress})
-    content = {"phase": phase, "message": message, "progress": progress,
+    step = extra.pop("step", previous.get("step", ""))
+    quiet = extra.pop("quiet", False)
+    if not quiet:
+        events.append({"at": now, "phase": phase, "message": message, "progress": progress, "step": step})
+    content = {"phase": phase, "message": message, "progress": progress, "step": step,
                "startedAt": previous.get("startedAt", now), "updatedAt": now,
                "events": events[-80:], **{key: value for key, value in previous.items()
-                                         if key in ("version", "backup")}, **extra}
-    fd, name = tempfile.mkstemp(prefix=".status-", dir=directory)
+                                         if key in ("version", "backup", "action", "fromVersion", "warnings")}, **extra}
+    write_public_json(directory / "status.json", content)
+
+
+# Каталог состояния открыт на чтение (статус для панели), резервные сборки — только root.
+def prepare_state(state):
+    state.mkdir(parents=True, exist_ok=True)
+    os.chmod(state, 0o755)
+    backups = state / "backups"
+    backups.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(backups, 0o700)
+    return backups
+
+
+# Перечисляет резервные сборки, записывает их публичный индекс и удаляет лишние старые.
+def index_backups(state, keep=KEEP_BACKUPS):
+    backups = state / "backups"
+    items = []
+    if backups.is_dir():
+        for entry in sorted(backups.iterdir(), key=lambda path: path.name, reverse=True):
+            binary = entry / "hkc-web"
+            if not entry.is_dir() or entry.is_symlink() or not binary.is_file() or not BACKUP_NAME.fullmatch(entry.name):
+                continue
+            meta = {}
+            with contextlib.suppress(OSError, ValueError):
+                meta = json.loads((entry / "version.json").read_text(encoding="utf-8"))
+            items.append({"name": entry.name, "version": meta.get("version", ""), "commit": meta.get("commit", ""),
+                          "createdAt": datetime.fromtimestamp(binary.stat().st_mtime, timezone.utc).isoformat(),
+                          "size": binary.stat().st_size})
+    for stale in items[keep:]:
+        shutil.rmtree(backups / stale["name"], ignore_errors=True)
+    items = items[:keep]
+    write_public_json(state / "backups.json", {"backups": items, "updatedAt": datetime.now(timezone.utc).isoformat()})
+    return items
+
+
+# Читает задание панели. Файл лежит в каталоге, доступном пользователю панели, поэтому
+# открывается без перехода по ссылкам, ограничен по размеру и проверяется по строгой схеме.
+def read_request(path, state):
+    if not path:
+        return {"action": "install"}
     try:
-        with os.fdopen(fd, "w") as handle:
-            json.dump(content, handle, ensure_ascii=False)
-        os.replace(name, directory / "status.json")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return {"action": "install"}
+    except OSError as error:
+        raise RuntimeError(f"файл задания недоступен: {error.strerror}")
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+            raise RuntimeError("файл задания имеет неверный тип или размер")
+        with os.fdopen(fd, "rb") as handle:
+            fd = None
+            raw = handle.read(4097)
     finally:
-        if os.path.exists(name):
-            os.unlink(name)
+        if fd is not None:
+            os.close(fd)
+    with contextlib.suppress(OSError):
+        os.unlink(path)
+    try:
+        request = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise RuntimeError("файл задания повреждён")
+    if not isinstance(request, dict) or set(request) - {"action", "version", "backup", "requestedAt"}:
+        raise RuntimeError("файл задания содержит неизвестные поля")
+    action = request.get("action")
+    if action == "install":
+        version = request.get("version") or ""
+        if version and not TAG.fullmatch(version):
+            raise RuntimeError("неверный формат версии в задании")
+        return {"action": "install", "version": version}
+    if action == "rollback":
+        name = request.get("backup") or ""
+        available = {item["name"] for item in index_backups(state)}
+        if not BACKUP_NAME.fullmatch(name) or name not in available:
+            raise RuntimeError("выбранная резервная сборка не найдена")
+        return {"action": "rollback", "backup": name}
+    raise RuntimeError("неизвестное действие в задании")
 
 
-# Под внешней блокировкой проверяет релиз, сохраняет старый бинарник и перезапускает службу. Исходники продвигаются лишь после проверки здоровья; ошибка запуска вызывает откат.
-def install():
+def request_path():
+    if os.environ.get("HKC_UPDATE_REQUEST_FILE"):
+        return os.environ["HKC_UPDATE_REQUEST_FILE"]
+    if os.environ.get("HKC_AUTH_FILE"):
+        return str(Path(os.environ["HKC_AUTH_FILE"]).parent / "update-request.json")
+    return ""
+
+
+# Сохраняет текущую сборку в резервную копию с её метаданными.
+def make_backup(state, executable, current):
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    label = current.get("version") if TAG.fullmatch(current.get("version", "")) else current.get("commit", "")[:12] or "unknown"
+    backup = state / "backups" / f"{stamp}-{label}"
+    backup.mkdir(mode=0o700, parents=True)
+    shutil.copy2(executable, backup / "hkc-web")
+    (backup / "version.json").write_text(json.dumps(current), encoding="utf-8")
+    return backup
+
+
+# Продвигает копии исходников до коммита только fast-forward. Основная копия обязательна
+# (из неё запускается сама служба обновления), дополнительная — по возможности: её состояние
+# не блокирует установку, а пропуск попадает в предупреждения.
+def sync_sources(state, source, local, commit, version):
+    warnings = []
+    for copy, required in [(source, True), (local, False)]:
+        if not copy:
+            continue
+        try:
+            require_clean(copy)
+            git(copy, "merge-base", "--is-ancestor", "HEAD", commit)
+            git(copy, "merge", "--ff-only", commit)
+        except Exception as error:
+            if required:
+                warnings.append(f"Исходники {copy} не переведены на {version}: {error}")
+            else:
+                warnings.append(f"Дополнительная копия {copy} пропущена: {error}")
+    return warnings
+
+
+def fetch_refs(copies, tag):
+    for copy in copies:
+        # Получаем только доверенный репозиторий, без пользовательских URL и команд.
+        git(copy, "fetch", "--no-tags", REPOSITORY + ".git",
+            "refs/heads/main:refs/remotes/origin/main", f"refs/tags/{tag}:refs/tags/{tag}")
+
+
+# Устанавливает релиз: без version — последний стабильный. Исходники продвигаются лишь после
+# проверки здоровья; ошибка запуска возвращает предыдущую сборку.
+def install(version=""):
     source = Path(os.environ["HKC_SOURCE_DIR"]).resolve()
     local = Path(os.environ["HKC_LOCAL_SOURCE_DIR"]).resolve() if os.environ.get("HKC_LOCAL_SOURCE_DIR") else None
+    if local == source:
+        local = None
     state = Path(os.environ["HKC_UPDATE_DIR"]).resolve()
-    state.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # Блокировка в каталоге состояния, принадлежащем root, переживает перезапуск панели.
+    prepare_state(state)
+    executable = source / "bin" / "hkc-web"
+    health_url = os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080")
+    switched = False
+    backup = None
+    old_commit = ""
+    try:
+        save_status(state, "checking", "Готовимся к установке: проверяем окружение.", progress=3, step="prepare",
+                    reset=True, action="install", warnings=[])
+        arch = release_arch()
+        if executable.is_symlink():
+            raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
+        # Из основной копии запускается сама служба обновления: её правки сохраняем и не трогаем.
+        require_clean(source)
+        tag = version or stable_release()
+        current = json.loads(run([str(executable), "--version-json"], timeout=10))
+        old_commit = current.get("commit", "")
+        save_status(state, "checking", f"Выбран релиз {tag}; установлена {current.get('version', '?')}.",
+                    progress=8, version=tag, fromVersion=current.get("version", ""))
+        fetch_refs([source], tag)
+        commit = git(source, "rev-parse", f"{tag}^{{commit}}")
+        if current.get("modified"):
+            raise RuntimeError("установленный бинарник собран с локальными изменениями")
+        if old_commit == commit:
+            warnings = sync_sources(state, source, local, commit, tag)
+            save_status(state, "complete", f"Версия {tag} уже установлена.", progress=100, step="done",
+                        version=tag, warnings=warnings)
+            return
+
+        name = f"hkc-web-{tag}-linux-{arch}.tar.gz"
+        base = f"{REPOSITORY}/releases/download/{tag}/"
+        save_status(state, "downloading", f"Скачиваем {name}.", progress=12, step="download")
+        last = [0.0]
+
+        def report(received, total):
+            if time.monotonic() - last[0] < 0.4 and received != total:
+                return
+            last[0] = time.monotonic()
+            share = received / total if total else 0
+            save_status(state, "downloading", "Скачиваем архив релиза.", progress=12 + int(share * 36),
+                        downloaded=received, total=total, quiet=True)
+
+        data = download(base + name, MAX_ARCHIVE, report)
+        checksum = download(base + name + ".sha256", 1024)
+        save_status(state, "checking", "Проверяем подлинность: SHA-256, состав архива и версию.", progress=50, step="verify")
+        binary = verify_archive(data, checksum, name)
+        # Проверяем встроенную ревизию до замены установленного бинарника.
+        with tempfile.TemporaryDirectory(prefix="hkc-verify-") as temporary:
+            staged = Path(temporary) / "hkc-web"
+            staged.write_bytes(binary)
+            staged.chmod(0o755)
+            metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
+            if metadata.get("commit") != commit or metadata.get("version") != tag or metadata.get("modified"):
+                raise RuntimeError("метаданные бинарника не совпадают с опубликованным тегом Git")
+        save_status(state, "checking", "Сборка подлинная: контрольная сумма и версия совпадают с тегом.", progress=58)
+
+        save_status(state, "restarting", "Сохраняем текущую сборку для отката.", progress=64, step="backup")
+        backup = make_backup(state, executable, current)
+        index_backups(state)
+        save_status(state, "restarting", "Устанавливаем новую сборку и перезапускаем панель.", progress=72,
+                    step="switch", backup=str(backup))
+        replace_binary(executable, binary)
+        switched = True
+        run(["systemctl", "restart", "hkc-web.service"], timeout=40)
+        save_status(state, "restarting", "Ждём ответа новой сборки.", progress=82, step="health")
+        await_health(health_url, commit)
+        save_status(state, "restarting", "Новая сборка работает; обновляем исходники.", progress=92, step="sources")
+        warnings = sync_sources(state, source, local, commit, tag)
+        save_status(state, "complete", f"Готово: установлена {tag}.", progress=100, step="done",
+                    version=tag, backup=str(backup), warnings=warnings)
+    except Exception as error:
+        if switched and backup:
+            try:
+                replace_binary(executable, (backup / "hkc-web").read_bytes())
+                run(["systemctl", "restart", "hkc-web.service"], timeout=40)
+                await_health(health_url, old_commit)
+                save_status(state, "rolled_back", f"Новая сборка не запустилась, вернули предыдущую: {error}",
+                            progress=100, step="done", backup=str(backup))
+            except Exception as rollback_error:
+                save_status(state, "failed", f"Обновление: {error}; откат: {rollback_error}", progress=100,
+                            step="done", backup=str(backup))
+        else:
+            save_status(state, "failed", str(error), progress=100, step="done")
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            index_backups(state)
+
+
+# Возвращает резервную сборку. Текущая перед этим тоже сохраняется, поэтому откат обратим.
+# Исходники назад не переводятся: git продвигается только вперёд, расхождение — предупреждение.
+def rollback(name):
+    source = Path(os.environ["HKC_SOURCE_DIR"]).resolve()
+    state = Path(os.environ["HKC_UPDATE_DIR"]).resolve()
+    prepare_state(state)
+    executable = source / "bin" / "hkc-web"
+    health_url = os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080")
+    target = state / "backups" / name
+    save_status(state, "checking", f"Готовим откат к резервной сборке {name}.", progress=5, step="prepare",
+                reset=True, action="rollback", warnings=[])
+    current_backup = None
+    switched = False
+    current = {}
+    try:
+        if executable.is_symlink():
+            raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
+        binary = (target / "hkc-web").read_bytes()
+        if not binary.startswith(b"\x7fELF"):
+            raise RuntimeError("резервная сборка повреждена")
+        with tempfile.TemporaryDirectory(prefix="hkc-verify-") as temporary:
+            staged = Path(temporary) / "hkc-web"
+            staged.write_bytes(binary)
+            staged.chmod(0o755)
+            metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
+        current = json.loads(run([str(executable), "--version-json"], timeout=10))
+        save_status(state, "checking", f"Резервная сборка {metadata.get('version') or name} проверена.", progress=30,
+                    step="verify", version=metadata.get("version", ""), fromVersion=current.get("version", ""))
+        save_status(state, "restarting", "Сохраняем текущую сборку, чтобы откат можно было отменить.", progress=45, step="backup")
+        current_backup = make_backup(state, executable, current)
+        index_backups(state)
+        save_status(state, "restarting", "Возвращаем резервную сборку и перезапускаем панель.", progress=65,
+                    step="switch", backup=str(current_backup))
+        replace_binary(executable, binary)
+        switched = True
+        run(["systemctl", "restart", "hkc-web.service"], timeout=40)
+        save_status(state, "restarting", "Ждём ответа панели.", progress=85, step="health")
+        await_health(health_url, metadata.get("commit", ""))
+        warnings = []
+        if metadata.get("commit") and git(source, "rev-parse", "HEAD") != metadata.get("commit"):
+            warnings.append("Исходники остались на более новой версии: следующая установка выровняет их.")
+        save_status(state, "complete", f"Откат выполнен: работает {metadata.get('version') or name}.", progress=100,
+                    step="done", warnings=warnings)
+    except Exception as error:
+        if switched and current_backup:
+            with contextlib.suppress(Exception):
+                replace_binary(executable, (current_backup / "hkc-web").read_bytes())
+                run(["systemctl", "restart", "hkc-web.service"], timeout=40)
+                await_health(health_url, current.get("commit", ""))
+            save_status(state, "rolled_back", f"Резервная сборка не запустилась, вернули текущую: {error}",
+                        progress=100, step="done")
+        else:
+            save_status(state, "failed", str(error), progress=100, step="done")
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            index_backups(state)
+
+
+# Под внешней блокировкой читает задание и выполняет его. Блокировка в каталоге состояния
+# root переживает перезапуск панели и не даёт запустить две установки сразу.
+def main():
+    state = Path(os.environ["HKC_UPDATE_DIR"]).resolve()
+    prepare_state(state)
     with open(state / "lock", "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
-        switched = False
-        backup = None
-        executable = source / "bin" / "hkc-web"
-        old_commit = ""
         try:
-            save_status(state, "checking", "Запуск установки: проверяем окружение.", progress=3, reset=True)
-            arch = release_arch()
-            if executable.is_symlink():
-                raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
-            copies = [source] + ([local] if local and local != source else [])
-            for copy in copies:
-                require_clean(copy)
-            save_status(state, "checking", "Исходники чистые и находятся на main.", progress=10)
-            tag = stable_release()
-            save_status(state, "checking", f"Найден стабильный релиз {tag}.", progress=16, version=tag)
-            for copy in copies:
-                # Получаем только доверенный репозиторий, без пользовательских URL и команд.
-                git(copy, "fetch", "--no-tags", REPOSITORY + ".git",
-                    "refs/heads/main:refs/remotes/origin/main", f"refs/tags/{tag}:refs/tags/{tag}")
-            commit = git(source, "rev-parse", f"{tag}^{{commit}}")
-            save_status(state, "checking", f"Сверены GitHub refs и коммит {commit[:12]}.", progress=24)
-            for copy in copies:
-                git(copy, "merge-base", "--is-ancestor", "HEAD", commit)
-            current = json.loads(run([str(executable), "--version-json"], timeout=10))
-            old_commit = current.get("commit", "")
-            if current.get("modified"):
-                raise RuntimeError("установленный бинарник собран с локальными изменениями")
-            if old_commit == commit:
-                save_status(state, "checking", "Сборка уже актуальна; сверяем копии исходников.", progress=82)
-                for copy in copies:
-                    require_clean(copy)
-                    git(copy, "merge", "--ff-only", commit)
-                save_status(state, "complete", "Установлена актуальная версия. Локальные копии сверены.", progress=100, version=tag)
-                return
-
-            save_status(state, "downloading", "Загружаем архив релиза и контрольную сумму.", progress=32, version=tag)
-            name = f"hkc-web-{tag}-linux-{arch}.tar.gz"
-            base = f"{REPOSITORY}/releases/download/{tag}/"
-            binary = verify_archive(download(base + name, MAX_ARCHIVE),
-                                    download(base + name + ".sha256", 1024), name)
-            save_status(state, "downloading", "Архив скачан; SHA-256 и содержимое подтверждены.", progress=48)
-            # Проверяем встроенную ревизию до замены установленного бинарника.
-            with tempfile.TemporaryDirectory(prefix="hkc-verify-") as temporary:
-                staged = Path(temporary) / "hkc-web"
-                staged.write_bytes(binary)
-                staged.chmod(0o755)
-                metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
-                if metadata.get("commit") != commit or metadata.get("version") != tag or metadata.get("modified"):
-                    raise RuntimeError("метаданные бинарника не совпадают с опубликованным тегом Git")
-            save_status(state, "checking", "Встроенная версия бинарника совпадает с тегом и коммитом.", progress=58)
-
-            for copy in copies:
-                require_clean(copy)
-                git(copy, "merge-base", "--is-ancestor", "HEAD", commit)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-            backup = state / "backups" / f"{stamp}-{old_commit[:12]}"
-            backup.mkdir(mode=0o700, parents=True)
-            shutil.copy2(executable, backup / "hkc-web")
-            (backup / "version.json").write_text(json.dumps(current), encoding="utf-8")
-            save_status(state, "restarting", "Предыдущая сборка сохранена для отката.", progress=68, version=tag, backup=str(backup))
-            replace_binary(executable, binary)
-            switched = True
-            save_status(state, "restarting", "Новый бинарник установлен; перезапускаем службу.", progress=74)
-            run(["systemctl", "restart", "hkc-web.service"], timeout=40)
-            health_url = os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080")
-            save_status(state, "restarting", "Служба поднята; проверяем HTTP и номер коммита.", progress=82)
-            await_health(health_url, commit)
-            save_status(state, "restarting", "Новая сборка отвечает корректно; синхронизируем исходники.", progress=90)
-            # Продвигаем исходники только после проверки работающей новой сборки.
-            # Перед каждым слиянием снова проверяем чистоту: правки пользователя не сбрасываем.
-            for copy in copies:
-                require_clean(copy)
-                git(copy, "merge", "--ff-only", commit)
-            save_status(state, "complete", "Обновление установлено; сборка и локальные копии совпадают с релизом.", progress=100, version=tag, backup=str(backup))
+            request = read_request(request_path(), state)
         except Exception as error:
-            if switched and backup:
-                try:
-                    replace_binary(executable, (backup / "hkc-web").read_bytes())
-                    run(["systemctl", "restart", "hkc-web.service"], timeout=40)
-                    await_health(os.environ.get("HKC_UPDATE_HEALTH_URL", "http://127.0.0.1:8080"), old_commit)
-                    save_status(state, "rolled_back", f"Возвращена предыдущая сборка: {error}", progress=100, backup=str(backup))
-                except Exception as rollback_error:
-                    save_status(state, "failed", f"Обновление: {error}; откат: {rollback_error}", progress=100, backup=str(backup))
-            else:
-                save_status(state, "failed", str(error), progress=100)
+            save_status(state, "failed", str(error), progress=100, step="done", reset=True)
             raise
+        if request["action"] == "rollback":
+            rollback(request["backup"])
+        else:
+            install(request.get("version", ""))
 
 
 if __name__ == "__main__":
-    install()
+    main()

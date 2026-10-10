@@ -362,7 +362,9 @@ ok "$SOURCE_DIR/bin/hkc-web"
 
 # ---------- 7. Окружение ----------
 step "Настройка"
-install -d -m 0700 /etc/hkc "$UPDATE_DIR"
+install -d -m 0700 /etc/hkc
+# Каталог состояния открыт на чтение: панель показывает ход обновления; резервные сборки внутри закрыты.
+install -d -m 0755 "$UPDATE_DIR"
 json() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 if [ -f "$ENV_FILE" ]; then
   configured="настройки сохранены"

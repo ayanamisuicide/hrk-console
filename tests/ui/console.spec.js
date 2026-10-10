@@ -593,3 +593,18 @@ test("скриншоты для README", async ({ page }) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: "docs/images/mobile.png" });
 });
+
+test("спарклайны прокручиваются плавно, как большой график", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  await page.locator('[data-view="system"]').click();
+  const spark = page.locator('[data-spark="cpu"]');
+  await expect.poll(() => spark.evaluate((canvas) => canvas.width)).not.toBe(300);
+  const frames = await spark.evaluate(async (canvas) => {
+    const first = canvas.toDataURL();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return [first, canvas.toDataURL()];
+  });
+  // Между опросами сервера кадр меняется: время непрерывно сдвигает кривую.
+  expect(frames[0]).not.toBe(frames[1]);
+});

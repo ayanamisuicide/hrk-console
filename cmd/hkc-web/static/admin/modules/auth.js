@@ -74,7 +74,8 @@ export function createAuth(ctx) {
       ctx.renderConfig(config);
       await ctx.refreshUpdates();
     } catch (error) {
-      if (ctx.adminToken) ctx.showNotice(error.message, "error");
+      // Во время обновления панель перезапускается: падение запросов ожидаемо, его показывает страница обновлений.
+      if (ctx.adminToken && !ctx.updateRunning) ctx.showNotice(error.message, "error");
     } finally {
       ctx.refreshBusy = false;
     }

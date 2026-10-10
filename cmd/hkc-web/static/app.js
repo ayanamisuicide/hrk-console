@@ -1,5 +1,5 @@
 import { createServiceBindings } from "./modules/service.js";
-import { createLiveChart, drawSparkline } from "./live-chart.js";
+import { createLiveChart, createSparkline } from "./live-chart.js";
 import { createJournal } from "./modules/journal.js";
 import { createSystem } from "./modules/system.js";
 import { createIncidents } from "./modules/incidents.js";
@@ -138,7 +138,9 @@ ctx.detailsBusy = false;
 
 ctx.createLiveChart = createLiveChart;
 
-ctx.drawSparkline = drawSparkline;
+ctx.createSparkline = createSparkline;
+
+ctx.sparkBusy = false;
 
 ctx.bindHistoryChart();
 
@@ -216,6 +218,8 @@ setInterval(() => {
   if (ctx.authenticated && ctx.currentView === "system") {
     ctx.refreshSystem();
     if (ctx.historyRange === "live" || systemTick % 5 === 0) ctx.refreshHistory();
+    // Спарклайны всегда показывают последние минуты и обновляются каждую секунду.
+    if (ctx.historyRange !== "live") ctx.refreshSparks();
     if (systemTick % 5 === 0) ctx.refreshDetails();
     systemTick++;
   } else systemTick = 0;

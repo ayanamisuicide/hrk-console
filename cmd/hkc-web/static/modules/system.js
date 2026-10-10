@@ -551,12 +551,7 @@ export function createSystem(ctx) {
       ctx.$("#history-count").textContent = points.length
         ? `${Number(data.sampleCount ?? points.length).toLocaleString("ru-RU")} замеров · ${interval} · событий ${(data.events || []).length}`
         : "История появится после первых замеров.";
-      if (ctx.historyRange === "live") renderSparks(points);
-      else if (Date.now() - (ctx.sparkFetchedAt || 0) > 4000) {
-        ctx.sparkFetchedAt = Date.now();
-        const live = await ctx.request("/api/system/history?range=live");
-        renderSparks(live.points || []);
-      }
+      if (ctx.historyRange === "live") renderSparks(points, data.now);
     } catch (error) {
       ctx.$("#history-count").textContent = `История недоступна: ${error.message}`;
     } finally {
@@ -564,13 +559,31 @@ export function createSystem(ctx) {
     }
   }
 
-  function renderSparks(points) {
-    const recent = points.slice(-120);
+  // Спарклайны создаются один раз и дальше получают только новые точки.
+  function renderSparks(points, serverNow) {
+    ctx.sparks ||= new Map();
     document.querySelectorAll("[data-spark]").forEach((canvas) => {
       const key = canvas.dataset.spark;
-      const color = { cpu: "--chart-1", memory: "--chart-2", disk: "--chart-3", botRss: "--accent" }[key];
-      ctx.drawSparkline(canvas, recent.map((point) => Number(point[key]) || 0), color);
+      if (!ctx.sparks.has(canvas)) {
+        const color = { cpu: "--chart-1", memory: "--chart-2", disk: "--chart-3", botRss: "--accent" }[key];
+        ctx.sparks.set(canvas, ctx.createSparkline(canvas, color));
+      }
+      ctx.sparks.get(canvas).setData(points, key, serverNow);
     });
+  }
+
+  // При длинном диапазоне главного графика спарклайны берут живые 5 минут отдельным запросом.
+  async function refreshSparks() {
+    if (ctx.sparkBusy || document.hidden) return;
+    ctx.sparkBusy = true;
+    try {
+      const live = await ctx.request("/api/system/history?range=live");
+      renderSparks(live.points || [], live.now);
+    } catch (_) {
+      /* Спарклайны вторичны: ошибку покажет главный график. */
+    } finally {
+      ctx.sparkBusy = false;
+    }
   }
 
   // Подключает ручное обновление ресурсов.
@@ -628,6 +641,7 @@ export function createSystem(ctx) {
     refreshDetails,
     refreshPanelVersion,
     refreshHistory,
+    refreshSparks,
     bindSystemRefresh,
     bindHistoryChart,
   };

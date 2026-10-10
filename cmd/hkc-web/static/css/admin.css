@@ -1,13 +1,11 @@
 /* Админка и Центр обновления: шапка, сводка бота, навигация по разделам и рабочие карточки. */
 
-.admin-body,
-.update-body {
+.admin-body {
   min-height: 100%;
 }
 
 /* ---------- Шапка ---------- */
-.admin-header,
-.update-header {
+.admin-header {
   position: sticky;
   top: 0;
   z-index: 30;
@@ -830,257 +828,852 @@
   gap: 6px;
 }
 
-/* ---------- Обновления в админке ---------- */
-.updates-grid {
+/* ---------- Обновления ---------- */
+#admin-updates {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 16px;
 }
-.updates-grid article,
-.update-versions article {
+#admin-updates[hidden] {
+  display: none;
+}
+
+/* Главная карточка: кольцо прогресса и статус */
+.upd-hero {
+  --tone: var(--accent);
+  position: relative;
   display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-}
-.updates-grid strong,
-.update-versions strong {
-  font-size: 17px;
-  font-weight: 600;
-}
-.updates-grid code,
-.update-versions code,
-.update-versions small {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 28px;
   overflow: hidden;
-  justify-self: start;
-  max-width: 100%;
-  color: var(--text-3);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 28px;
+  background:
+    radial-gradient(90% 140% at 0% 50%, color-mix(in srgb, var(--tone) 14%, transparent), transparent 60%),
+    var(--surface);
+  transition: background 600ms var(--ease);
 }
-.updates-details {
+.upd-hero[data-state="current"],
+.upd-hero[data-state="done"] {
+  --tone: var(--ok);
+}
+.upd-hero[data-state="failed"],
+.upd-hero[data-state="error"] {
+  --tone: var(--bad);
+}
+.upd-hero[data-state="loading"] {
+  --tone: var(--text-3);
+}
+.upd-hero.upd-enter .upd-hero-text > * {
+  animation: upd-rise 520ms var(--ease) both;
+}
+.upd-hero.upd-enter .upd-hero-text > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.upd-hero.upd-enter .upd-hero-text > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.upd-hero.upd-enter .upd-hero-text > :nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+.upd-hero[data-state="failed"].upd-enter {
+  animation: upd-shake 520ms var(--ease);
+}
+@keyframes upd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes upd-shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.upd-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
+}
+.upd-orb::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--tone) 28%, transparent), transparent 70%);
+  filter: blur(6px);
+  animation: upd-breathe 3.2s ease-in-out infinite;
+}
+@keyframes upd-breathe {
+  50% {
+    transform: scale(1.12);
+    opacity: 0.6;
+  }
+}
+.upd-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+.upd-ring stop:first-child {
+  stop-color: var(--accent);
+}
+.upd-ring stop:last-child {
+  stop-color: var(--ok);
+}
+.upd-ring circle {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.upd-ring-track {
+  stroke: color-mix(in srgb, var(--tone) 14%, var(--surface-hover));
+}
+.upd-ring-value {
+  stroke: url(#upd-gradient);
+  stroke-dasharray: 327;
+  stroke-dashoffset: 327;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--tone) 60%, transparent));
+  transition:
+    stroke-dashoffset 700ms var(--ease),
+    opacity 300ms var(--ease);
+}
+.upd-hero[data-state="failed"] .upd-ring-value,
+.upd-hero[data-state="error"] .upd-ring-value {
+  stroke: var(--bad);
+}
+.upd-hero[data-state="available"] .upd-ring-value,
+.upd-hero[data-state="loading"] .upd-ring-value {
+  opacity: 0;
+}
+/* Светящаяся «комета» обегает кольцо, пока идёт установка или проверка. */
+.upd-ring-comet {
+  stroke: var(--tone);
+  stroke-dasharray: 36 291;
+  opacity: 0;
+  transform-origin: 60px 60px;
+  filter: drop-shadow(0 0 8px var(--tone));
+}
+.upd-hero[data-state="running"] .upd-ring-comet,
+.upd-hero[data-state="loading"] .upd-ring-comet {
+  opacity: 0.9;
+  animation: upd-orbit 1.4s linear infinite;
+}
+@keyframes upd-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Доступно обновление: расходящиеся кольца привлекают внимание к кнопке. */
+.upd-hero[data-state="available"] .upd-orb::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: upd-ping 2.2s var(--ease) infinite;
+}
+@keyframes upd-ping {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+.upd-orb-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    0 10px 30px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.upd-icon {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 300ms var(--ease),
+    transform 400ms var(--ease);
+}
+#upd-percent {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 300ms var(--ease),
+    transform 400ms var(--ease);
+}
+.upd-hero[data-state="running"] #upd-percent,
+.upd-hero[data-state="available"] .upd-icon-arrow,
+.upd-hero[data-state="loading"] .upd-icon-arrow,
+.upd-hero[data-state="current"] .upd-icon-check,
+.upd-hero[data-state="done"] .upd-icon-check,
+.upd-hero[data-state="failed"] .upd-icon-cross,
+.upd-hero[data-state="error"] .upd-icon-cross {
+  opacity: 1;
+  transform: none;
+}
+.upd-hero[data-state="available"] .upd-icon-arrow {
+  animation: upd-bob 1.6s ease-in-out infinite;
+}
+@keyframes upd-bob {
+  50% {
+    transform: translateY(-5px);
+  }
+}
+/* Галочка прорисовывается штрихом при завершении. */
+.upd-icon-check path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+}
+.upd-hero[data-state="done"].upd-enter .upd-icon-check path {
+  animation: upd-draw 650ms 150ms var(--ease) both;
+}
+@keyframes upd-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+}
+.upd-burst {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  pointer-events: none;
+}
+.upd-burst i {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px;
+  border-radius: 2px;
+  animation: upd-particle 1.2s cubic-bezier(0.15, 0.7, 0.3, 1) both;
+}
+@keyframes upd-particle {
+  0% {
+    transform: translate(0, 0) scale(0.4) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy)) scale(1) rotate(var(--spin));
+    opacity: 0;
+  }
+}
+
+.upd-hero-text {
   display: grid;
   gap: 8px;
-  font-size: 13px;
+  min-width: 0;
 }
-#update-summary {
-  font-weight: 500;
+.upd-hero-text .eyebrow {
+  color: var(--tone);
 }
-.update-actions {
+.upd-hero-text h2 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+#upd-subtitle {
+  max-width: 620px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.upd-versions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: 4px;
 }
-
-/* ---------- Центр обновления ---------- */
-.update-shell {
-  display: grid;
-  gap: 16px;
-  width: min(880px, 100%);
-  margin: 0 auto;
-  padding: 0 clamp(16px, 3vw, 32px) 48px;
-}
-.update-header {
-  margin: 0 calc(-1 * clamp(16px, 3vw, 32px));
-}
-.update-header h1 {
-  font-size: 18px;
-}
-.update-header p {
-  color: var(--text-3);
-  font-size: 12.5px;
-}
-.update-hero {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
+.upd-chip {
+  padding: 4px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: radial-gradient(ellipse at 100% 0%, var(--accent-soft), transparent 60%), var(--surface);
-  box-shadow: var(--shadow-md);
-}
-.update-hero-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-3);
-  font: 12px var(--mono);
-}
-.update-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 24px;
-  padding: 0 10px;
   border-radius: 999px;
   background: var(--surface-2);
-  color: var(--text-2);
-  font: 600 11.5px var(--font);
-  letter-spacing: 0.04em;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
 }
-.update-state::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.update-state:not([data-phase="idle"]):not([data-phase="complete"]):not([data-phase="failed"]):not([data-phase="rolled_back"]) {
+.upd-chip-new {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
   background: var(--accent-soft);
   color: var(--accent);
 }
-.update-state[data-phase="complete"] {
-  background: var(--ok-soft);
-  color: var(--ok);
+/* Три точки «перетекают» от текущей версии к новой. */
+.upd-flow {
+  display: inline-flex;
+  gap: 4px;
 }
-.update-state[data-phase="failed"],
-.update-state[data-phase="rolled_back"] {
-  background: var(--bad-soft);
-  color: var(--bad);
+.upd-flow i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: upd-flow 1.2s ease-in-out infinite;
 }
-.update-state.phase-change {
-  animation: value-change 600ms var(--ease);
+.upd-flow i:nth-child(2) {
+  animation-delay: 150ms;
 }
-.update-hero h2 {
-  font-size: 22px;
+.upd-flow i:nth-child(3) {
+  animation-delay: 300ms;
 }
-#update-message {
+@keyframes upd-flow {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateX(-2px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+}
+.upd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+#upd-install:not([hidden]) {
+  animation: upd-rise 400ms var(--ease) both;
+}
+.upd-hero[data-state="available"] #upd-install:not(:disabled) {
+  box-shadow: 0 0 0 0 var(--accent-soft);
+  animation: upd-glow 2.2s ease-in-out infinite;
+}
+@keyframes upd-glow {
+  50% {
+    box-shadow: 0 0 0 6px var(--accent-soft);
+  }
+}
+#upd-checked {
+  font-size: 12.5px;
+}
+
+/* Причины, по которым установка недоступна */
+.upd-blockers {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.upd-blockers li {
+  display: grid;
+  gap: 3px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  animation: upd-rise 360ms var(--ease) both;
+}
+.upd-blockers strong {
+  font-size: 13.5px;
+}
+.upd-blockers span {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* Ход установки */
+.upd-progress {
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px;
+  animation: upd-rise 420ms var(--ease) both;
+}
+.upd-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.upd-progress-head h3 {
+  margin-top: 2px;
+  font-size: 17px;
+}
+#upd-elapsed {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.upd-steps {
+  --filled: 0%;
+  position: relative;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Линия под шагами: серая дорожка и заполняющаяся градиентом часть. */
+.upd-steps::before,
+.upd-steps::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: calc(100% / var(--count, 8) / 2);
+  right: calc(100% / var(--count, 8) / 2);
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+}
+.upd-steps::after {
+  right: auto;
+  width: calc((100% - 100% / var(--count, 8)) * var(--filled-ratio, 0));
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent);
+  transition: width 700ms var(--ease);
+}
+.upd-steps li {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.upd-step-dot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  transition:
+    border-color 300ms var(--ease),
+    background 300ms var(--ease),
+    transform 300ms var(--ease);
+}
+.upd-step-dot svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+}
+.upd-steps b {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 300ms var(--ease);
+}
+.upd-steps small {
+  min-height: 14px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.upd-steps li[data-status="done"] .upd-step-dot {
+  border-color: var(--ok);
+  background: var(--ok);
+  animation: upd-pop 420ms var(--ease);
+}
+.upd-steps li[data-status="done"] .upd-step-dot svg {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 400ms 120ms var(--ease);
+}
+.upd-steps li[data-status="done"] b {
   color: var(--text-2);
 }
-.update-progress-track {
+.upd-steps li[data-status="active"] .upd-step-dot {
+  border-color: transparent;
+  background: var(--accent-soft);
+}
+/* Активный шаг: вращающаяся дуга и мягкое свечение. */
+.upd-steps li[data-status="active"] .upd-step-dot::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  border-radius: 50%;
+  animation: upd-orbit 0.9s linear infinite;
+}
+.upd-steps li[data-status="active"] .upd-step-dot::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: upd-breathe 1.4s ease-in-out infinite;
+}
+.upd-steps li[data-status="active"] b {
+  color: var(--text);
+}
+.upd-steps li[data-status="error"] .upd-step-dot {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+  animation: upd-shake 480ms var(--ease);
+}
+.upd-steps li[data-status="error"] .upd-step-dot::after {
+  content: "!";
+  color: var(--bad);
+  font-weight: 800;
+}
+.upd-steps li[data-status="error"] b {
+  color: var(--bad);
+}
+@keyframes upd-pop {
+  50% {
+    transform: scale(1.22);
+  }
+}
+.upd-bar {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--surface-hover);
 }
-#update-progress-bar {
+.upd-bar i {
+  position: relative;
   display: block;
   width: 0;
   height: 100%;
+  overflow: hidden;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--violet));
-  transition: width 600ms var(--ease);
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  transition: width 700ms var(--ease);
 }
-.update-progress-meta {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-3);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
+/* Бегущий блик по заполненной части, пока установка идёт. */
+.upd-progress:not([data-phase="complete"]):not([data-phase="failed"]):not([data-phase="rolled_back"]) .upd-bar i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.45) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: upd-shine 1.6s ease-in-out infinite;
 }
-.update-versions {
+@keyframes upd-shine {
+  to {
+    transform: translateX(100%);
+  }
+}
+.upd-progress[data-phase="failed"] .upd-bar i,
+.upd-progress[data-phase="rolled_back"] .upd-bar i {
+  background: var(--bad);
+}
+.upd-step-message {
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.upd-warnings {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.upd-warnings li {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  font-size: 13px;
+}
+.upd-log summary {
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.upd-log ol {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  list-style: none;
+  font-size: 12.5px;
+}
+.upd-log li {
+  display: grid;
+  grid-template-columns: 74px 1fr;
   gap: 10px;
 }
-.update-versions article span {
+.upd-log time {
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.upd-log li[data-phase="failed"] span,
+.upd-log li[data-phase="rolled_back"] span {
+  color: var(--bad);
+}
+
+/* Перезапуск панели во время установки */
+/* По центру снизу: правый угол занят обычными уведомлениями админки. */
+.upd-reconnect {
+  position: fixed;
+  right: 0;
+  bottom: 24px;
+  left: 0;
+  width: fit-content;
+  margin: 0 auto;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow-lg, 0 18px 40px rgba(0, 0, 0, 0.3));
+  backdrop-filter: blur(10px);
+  animation: upd-rise 360ms var(--ease) both;
+}
+.upd-reconnect[hidden] {
+  display: none;
+}
+.upd-reconnect div {
+  display: grid;
+  gap: 2px;
+}
+.upd-reconnect strong {
+  font-size: 14px;
+}
+.upd-reconnect small {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.upd-reconnect-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+.upd-reconnect-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: upd-dots 1s ease-in-out infinite;
+}
+.upd-reconnect-dots i:nth-child(2) {
+  animation-delay: 160ms;
+}
+.upd-reconnect-dots i:nth-child(3) {
+  animation-delay: 320ms;
+}
+@keyframes upd-dots {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Что нового */
+.upd-notes {
+  display: grid;
+  gap: 14px;
+  padding: 22px 24px;
+}
+.upd-releases {
+  display: grid;
+  gap: 12px;
+}
+.upd-release {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  animation: upd-rise 420ms var(--delay, 0ms) var(--ease) both;
+}
+.upd-release header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.upd-release header strong {
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.upd-release header time {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.upd-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+.upd-badge.new {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.upd-release h4 {
+  margin: 4px 0 0;
   color: var(--text-3);
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-#update-connection {
-  margin-left: auto;
-  color: var(--text-3);
-  font-size: 12.5px;
+.upd-release ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
 }
-.update-readiness {
-  padding: 12px 14px;
+.upd-release li::marker {
+  color: var(--accent);
+}
+.upd-release code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  font-size: 12px;
+}
+.upd-more-button {
+  justify-self: start;
+}
+
+/* Другая версия и резервные копии */
+.upd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.upd-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 22px 24px;
+}
+.upd-card > .muted {
+  font-size: 13px;
+}
+.upd-pick {
+  display: flex;
+  gap: 10px;
+}
+.upd-pick select {
+  flex: 1;
+  min-width: 0;
+}
+.upd-backups {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.upd-backups li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
+}
+.upd-backups li.muted {
+  border-style: dashed;
+  background: transparent;
+  font-size: 13px;
+}
+.upd-backups div {
+  display: grid;
+  gap: 2px;
+}
+.upd-backups strong {
+  font-family: var(--mono);
+  font-size: 13.5px;
+}
+.upd-backups small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.upd-tech {
+  padding: 16px 22px;
+}
+.upd-tech summary {
   color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.upd-tech-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 18px;
+  margin: 14px 0 0;
   font-size: 13px;
 }
-.update-timeline {
-  display: grid;
-  gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-.update-timeline-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-.update-timeline-heading h2 {
-  margin-top: 2px;
-  font-size: 16px;
-}
-#timeline-count {
+.upd-tech-list dt {
   color: var(--text-3);
+}
+.upd-tech-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
   font-size: 12.5px;
 }
-#timeline-list {
-  display: grid;
-  gap: 0;
-}
-#timeline-list li {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 12px;
-  padding: 10px 0 10px 24px;
-  font-size: 13px;
-}
-#timeline-list li:not(.timeline-empty)::before {
-  content: "";
-  position: absolute;
-  top: 15px;
-  left: 4px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-#timeline-list li:not(.timeline-empty):not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 28px;
-  bottom: -6px;
-  left: 8px;
-  width: 1px;
-  background: var(--border-strong);
-}
-#timeline-list li[data-phase="complete"]::before {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
-}
-#timeline-list li[data-phase="failed"]::before,
-#timeline-list li[data-phase="rolled_back"]::before {
-  background: var(--bad);
-  box-shadow: 0 0 0 3px var(--bad-soft);
-}
-#timeline-list time {
-  color: var(--text-3);
-  font: 12px var(--mono);
-}
-#timeline-list .timeline-empty {
-  display: block;
-  padding: 20px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  color: var(--text-3);
-  text-align: center;
-}
-.timeline-enter {
-  animation: page-in 360ms var(--ease) both;
-}
-.update-footnote {
-  color: var(--text-3);
-  font-size: 12.5px;
-}
-#admin-auth-form .brand-mark {
-  margin-bottom: 4px;
+@media (prefers-reduced-motion: reduce) {
+  .upd-orb::before,
+  .upd-orb::after,
+  .upd-ring-comet,
+  .upd-icon-arrow,
+  .upd-flow i,
+  .upd-steps li .upd-step-dot::before,
+  .upd-steps li .upd-step-dot::after,
+  .upd-bar i::after,
+  .upd-reconnect-dots i,
+  #upd-install {
+    animation: none !important;
+  }
 }
 
 /* ---------- Адаптивность ---------- */
@@ -1112,17 +1705,13 @@
   .audit-inspector {
     position: static;
   }
-  .updates-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 @media (max-width: 720px) {
   .admin-header nav span,
   .admin-header .eyebrow {
     display: none;
   }
-  .admin-header,
-  .update-header {
+  .admin-header {
     gap: 10px;
     padding: 10px 12px;
   }
@@ -1131,9 +1720,6 @@
   }
   .admin-header nav .compact {
     padding: 0 8px;
-  }
-  .update-header p {
-    display: none;
   }
   .summary {
     gap: 8px;
@@ -1152,7 +1738,7 @@
   .config-form,
   .watchdog-live,
   .alert-events,
-  .update-versions {
+  .upd-grid {
     grid-template-columns: 1fr;
   }
   .alert-thresholds {

@@ -507,65 +507,88 @@
             aria-labelledby="admin-page-title"
             hidden
           >
-            <section
-              class="card admin-section updates-section"
-              aria-labelledby="updates-title"
-            >
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">Сверка сборки</span>
-                  <h2 id="updates-title">Версии и исходники</h2>
+            <section class="card upd-hero" id="upd-hero" data-state="loading" aria-live="polite">
+              <div class="upd-orb" aria-hidden="true">
+                <svg class="upd-ring" viewBox="0 0 120 120">
+                  <defs>
+                    <linearGradient id="upd-gradient" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="var(--accent)" />
+                      <stop offset="1" stop-color="var(--ok)" />
+                    </linearGradient>
+                  </defs>
+                  <circle class="upd-ring-track" cx="60" cy="60" r="52" />
+                  <circle class="upd-ring-value" id="upd-ring-value" cx="60" cy="60" r="52" />
+                  <circle class="upd-ring-comet" cx="60" cy="60" r="52" />
+                </svg>
+                <span class="upd-orb-core">
+                  <svg class="upd-icon upd-icon-arrow" viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6" /></svg>
+                  <svg class="upd-icon upd-icon-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+                  <svg class="upd-icon upd-icon-cross" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17" /></svg>
+                  <strong id="upd-percent">0%</strong>
+                </span>
+                <span class="upd-burst" id="upd-burst"></span>
+              </div>
+              <div class="upd-hero-text">
+                <span class="eyebrow" id="upd-eyebrow">Версия панели</span>
+                <h2 id="upd-title">Проверяем обновления…</h2>
+                <p id="upd-subtitle">Смотрим, что есть на GitHub.</p>
+                <div class="upd-versions">
+                  <span class="upd-chip" id="upd-current">—</span>
+                  <span class="upd-flow" id="upd-flow" hidden aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="upd-chip upd-chip-new" id="upd-target" hidden>—</span>
                 </div>
-                <button id="updates-check" class="compact">
-                  Проверить GitHub
-                </button>
-              </div>
-              <div class="updates-grid">
-                <article>
-                  <span class="eyebrow">ЗАПУЩЕННАЯ СБОРКА</span
-                  ><strong id="update-installed">—</strong
-                  ><code id="update-installed-commit">—</code>
-                </article>
-                <article>
-                  <span class="eyebrow">СЕРВЕР / ИСХОДНИКИ</span
-                  ><strong id="update-source">—</strong
-                  ><code id="update-source-commit">—</code>
-                </article>
-                <article>
-                  <span class="eyebrow">ЛОКАЛЬНО / WINDOWS</span
-                  ><strong id="update-local">—</strong
-                  ><code id="update-local-commit">—</code>
-                </article>
-                <article>
-                  <span class="eyebrow">GITHUB / РЕЛИЗ</span
-                  ><strong id="update-release">—</strong
-                  ><code id="update-release-commit">—</code>
-                </article>
-              </div>
-              <div class="updates-details">
-                <p id="update-summary" role="status">
-                  Получаем сведения о версиях…
-                </p>
-                <p id="update-job" role="status"></p>
-                <p id="update-main" class="muted"></p>
-                <p class="muted">
-                  Проверка каждые 10 минут. Установка — по кнопке, предыдущая
-                  сборка сохраняется. Изменённые локальные файлы блокируют
-                  обновление.
-                </p>
-                <div class="update-actions">
-                  <button id="updates-install" class="primary" disabled>
-                    Открыть обновление</button
-                  ><a
-                    id="updates-open"
-                    class="compact"
-                    href="/admin/update.html"
-                    target="hkc-update-progress"
-                    >Ход установки ↗</a
-                  >
+                <div class="upd-actions">
+                  <button id="upd-install" class="primary" type="button" hidden>Обновить</button
+                  ><button id="upd-check" type="button">Проверить</button
+                  ><span id="upd-checked" class="muted"></span>
                 </div>
               </div>
             </section>
+
+            <ul class="upd-blockers" id="upd-blockers" hidden></ul>
+
+            <section class="card upd-progress" id="upd-progress" hidden>
+              <div class="upd-progress-head">
+                <div><span class="eyebrow" id="upd-progress-eyebrow">Установка</span><h3 id="upd-step-title">Готовимся…</h3></div>
+                <span id="upd-elapsed" class="muted">0:00</span>
+              </div>
+              <ol class="upd-steps" id="upd-steps"></ol>
+              <div class="upd-bar" role="progressbar" aria-label="Ход установки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="upd-bar-fill"></i></div>
+              <p class="upd-step-message" id="upd-step-message">—</p>
+              <ul class="upd-warnings" id="upd-warnings" hidden></ul>
+              <details class="upd-log"><summary>Подробный журнал</summary><ol id="upd-log"></ol></details>
+            </section>
+
+            <div class="upd-reconnect" id="upd-reconnect" hidden>
+              <span class="upd-reconnect-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div><strong>Панель перезапускается</strong><small>Новая версия запускается — страница подключится сама.</small></div>
+            </div>
+
+            <section class="card upd-notes">
+              <div class="section-heading">
+                <div><span class="eyebrow">Изменения</span><h2>Что нового</h2></div>
+                <a class="compact" href="https://github.com/ayanamisuicide/hrk-console/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Вся история ↗</a>
+              </div>
+              <div id="upd-releases" class="upd-releases"><p class="muted">Загружаем список изменений…</p></div>
+              <button id="upd-releases-more" class="compact upd-more-button" type="button" hidden>Показать прошлые версии</button>
+            </section>
+
+            <div class="upd-grid">
+              <section class="card upd-card">
+                <div class="section-heading"><div><span class="eyebrow">Другая версия</span><h2>Выбрать версию</h2></div></div>
+                <p class="muted">Можно поставить любой релиз — и новее, и старее. Перед заменой текущая сборка сохраняется.</p>
+                <div class="upd-pick"><select id="upd-version" aria-label="Версия"></select><button id="upd-version-install" type="button">Установить</button></div>
+              </section>
+              <section class="card upd-card">
+                <div class="section-heading"><div><span class="eyebrow">Резервные копии</span><h2>Вернуть прошлую</h2></div></div>
+                <ul id="upd-backups" class="upd-backups"><li class="muted">Резервных копий пока нет — они появятся после первого обновления.</li></ul>
+              </section>
+            </div>
+
+            <details class="card upd-tech">
+              <summary>Технические подробности</summary>
+              <dl id="upd-tech" class="upd-tech-list"></dl>
+            </details>
           </section>
         </div>
       </div>

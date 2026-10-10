@@ -3,54 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Heroku · Обновление</title>
-  <script src="/theme.js"></script>
-  <link rel="stylesheet" href="/css/base.css">
-  <link rel="stylesheet" href="/css/admin.css">
+  <title>Heroku · Обновления</title>
+  <!-- Отдельное окно обновления заменено страницей в админке; старые ссылки ведут туда. -->
+  <meta http-equiv="refresh" content="0; url=/admin/">
+  <script src="/admin/update.js"></script>
 </head>
-<body class="update-body">
-  <main class="update-shell">
-    <header class="update-header">
-      <div class="admin-brand"><div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 20V8m0 0-5 5m5-5 5 5M5 4h14"/></svg></div><div><h1>Центр обновления</h1><p>Живой ход установки без потери окна при перезапуске панели.</p></div></div>
-      <a class="compact" href="/admin/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Админка</a>
-    </header>
-
-    <!-- Раздел update-title: содержимое обновляется соответствующим модулем страницы. -->
-    <section class="update-hero" aria-labelledby="update-title">
-      <div class="update-hero-top"><span id="update-state" class="update-state" data-phase="idle">ОЖИДАНИЕ</span><span id="update-clock">—</span></div>
-      <h2 id="update-title">Проверяем состояние</h2>
-      <p id="update-message" role="status">Получаем сведения о версиях и службе обновления…</p>
-      <div class="update-progress-track" role="progressbar" aria-label="Ход установки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="update-progress-bar"></span></div>
-      <div class="update-progress-meta"><span id="update-progress-label">0%</span><span id="update-target">Релиз —</span></div>
-    </section>
-
-    <section class="update-versions" aria-label="Сверка версий">
-      <article><span>ЗАПУЩЕННАЯ СБОРКА</span><strong id="version-running">—</strong><code id="commit-running">—</code></article>
-      <article><span>СТАБИЛЬНЫЙ РЕЛИЗ</span><strong id="version-release">—</strong><code id="commit-release">—</code></article>
-      <article><span>КОПИИ ИСХОДНИКОВ</span><strong id="version-copies">—</strong><small id="commit-copies">—</small></article>
-    </section>
-
-    <div class="update-actions">
-      <button id="update-install" class="primary" type="button" disabled>Установить обновление</button>
-      <button id="update-check" type="button">Проверить GitHub</button>
-      <span id="update-connection" role="status">Соединение…</span>
-    </div>
-    <p id="update-readiness" class="update-readiness" role="status">Сверяем возможность установки…</p>
-
-    <!-- Раздел timeline-title: содержимое обновляется соответствующим модулем страницы. -->
-    <section class="update-timeline" aria-labelledby="timeline-title">
-      <div class="update-timeline-heading"><div><span class="eyebrow">Журнал установки</span><h2 id="timeline-title">Этапы установки</h2></div><span id="timeline-count">0 событий</span></div>
-      <ol id="timeline-list"><li class="timeline-empty">Здесь появятся проверка копий, загрузка, контрольная сумма, резервная сборка, перезапуск и итог.</li></ol>
-    </section>
-    <p class="update-footnote">Секреты и содержимое конфигурации здесь не показываются. Окно можно оставить открытым: после перезапуска сервера оно переподключится само.</p>
-    <p id="update-backup" class="update-footnote" hidden></p>
-  </main>
-
-  <!-- Модальный диалог update-auth-error: взаимодействие управляется модулем страницы. -->
-  <dialog id="update-auth"><form method="dialog" id="update-auth-form"><span class="eyebrow">ДОСТУП АДМИНИСТРАТОРА</span><h2>Доступ к обновлениям</h2><p>Введите административный токен. Он останется только в этой вкладке.</p><input id="update-token" type="password" aria-label="Административный токен" autocomplete="off" required><p id="update-auth-error" class="update-error"></p><button class="primary" type="submit">Открыть</button></form></dialog>
-  <!-- Модальный диалог update-confirm-form: взаимодействие управляется модулем страницы. -->
-  <dialog id="update-confirm"><form method="dialog" id="update-confirm-form"><span class="eyebrow">УСТАНОВКА РЕЛИЗА</span><h2>Начать установку?</h2><p>Предыдущая сборка будет сохранена. Панель перезапустится, а это окно продолжит показывать ход и итог установки.</p><div class="confirm-actions"><button value="cancel">Отмена</button><button class="primary" value="confirm">Установить</button></div></form></dialog>
-  <script src="/motion.js" defer></script>
-  <script src="/admin/update.js" defer></script>
+<body>
+  <p><a href="/admin/">Обновления теперь в админке →</a></p>
 </body>
 </html>

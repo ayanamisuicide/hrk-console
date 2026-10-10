@@ -150,7 +150,13 @@ func main() {
 	go s.runModuleAlerts(context.Background())
 	go s.prober.run(context.Background())
 	go s.runWatchdog(context.Background())
-	s.updates = &updateChecker{}
+	s.updates = &updateChecker{onNewVersion: func(version string, notes []releaseNotes) {
+		message := "Обновить можно в админке, в разделе «Обновления»."
+		if len(notes) > 0 && len(notes[0].Sections) > 0 && len(notes[0].Sections[0].Items) > 0 {
+			message = notes[0].Sections[0].Items[0] + "\n" + message
+		}
+		s.alerts.notify(alertEvent{Kind: "update.available", Severity: "info", Title: "Доступна hrk-console " + version, Message: message})
+	}}
 	s.updates.check()
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
