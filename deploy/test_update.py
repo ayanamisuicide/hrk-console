@@ -10,6 +10,10 @@ from unittest.mock import patch
 
 import update
 
+# Тесты не должны трогать настоящий /etc/systemd даже при запуске от root.
+_SYSTEMD_DIR = tempfile.TemporaryDirectory(prefix="hkc-systemd-")
+update.KEEP_BOT_DROPIN = Path(_SYSTEMD_DIR.name) / "hkc-web.service.d" / "keep-bot.conf"
+
 
 # Создаёт маленький архив в памяти для проверки допустимых и опасных вариантов релиза.
 def archive(name="hkc-web", kind=tarfile.REGTYPE, payload=b"\x7fELFtest"):
@@ -267,6 +271,28 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(calls), update.PARALLEL_STREAMS)
         self.assertEqual(seen[-1][1], len(payload))
         self.assertEqual(max(got for got, _ in seen), len(payload))
+
+class KeepBotTests(unittest.TestCase):
+    # Дополнение пишется один раз и перечитывается systemd только при изменении.
+    def test_keep_bot_dropin_written_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            dropin = Path(temporary) / "hkc-web.service.d" / "keep-bot.conf"
+            calls = []
+            with patch.object(update, "KEEP_BOT_DROPIN", dropin),                     patch.object(update, "run", lambda args, timeout=90: calls.append(args)),                     patch.object(update, "console_line", lambda state, text: None):
+                update.keep_bot_on_restart(Path(temporary))
+                update.keep_bot_on_restart(Path(temporary))
+            self.assertIn("KillMode=process", dropin.read_text(encoding="utf-8"))
+            self.assertEqual(calls, [["systemctl", "daemon-reload"]])
+
+    # Ошибка записи не прерывает обновление.
+    def test_keep_bot_dropin_failure_is_not_fatal(self):
+        lines = []
+        def fail(*args, **kwargs):
+            raise RuntimeError("нет прав")
+        with patch.object(update, "run", fail), patch.object(update, "console_line", lambda state, text: lines.append(text)):
+            update.keep_bot_on_restart(Path("."))
+        self.assertTrue(lines)
+
 
 if __name__ == "__main__":
     unittest.main()

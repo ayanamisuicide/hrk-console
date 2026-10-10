@@ -34,6 +34,9 @@ TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 BACKUP_NAME = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,80}$")
 MAX_ARCHIVE = 64 * 1024 * 1024
 KEEP_BACKUPS = 5
+# Дополнение к юниту панели: перезапуск панели не трогает бота (см. deploy/hkc-web.service).
+KEEP_BOT_DROPIN = Path(os.environ.get("HKC_SYSTEMD_DIR", "/etc/systemd/system")) / "hkc-web.service.d" / "keep-bot.conf"
+KEEP_BOT_CONTENT = "# Записано hkc-update: бот переживает перезапуск панели.\n[Service]\nKillMode=process\n"
 # Имена машин из uname и соответствующие архитектуры релизных архивов.
 ARCHITECTURES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
@@ -53,6 +56,21 @@ def run(args, timeout=90):
     if result.returncode:
         raise RuntimeError(f"ошибка команды {args[0]}: {result.stderr.strip()[:500]}")
     return result.stdout.strip()
+
+
+# Старые установки получили юнит с KillMode=control-group, при котором перезапуск панели убивает
+# бота. Дополнение переводит их на KillMode=process; ошибка не мешает обновлению.
+def keep_bot_on_restart(state):
+    try:
+        if KEEP_BOT_DROPIN.exists() and KEEP_BOT_DROPIN.read_text(encoding="utf-8") == KEEP_BOT_CONTENT:
+            return
+        KEEP_BOT_DROPIN.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        KEEP_BOT_DROPIN.write_text(KEEP_BOT_CONTENT, encoding="utf-8")
+        KEEP_BOT_DROPIN.chmod(0o644)
+        run(["systemctl", "daemon-reload"], timeout=40)
+        console_line(state, f"{KEEP_BOT_DROPIN}: KillMode=process — бот переживает перезапуск панели")
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        console_line(state, f"не удалось записать {KEEP_BOT_DROPIN}: {error}")
 
 
 # Вызывает Git только с заданными аргументами, без хуков; копии на /mnt используют Windows-преобразование строк.
@@ -518,6 +536,7 @@ def install(version=""):
         console_line(state, f"install -m 0755 hkc-web {short_path(executable)}")
         replace_binary(executable, binary)
         switched = True
+        keep_bot_on_restart(state)
         console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа новой сборки.", progress=82, step="health")
@@ -592,6 +611,7 @@ def rollback(name):
         console_line(state, f"install -m 0755 {name}/hkc-web {short_path(executable)}")
         replace_binary(executable, binary)
         switched = True
+        keep_bot_on_restart(state)
         console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа панели.", progress=85, step="health")

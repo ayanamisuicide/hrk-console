@@ -79,6 +79,8 @@ ctx.bindUpdatesCheck();
 
 ctx.bindUpdatesInstall();
 
+ctx.bindPanelRestart();
+
 // Все поля и подписки готовы; refresh сам проверит токен и занятость.
 ctx.refresh();
 

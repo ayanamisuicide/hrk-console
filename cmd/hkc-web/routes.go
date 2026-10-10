@@ -16,6 +16,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/updates/install", s.installUpdate)
 	mux.HandleFunc("POST /api/admin/updates/rollback", s.rollbackUpdate)
 	mux.HandleFunc("POST /api/admin/updates/cancel", s.cancelUpdate)
+	mux.HandleFunc("GET /api/admin/panel", s.panelInfo)
+	mux.HandleFunc("POST /api/admin/panel/restart", s.restartPanel)
 	mux.HandleFunc("GET /api/auth/me", s.authorize(s.me))
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/register", s.register)

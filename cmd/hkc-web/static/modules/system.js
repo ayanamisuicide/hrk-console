@@ -558,7 +558,7 @@ export function createSystem(ctx) {
       ctx.$("#history-count").textContent = points.length
         ? `${Number(data.sampleCount ?? points.length).toLocaleString("ru-RU")} замеров · ${interval} · событий ${(data.events || []).length}`
         : "История появится после первых замеров.";
-      if (ctx.historyRange === "live") renderSparks(points, data.now);
+      if (ctx.historyRange === "live") renderSparks(points);
     } catch (error) {
       ctx.$("#history-count").textContent = `История недоступна: ${error.message}`;
     } finally {
@@ -567,7 +567,7 @@ export function createSystem(ctx) {
   }
 
   // Спарклайны создаются один раз и дальше получают только новые точки.
-  function renderSparks(points, serverNow) {
+  function renderSparks(points) {
     ctx.sparks ||= new Map();
     document.querySelectorAll("[data-spark]").forEach((canvas) => {
       const key = canvas.dataset.spark;
@@ -586,7 +586,7 @@ export function createSystem(ctx) {
         };
         ctx.sparks.set(canvas, ctx.createSparkline(canvas, color, { onValue }));
       }
-      ctx.sparks.get(canvas).setData(points, key, serverNow);
+      ctx.sparks.get(canvas).setData(points, key);
     });
   }
 
@@ -596,7 +596,7 @@ export function createSystem(ctx) {
     ctx.sparkBusy = true;
     try {
       const live = await ctx.request("/api/system/history?range=live");
-      renderSparks(live.points || [], live.now);
+      renderSparks(live.points || []);
     } catch (_) {
       /* Спарклайны вторичны: ошибку покажет главный график. */
     } finally {

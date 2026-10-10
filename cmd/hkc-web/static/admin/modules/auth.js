@@ -75,7 +75,7 @@ export function createAuth(ctx) {
       await ctx.refreshUpdates();
     } catch (error) {
       // Во время обновления панель перезапускается: падение запросов ожидаемо, его показывает страница обновлений.
-      if (ctx.adminToken && !ctx.updateRunning) ctx.showNotice(error.message, "error");
+      if (ctx.adminToken && !ctx.updateRunning && !ctx.panelRestarting) ctx.showNotice(error.message, "error");
     } finally {
       ctx.refreshBusy = false;
     }

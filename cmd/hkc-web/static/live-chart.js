@@ -13,18 +13,52 @@ const timeSteps = [
   10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600,
 ].map((seconds) => seconds * 1000);
 
-// Задержка воспроизведения: график показывает состояние на секунду назад. Тогда следующий
-// замер уже получен, и между замерами можно двигаться плавно, без ожидания и скачков.
-export const PLAYBACK_DELAY = 1000;
+// Задержка воспроизведения от самого свежего полученного замера. Замеры идут раз в секунду,
+// опрос тоже раз в секунду, но фазы у них не совпадают, а ответ иногда опаздывает. С тремя
+// секундами следующий замер к моменту показа уже получен, и линии не упираются в конец данных.
+export const PLAYBACK_DELAY = 3000;
+// Расхождение, после которого часы не догоняют, а переставляются: первый кадр, вкладка
+// была скрыта, сменился диапазон.
+const PLAYBACK_SNAP = 4000;
 
-// Момент, который сейчас показывается: серверное «сейчас», продолженное часами браузера,
-// минус задержка; не дальше последнего замера.
-function playhead(times, serverNow, receivedAt, now) {
-  const latest = times.at(-1);
-  if (latest === undefined) return Date.now();
-  if (reducedMotion()) return latest;
-  const projected = (serverNow || latest) + (now - receivedAt) - PLAYBACK_DELAY;
-  return Math.max(times[0], Math.min(projected, latest));
+// Часы воспроизведения. Идут с реальной скоростью кадр за кадром и лишь слегка ускоряются
+// или замедляются, подстраиваясь под приход данных. Поэтому время на графике не стоит
+// в ожидании опроса и не прыгает при каждом ответе сервера. Показывается только то, что
+// уже измерено: часы не уходят дальше последнего замера.
+export function createPlayback() {
+  const clock = { t: 0, last: 0, offsets: [] };
+  return {
+    // Новые данные. Сдвиг «время замера − время получения» колеблется: ответ мог задержаться,
+    // а новый замер — не успеть к опросу. Опорой служит самый свежий сдвиг за последние
+    // опросы, поэтому редкие опоздания не тормозят часы.
+    sync(times) {
+      const latest = times.at(-1);
+      if (latest === undefined) return;
+      const now = performance.now();
+      clock.offsets.push([now, latest - now]);
+      while (clock.offsets.length > 1 && now - clock.offsets[0][0] > 10000) clock.offsets.shift();
+      // Данные отстали сильнее, чем часы могут догнать (сменился диапазон, сервер долго молчал) —
+      // старые сдвиги больше не годятся.
+      const freshest = Math.max(...clock.offsets.map(([, offset]) => offset));
+      if (freshest - (latest - now) > PLAYBACK_SNAP) clock.offsets = [[now, latest - now]];
+    },
+    at(times, now) {
+      const latest = times.at(-1);
+      if (latest === undefined) return Date.now();
+      if (reducedMotion() || !clock.offsets.length) return latest;
+      const target = Math.max(...clock.offsets.map(([, offset]) => offset)) + now - PLAYBACK_DELAY;
+      const dt = now - clock.last;
+      if (!clock.last || dt > 1000 || Math.abs(target - clock.t) > PLAYBACK_SNAP) clock.t = target;
+      else if (dt > 0) {
+        // Мягкая подстройка: не больше ±5% скорости, на глаз незаметно.
+        const drift = Math.max(-0.05, Math.min(0.05, (target - clock.t) / 8000));
+        clock.t += dt * (1 + drift);
+      }
+      clock.last = now;
+      clock.t = Math.max(times[0], Math.min(clock.t, latest));
+      return clock.t;
+    },
+  };
 }
 
 // Значение серии в момент t: линейно между соседними замерами.
@@ -143,7 +177,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
     thresholds: {},
     rangeMs: 300000,
     serverNow: 0,
-    receivedAt: 0,
+    playback: createPlayback(),
     interval: 1000,
     // Текущее и целевое окно времени; при масштабе цель фиксирована, иначе следует за «сейчас».
     from: 0,
@@ -218,7 +252,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
   // «Сейчас» на стороне сервера, продолженное часами браузера между опросами.
   function liveEnd(now) {
     if (!state.times.length) return state.serverNow || Date.now();
-    return playhead(state.times, state.serverNow, state.receivedAt, now);
+    return state.playback.at(state.times, now);
   }
 
   function targetWindow(now) {
@@ -939,7 +973,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
     state.serverNow = payload.now
       ? Date.parse(payload.now)
       : state.times.at(-1) || Date.now();
-    state.receivedAt = performance.now();
+    state.playback.sync(state.times);
     invalidate();
   }
 
@@ -971,7 +1005,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
 // плавно. Рисует, только пока карточка видна; при уменьшенном движении — статичный кадр.
 export function createSparkline(canvas, color, { windowMs = 120000, onValue } = {}) {
   const context = canvas.getContext("2d");
-  const state = { times: [], values: [], serverNow: 0, receivedAt: 0, low: 0, high: 0, frame: 0, last: 0, resolved: "" };
+  const state = { times: [], values: [], playback: createPlayback(), low: 0, high: 0, frame: 0, last: 0, resolved: "" };
 
   function follow(current, target, dt) {
     if (reducedMotion() || !current) return target;
@@ -988,7 +1022,7 @@ export function createSparkline(canvas, color, { windowMs = 120000, onValue } = 
     }
     const dt = state.last ? Math.min(100, now - state.last) : 16;
     state.last = now;
-    const end = playhead(state.times, state.serverNow, state.receivedAt, now);
+    const end = state.playback.at(state.times, now);
     const start = end - windowMs;
     const from = Math.max(0, lowerBound(state.times, start) - 1);
     let maximum = -Infinity;
@@ -1077,12 +1111,11 @@ export function createSparkline(canvas, color, { windowMs = 120000, onValue } = 
   }
   document.addEventListener("visibilitychange", invalidate);
 
-  // Принимает точки истории и серверное «сейчас» из того же ответа.
-  function setData(points, key, serverNow) {
+  // Принимает точки истории; время показа ведут часы воспроизведения.
+  function setData(points, key) {
     state.times = points.map((point) => Date.parse(point.at));
     state.values = points.map((point) => Number(point[key]) || 0);
-    state.serverNow = serverNow ? Date.parse(serverNow) : state.times.at(-1) || Date.now();
-    state.receivedAt = performance.now();
+    state.playback.sync(state.times);
     state.resolved = getComputedStyle(canvas).getPropertyValue(color).trim() || "#888";
     invalidate();
   }

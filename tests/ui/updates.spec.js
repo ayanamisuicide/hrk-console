@@ -219,3 +219,34 @@ test("обновление: после замены сборки отмена н
   await expect(cancel).toBeDisabled();
   await expect(cancel).toHaveAttribute("title", /прервать нельзя/);
 });
+
+test("перезапуск панели: предупреждение о боте, ожидание и переподключение", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  let restarted = false;
+  let downCalls = 0;
+  await mockAdmin(page, {
+    "/api/admin/updates": (route) => json(route, overview()),
+    "/api/admin/panel": (route) => {
+      if (!restarted) return json(route, { startedAt: "2026-10-11T09:00:00Z", pid: 10, restartable: true, keepsBot: false });
+      // Пара неудачных опросов — панель ещё поднимается.
+      if (++downCalls <= 2) return route.abort();
+      return json(route, { startedAt: "2026-10-11T09:05:00Z", pid: 11, restartable: true, keepsBot: true });
+    },
+    "/api/admin/panel/restart": (route) => {
+      restarted = true;
+      return json(route, { ok: true, message: "панель перезапускается", startedAt: "2026-10-11T09:00:00Z" }, 202);
+    },
+  });
+  await page.goto("/admin/");
+  await page.locator("#panel-restart").click();
+  await expect(page.locator("#confirm-title")).toHaveText("Перезапустить панель?");
+  // Старый юнит: страница честно предупреждает, что бот остановится.
+  await expect(page.locator("#confirm-message")).toContainText("бот остановится");
+  await page.locator("#confirm-accept").click();
+  await expect(page.locator("#upd-reconnect")).toBeVisible();
+  await expect(page.locator("#admin-notice")).toHaveText("Панель перезапущена", { timeout: 10000 });
+  await expect(page.locator("#upd-reconnect")).toBeHidden();
+  await expect(page.locator("#panel-restart")).toBeEnabled();
+  expect(errors).toEqual([]);
+});

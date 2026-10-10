@@ -567,7 +567,7 @@ export function createUpdates(ctx) {
       state.failures++;
       // Перезапуск панели — ожидаемая пауза: показываем экран ожидания, а не ошибку.
       if (state.watching) ctx.$("#upd-reconnect").hidden = false;
-      else if (state.failures === 1) ctx.showNotice(`Обновления: ${error.message}`, "error");
+      else if (state.failures === 1 && !ctx.panelRestarting) ctx.showNotice(`Обновления: ${error.message}`, "error");
     } finally {
       state.busy = false;
     }
@@ -669,5 +669,55 @@ export function createUpdates(ctx) {
     setInterval(() => poll(), 1000);
   }
 
-  return { refreshUpdates, bindUpdatesCheck, bindUpdatesInstall };
+  // Перезапускает службу панели и ждёт, пока ответит новый процесс: его время запуска другое.
+  function bindPanelRestart() {
+    const button = ctx.$("#panel-restart");
+    button.addEventListener("click", async () => {
+      let keepsBot = true;
+      try {
+        keepsBot = (await ctx.adminRequest("/api/admin/panel")).keepsBot;
+      } catch {
+        // Сервер сам объяснит причину при перезапуске.
+      }
+      if (!(await ctx.confirmAction(
+        "Перезапустить панель?",
+        keepsBot
+          ? "Страница переподключится сама через несколько секунд. Бот продолжит работать."
+          : "Страница переподключится сама через несколько секунд.\n\nСлужба установлена со старыми настройками, поэтому работающий бот остановится вместе с панелью. Это исправит следующее обновление или переустановка.",
+        { accept: "Перезапустить" },
+      ))) return;
+      button.disabled = true;
+      const reconnect = ctx.$("#upd-reconnect");
+      const note = ctx.$("#upd-reconnect-note");
+      const defaultNote = note.textContent;
+      try {
+        const { startedAt } = await ctx.adminRequest("/api/admin/panel/restart", { method: "POST" });
+        ctx.panelRestarting = true;
+        note.textContent = "Служба запускается заново — страница подключится сама.";
+        reconnect.hidden = false;
+        const deadline = Date.now() + 60000;
+        for (;;) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const panel = await ctx.adminRequest("/api/admin/panel");
+            if (panel.startedAt !== startedAt) break;
+          } catch {
+            // Панель ещё не поднялась.
+          }
+          if (Date.now() > deadline) throw new Error("Панель не ответила за минуту — проверьте службу hkc-web");
+        }
+        ctx.showNotice("Панель перезапущена");
+      } catch (error) {
+        ctx.showNotice(error.message, "error");
+      } finally {
+        ctx.panelRestarting = false;
+        reconnect.hidden = !state.watching;
+        note.textContent = defaultNote;
+        button.disabled = false;
+        ctx.refresh();
+      }
+    });
+  }
+
+  return { refreshUpdates, bindUpdatesCheck, bindUpdatesInstall, bindPanelRestart };
 }

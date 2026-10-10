@@ -13,8 +13,9 @@ WorkingDirectory=__HKC_SOURCE_DIR__
 ExecStart=__HKC_SOURCE_DIR__/bin/hkc-web
 Restart=always
 RestartSec=2
-# Остановка службы завершает всю группу дочерних процессов.
-KillMode=control-group
+# Остановка и перезапуск завершают только панель: бот — её дочерний процесс, но работает
+# дальше, и новая панель находит его по /proc. Остановить бота — кнопкой в панели.
+KillMode=process
 UMask=0077
 # Защитные ограничения службы, а не отдельная песочница для команд терминала.
 NoNewPrivileges=true
