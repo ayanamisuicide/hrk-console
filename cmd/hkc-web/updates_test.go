@@ -268,3 +268,26 @@ func TestCheckerAnnouncesNewVersionOnce(t *testing.T) {
 		t.Fatal("new version must be announced exactly once")
 	}
 }
+
+// TestStaleUpdateJobHidden проверяет, что итог, записанный до запуска процесса, не показывается:
+// панель перезапустили установщиком или вручную, и прошлая ошибка к ней не относится.
+func TestStaleUpdateJobHidden(t *testing.T) {
+	started := time.Now()
+	before := started.Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	after := started.Add(time.Second).UTC().Format("2006-01-02T15:04:05.000000+00:00")
+	cases := []struct {
+		job   map[string]any
+		stale bool
+	}{
+		{map[string]any{"phase": "rolled_back", "updatedAt": before}, true},
+		{map[string]any{"phase": "failed", "updatedAt": before}, true},
+		{map[string]any{"phase": "complete", "updatedAt": after}, false},
+		{map[string]any{"phase": "restarting", "updatedAt": before}, false},
+		{nil, false},
+	}
+	for _, item := range cases {
+		if got := staleUpdateJob(item.job, started); got != item.stale {
+			t.Fatalf("%v: stale=%v", item.job, got)
+		}
+	}
+}

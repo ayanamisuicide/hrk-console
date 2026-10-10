@@ -22,7 +22,7 @@ set -euo pipefail
 REPOSITORY="https://github.com/ayanamisuicide/hrk-console"
 HEROKU_DIR="${HEROKU_DIR:-}"
 SERVICE_USER="${HKC_SERVICE_USER:-}"
-SOURCE_DIR="${HKC_SOURCE_DIR:-/opt/hrk-console}"
+SOURCE_DIR="${HKC_SOURCE_DIR:-}"
 WEB_ADDR="${HKC_WEB_ADDR:-127.0.0.1:8080}"
 VERSION="${HKC_VERSION:-}"
 DRY_RUN=0
@@ -275,6 +275,16 @@ case "$SERVICE_USER" in
 esac
 getent passwd "$SERVICE_USER" >/dev/null || die "пользователь $SERVICE_USER не существует" "укажите --user имя"
 SERVICE_HOME="$(home_of "$SERVICE_USER")"
+# Каталог не задан явно — берём каталог действующей службы, затем прежний hkc.env,
+# и только для новой установки — /opt/hrk-console. Иначе служба и hkc.env разошлись бы.
+if [ -z "$SOURCE_DIR" ]; then
+  current="$(systemctl show hkc-web.service --property=ExecStart --value 2>/dev/null | sed -n 's/.*path=\([^ ;]*\).*/\1/p')"
+  case "$current" in */bin/hkc-web) SOURCE_DIR="${current%/bin/hkc-web}" ;; esac
+fi
+if [ -z "$SOURCE_DIR" ] && [ -r "$ENV_FILE" ]; then
+  SOURCE_DIR="$(sed -n 's/^HKC_SOURCE_DIR=//p' "$ENV_FILE" | tail -1 | tr -d '"')"
+fi
+SOURCE_DIR="${SOURCE_DIR:-/opt/hrk-console}"
 case "$SOURCE_DIR" in /*) ;; *) die "--dir должен быть абсолютным путём" ;; esac
 ok "linux-$ARCH · пользователь $SERVICE_USER"
 
@@ -368,6 +378,14 @@ install -d -m 0755 "$UPDATE_DIR"
 json() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 if [ -f "$ENV_FILE" ]; then
   configured="настройки сохранены"
+  # Каталог установки в hkc.env должен совпадать со службами: его читает служба обновления.
+  if ! grep -qxF "HKC_SOURCE_DIR=$(json "$SOURCE_DIR")" "$ENV_FILE"; then
+    tmp_env="$(mktemp "$ENV_FILE.XXXXXX")"
+    { grep -v '^HKC_SOURCE_DIR=' "$ENV_FILE" || true; printf 'HKC_SOURCE_DIR=%s\n' "$(json "$SOURCE_DIR")"; } > "$tmp_env"
+    chmod 0600 "$tmp_env"
+    mv -f "$tmp_env" "$ENV_FILE"
+    configured="настройки сохранены · каталог $SOURCE_DIR"
+  fi
 else
   token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
   # Значения в кавычках JSON: так их одинаково читают systemd и python-установщик.

@@ -347,6 +347,27 @@ func readBackups() []backupInfo {
 	return result
 }
 
+// installedSourceDir — каталог установки, из которого запущен этот бинарник (…/bin/hkc-web),
+// если это копия Git. HKC_SOURCE_DIR мог остаться от прежней установки в другом месте;
+// служба обновления так же берёт каталог из действующей службы.
+func installedSourceDir() string {
+	if executable, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+			executable = resolved
+		}
+		if filepath.Base(filepath.Dir(executable)) == "bin" {
+			root := filepath.Dir(filepath.Dir(executable))
+			if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
+				return root
+			}
+		}
+	}
+	return os.Getenv("HKC_SOURCE_DIR")
+}
+
+// processStarted — момент запуска этого процесса панели.
+var processStarted = time.Now()
+
 // readUpdateJob читает ограниченный по размеру файл состояния отдельной службы обновления.
 func readUpdateJob() map[string]any {
 	var job map[string]any
@@ -355,7 +376,25 @@ func readUpdateJob() map[string]any {
 			_ = json.Unmarshal(data, &job)
 		}
 	}
+	if staleUpdateJob(job, processStarted) {
+		return nil
+	}
 	return job
+}
+
+// staleUpdateJob отбрасывает итог, записанный до запуска текущего процесса. Служба пишет
+// итог уже после перезапуска панели на новую или прежнюю сборку, поэтому свежий итог всегда
+// новее процесса. Более старый значит, что панель потом перезапустили иначе — установщиком,
+// systemd или вручную, — и прошлая ошибка к работающей версии уже не относится.
+// Незавершённые задания не трогаем: их запись до перезапуска — обычная часть установки.
+func staleUpdateJob(job map[string]any, started time.Time) bool {
+	phase, _ := job["phase"].(string)
+	if phase != "complete" && phase != "failed" && phase != "rolled_back" {
+		return false
+	}
+	updated, _ := job["updatedAt"].(string)
+	at, err := time.Parse(time.RFC3339Nano, updated)
+	return err != nil || at.Before(started)
 }
 
 func jobRunning(job map[string]any) bool {
@@ -400,7 +439,7 @@ func (s *server) buildUpdateOverview(ctx context.Context) updateOverview {
 	if remote.Releases != nil {
 		overview.Releases = remote.Releases
 	}
-	for _, dir := range []string{os.Getenv("HKC_SOURCE_DIR"), os.Getenv("HKC_LOCAL_SOURCE_DIR")} {
+	for _, dir := range []string{installedSourceDir(), os.Getenv("HKC_LOCAL_SOURCE_DIR")} {
 		if info := inspectSource(ctx, dir); info.Configured {
 			overview.Sources = append(overview.Sources, info)
 		}

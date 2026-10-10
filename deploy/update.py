@@ -262,6 +262,21 @@ def read_request(path, state):
     raise RuntimeError("неизвестное действие в задании")
 
 
+# Каталог установки, из которого systemd запускает панель. Переменная HKC_SOURCE_DIR
+# могла остаться от прежней установки в другом каталоге: тогда служба подменила бы
+# не тот бинарник, перезапуск поднял бы старую сборку и проверка версии провалилась бы.
+def source_dir():
+    configured = Path(os.environ["HKC_SOURCE_DIR"]).resolve()
+    with contextlib.suppress(Exception):
+        line = run(["systemctl", "show", "hkc-web.service", "--property=ExecStart", "--value"], timeout=10)
+        match = re.search(r"path=(\S+)", line or "")
+        if match:
+            executable = Path(match.group(1))
+            if executable.name == "hkc-web" and executable.parent.name == "bin" and executable.is_file():
+                return executable.parent.parent.resolve()
+    return configured
+
+
 def request_path():
     if os.environ.get("HKC_UPDATE_REQUEST_FILE"):
         return os.environ["HKC_UPDATE_REQUEST_FILE"]
@@ -311,7 +326,7 @@ def fetch_refs(copies, tag):
 # Устанавливает релиз: без version — последний стабильный. Исходники продвигаются лишь после
 # проверки здоровья; ошибка запуска возвращает предыдущую сборку.
 def install(version=""):
-    source = Path(os.environ["HKC_SOURCE_DIR"]).resolve()
+    source = source_dir()
     local = Path(os.environ["HKC_LOCAL_SOURCE_DIR"]).resolve() if os.environ.get("HKC_LOCAL_SOURCE_DIR") else None
     if local == source:
         local = None
@@ -408,7 +423,7 @@ def install(version=""):
 # Возвращает резервную сборку. Текущая перед этим тоже сохраняется, поэтому откат обратим.
 # Исходники назад не переводятся: git продвигается только вперёд, расхождение — предупреждение.
 def rollback(name):
-    source = Path(os.environ["HKC_SOURCE_DIR"]).resolve()
+    source = source_dir()
     state = Path(os.environ["HKC_UPDATE_DIR"]).resolve()
     prepare_state(state)
     executable = source / "bin" / "hkc-web"
