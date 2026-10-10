@@ -86,47 +86,77 @@
       <div class="workspace">
         <!-- Модули -->
         <section id="modules-view" class="workspace-view modules-view" hidden>
-          <div class="view-intro">
-            <div>
-              <h3>Модули</h3>
-              <p>Состояние загрузчика и готовность модулей к работе.</p>
+          <header class="mods-head">
+            <div class="mods-title">
+              <span class="mods-kicker">Модули · текущий запуск</span>
+              <h3 id="mods-headline">Знакомимся с загрузчиком…</h3>
+              <p id="mods-subline">Ожидаем первый снимок.</p>
             </div>
-            <span class="modules-cadence"><i></i>Live<b>·</b>1 сек</span>
+            <span id="modules-connection" class="mods-live" data-status="waiting" role="status"><i></i><span>Подключаемся</span></span>
+          </header>
+
+          <div class="mods-bar" id="mods-bar" role="img" aria-label="Состояние модулей">
+            <i data-segment="ready"></i><i data-segment="loading"></i><i data-segment="problems"></i><i data-segment="unloaded"></i><i data-segment="unknown"></i>
           </div>
-          <div class="modules-health">
-            <div class="modules-overview card">
-              <div class="modules-total">
-                <span class="modules-kicker">Текущий запуск</span>
-                <div id="modules-ring" class="modules-ring">
-                  <div class="modules-number"><strong id="modules-total">—</strong><span>модулей</span></div>
-                </div>
-                <p id="modules-summary">Знакомимся с загрузчиком…</p>
+          <div class="mods-legend" role="group" aria-label="Фильтр по состоянию">
+            <button type="button" data-modules-state="ready" aria-pressed="false"><i></i>Работают<strong data-count="ready">0</strong></button>
+            <button type="button" data-modules-state="loading" aria-pressed="false"><i></i>Загружаются<strong data-count="loading">0</strong></button>
+            <button type="button" data-modules-state="problems" aria-pressed="false"><i></i>С ошибкой<strong data-count="problems">0</strong></button>
+            <button type="button" data-modules-state="unloaded" aria-pressed="false"><i></i>Выгружены<strong data-count="unloaded">0</strong></button>
+            <button type="button" data-modules-state="unknown" aria-pressed="false"><i></i>Неизвестно<strong data-count="unknown">0</strong></button>
+          </div>
+
+          <section class="mods-attention" id="mods-attention" aria-labelledby="mods-attention-title" hidden>
+            <h4 id="mods-attention-title"><span class="mods-siren" aria-hidden="true"></span>Требуют внимания</h4>
+            <div class="mods-issues" id="mods-issues"></div>
+            <button class="compact mods-more" id="mods-issues-more" type="button" hidden>Показать ещё</button>
+          </section>
+
+          <section class="mods-feed" id="mods-feed" aria-labelledby="mods-feed-title" hidden>
+            <h4 id="mods-feed-title">Изменения в этом запуске</h4>
+            <ol id="mods-feed-list"></ol>
+          </section>
+
+          <div class="mods-toolbar">
+            <label class="search-wrap"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="modules-search" type="search" placeholder="Найти модуль или версию…" aria-label="Найти модуль" autocomplete="off"></label>
+            <div class="segmented" role="group" aria-label="Тип модулей"><button class="compact active" type="button" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" type="button" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" type="button" data-modules-kind="core" aria-pressed="false">Встроенные</button></div>
+            <button id="modules-reset" type="button" class="compact" hidden>Сбросить</button>
+          </div>
+
+          <div class="mods-catalog" id="mods-catalog">
+            <section class="mods-group" data-group="external" aria-labelledby="mods-external-title">
+              <h4 id="mods-external-title">Установленные <small data-group-count="external">0</small></h4>
+              <div class="mods-grid" data-grid="external"></div>
+            </section>
+            <section class="mods-group" data-group="core" aria-labelledby="mods-core-title">
+              <h4 id="mods-core-title">Встроенные <small data-group-count="core">0</small></h4>
+              <div class="mods-grid" data-grid="core"></div>
+            </section>
+          </div>
+          <p id="modules-empty" class="mods-empty">Подключаемся к мониторингу…</p>
+          <p class="mods-footnote">«Работает» значит, что модуль загрузился и прошёл инициализацию. Ошибки при выполнении команд — в журнале и происшествиях.</p>
+
+          <dialog class="mods-inspector" id="mods-inspector" aria-labelledby="mods-inspector-name">
+            <div class="mods-inspector-head">
+              <span class="mods-avatar" id="mods-inspector-avatar" aria-hidden="true"></span>
+              <div>
+                <h4 id="mods-inspector-name">—</h4>
+                <span class="mods-state" id="mods-inspector-state"><i></i><span>—</span></span>
               </div>
-              <div class="modules-map">
-                <div class="modules-map-heading"><span>Карта модулей</span><small id="modules-map-caption">Ожидаем снимок</small></div>
-                <div id="modules-matrix" class="modules-matrix" aria-hidden="true"></div>
-                <div class="modules-progress" role="img" aria-label="Распределение состояний модулей"><i id="modules-progress"></i><i data-module-segment="loading"></i><i data-module-segment="problems"></i><i data-module-segment="unloaded"></i><i data-module-segment="unknown"></i></div>
-              </div>
+              <button class="compact mods-close" id="mods-inspector-close" type="button" aria-label="Закрыть">✕</button>
             </div>
-            <div class="modules-counters card" role="group" aria-label="Фильтр по состоянию модулей">
-              <button type="button" data-modules-state="ready" aria-pressed="false"><span><i class="module-dot ready"></i>Готовы</span><strong id="modules-ready">—</strong></button>
-              <button type="button" data-modules-state="loading" aria-pressed="false"><span><i class="module-dot loading"></i>Загрузка</span><strong id="modules-loading">—</strong></button>
-              <button type="button" data-modules-state="problems" aria-pressed="false"><span><i class="module-dot error"></i>Проблемы</span><strong id="modules-problems">—</strong></button>
-              <button type="button" data-modules-state="unloaded" aria-pressed="false"><span><i class="module-dot unloaded"></i>Выгружены</span><strong id="modules-unloaded">—</strong></button>
-              <button type="button" data-modules-state="unknown" aria-pressed="false"><span><i class="module-dot unknown"></i>Неизвестно</span><strong id="modules-unknown">—</strong></button>
+            <p class="mods-explanation" id="mods-inspector-explanation"></p>
+            <dl class="mods-facts">
+              <div><dt>Тип</dt><dd id="mods-inspector-kind">—</dd></div>
+              <div><dt>Версия</dt><dd id="mods-inspector-version">—</dd></div>
+              <div><dt>Идентификатор</dt><dd id="mods-inspector-id">—</dd></div>
+            </dl>
+            <pre class="mods-traceback" id="mods-inspector-error" hidden></pre>
+            <div class="mods-actions">
+              <button class="compact" id="mods-inspector-copy" type="button" hidden>Скопировать ошибку</button>
+              <button class="primary" id="mods-inspector-log" type="button">Открыть журнал ↗</button>
             </div>
-          </div>
-          <div id="modules-connection" class="modules-connection" role="status"><i></i><span>Ожидаем данные…</span></div>
-          <div class="modules-toolbar">
-            <label class="modules-search"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="modules-search" type="search" placeholder="Найти модуль…" aria-label="Найти модуль"></label>
-            <div class="segmented modules-filters" role="group" aria-label="Тип модулей"><button class="compact active" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" data-modules-kind="core" aria-pressed="false">Встроенные</button></div>
-            <button id="modules-only-problems" class="compact" aria-pressed="false">Только проблемы</button>
-          </div>
-          <div class="modules-directory-heading"><span>Каталог модулей</span><button id="modules-reset" type="button" class="compact" hidden>Сбросить фильтры</button></div>
-          <div id="modules-list" class="modules-list"></div>
-          <div class="modules-pagination"><button id="modules-prev" class="compact" type="button">← Назад</button><span id="modules-page">1 / 1</span><button id="modules-next" class="compact" type="button">Далее →</button></div>
-          <p id="modules-empty" class="modules-empty empty">Подключаемся к мониторингу…</p>
-          <p class="modules-footnote">«Готов» означает успешную инициализацию. Ошибки при выполнении команд доступны в журнале и происшествиях.</p>
+          </dialog>
         </section>
 
         <!-- Система -->

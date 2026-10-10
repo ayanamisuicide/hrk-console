@@ -47,10 +47,11 @@ type operationStore struct {
 	path     string
 	settings watchdogSettings
 	alerts   alertSettings
+	telegram telegramSettings
 }
 
 func openOperationStore(path string) (*operationStore, error) {
-	store := &operationStore{path: path, settings: defaultWatchdogSettings(), alerts: defaultAlertSettings()}
+	store := &operationStore{path: path, settings: defaultWatchdogSettings(), alerts: defaultAlertSettings(), telegram: defaultTelegramSettings()}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
@@ -64,6 +65,7 @@ func openOperationStore(path string) (*operationStore, error) {
 	var saved struct {
 		Watchdog *watchdogSettings `json:"watchdog"`
 		Alerts   *alertSettings    `json:"alerts"`
+		Telegram *telegramSettings `json:"telegram"`
 	}
 	if err := json.Unmarshal(data, &saved); err != nil {
 		return nil, fmt.Errorf("чтение operations.json: %w", err)
@@ -82,6 +84,9 @@ func openOperationStore(path string) (*operationStore, error) {
 			return nil, err
 		}
 		store.alerts = *saved.Alerts
+	}
+	if saved.Telegram != nil {
+		store.telegram = *saved.Telegram
 	}
 	return store, nil
 }
@@ -114,7 +119,7 @@ func (store *operationStore) setWatchdog(settings watchdogSettings) error {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if err := store.writeLocked(settings, store.alerts); err != nil {
+	if err := store.writeLocked(settings, store.alerts, store.telegram); err != nil {
 		return err
 	}
 	store.settings = settings
@@ -127,22 +132,39 @@ func (store *operationStore) setAlerts(settings alertSettings) error {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if err := store.writeLocked(store.settings, settings); err != nil {
+	if err := store.writeLocked(store.settings, settings, store.telegram); err != nil {
 		return err
 	}
 	store.alerts = settings
 	return nil
 }
 
+func (store *operationStore) telegramSettings() telegramSettings {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.telegram
+}
+
+func (store *operationStore) setTelegram(settings telegramSettings) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.writeLocked(store.settings, store.alerts, settings); err != nil {
+		return err
+	}
+	store.telegram = settings
+	return nil
+}
+
 // writeLocked сохраняет все разделы файла целиком; память обновляется только после успешной записи.
-func (store *operationStore) writeLocked(watchdog watchdogSettings, alerts alertSettings) error {
+func (store *operationStore) writeLocked(watchdog watchdogSettings, alerts alertSettings, telegram telegramSettings) error {
 	if err := os.MkdirAll(filepath.Dir(store.path), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(struct {
 		Watchdog watchdogSettings `json:"watchdog"`
 		Alerts   alertSettings    `json:"alerts"`
-	}{watchdog, alerts}, "", "  ")
+		Telegram telegramSettings `json:"telegram"`
+	}{watchdog, alerts, telegram}, "", "  ")
 	if err != nil {
 		return err
 	}

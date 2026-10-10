@@ -52,6 +52,7 @@ type server struct {
 	operations   *operationStore
 	botActionMu  sync.Mutex
 	watchdog     watchdogMonitor
+	telegram     *telegramControl
 }
 
 // statusResponse — Состояние бота для браузера; поля JSON сохраняют контракт API.
@@ -150,6 +151,14 @@ func main() {
 	go s.runModuleAlerts(context.Background())
 	go s.prober.run(context.Background())
 	go s.runWatchdog(context.Background())
+	telegramConfig := readTelegramConfig(os.Getenv)
+	for _, issue := range []string{telegramConfig.AdminsIssue, telegramConfig.WebAppIssue} {
+		if issue != "" {
+			log.Printf("telegram: %s", issue)
+		}
+	}
+	s.telegram = newTelegramControl(s, telegramConfig)
+	go s.telegram.run(context.Background())
 	s.updates = &updateChecker{onNewVersion: func(version string, notes []releaseNotes) {
 		message := "Обновить можно в админке, в разделе «Обновления»."
 		if len(notes) > 0 && len(notes[0].Sections) > 0 && len(notes[0].Sections[0].Items) > 0 {

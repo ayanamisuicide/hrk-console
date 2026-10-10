@@ -45,6 +45,7 @@ export function createAuth(ctx) {
         watchdog,
         alerts,
         config,
+        telegram,
       ] = await Promise.all([
         ctx.adminRequest("/api/admin/overview"),
         ctx.adminRequest("/api/admin/audit"),
@@ -55,6 +56,8 @@ export function createAuth(ctx) {
         // Уведомления необязательны: ошибка этого запроса не должна ломать остальную админку.
         ctx.adminRequest("/api/admin/alerts").catch(() => null),
         ctx.adminRequest("/api/admin/config"),
+        // Раздел Telegram тоже необязателен для остальной админки.
+        ctx.adminRequest("/api/admin/telegram").catch(() => null),
       ]);
       ctx.animateValue(ctx.$("#users-count"), data.users.length);
       ctx.animateValue(
@@ -72,6 +75,7 @@ export function createAuth(ctx) {
       ctx.renderWatchdog(watchdog);
       ctx.renderAlerts(alerts);
       ctx.renderConfig(config);
+      ctx.renderTelegram(telegram);
       await ctx.refreshUpdates();
     } catch (error) {
       // Во время обновления панель перезапускается: падение запросов ожидаемо, его показывает страница обновлений.

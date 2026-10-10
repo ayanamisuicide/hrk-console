@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Heroku · Панель</title>
+    <!-- Мост Telegram. Если он не загрузится, приложение возьмёт данные запуска из адреса. -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <link rel="stylesheet" href="/tg/app.css" />
+    <script type="module" src="/tg/app.js"></script>
+  </head>
+  <body>
+    <div class="gate" id="gate" data-state="loading" role="status" aria-live="polite">
+      <div class="gate-mark" aria-hidden="true"><i></i></div>
+      <h1 id="gate-title">Подключаемся…</h1>
+      <p id="gate-text">Проверяем доступ через Telegram.</p>
+      <button id="gate-copy" class="gate-copy" type="button" hidden></button>
+      <button id="gate-retry" class="button" type="button" hidden>Повторить</button>
+    </div>
+
+    <main class="app" id="app" hidden>
+      <!-- Главная -->
+      <section class="screen" data-screen="home" aria-label="Главная">
+        <header class="topline">
+          <span id="who">—</span>
+          <span class="live" id="live"><i></i><span id="live-text">Live</span></span>
+        </header>
+
+        <article class="hero" id="hero" data-state="unknown">
+          <div class="orb" aria-hidden="true">
+            <span class="orb-ring"></span>
+            <span class="orb-ring"></span>
+            <span class="orb-core">
+              <svg class="orb-icon orb-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" /></svg>
+              <svg class="orb-icon orb-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>
+              <svg class="orb-icon orb-spin" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+            </span>
+          </div>
+          <div class="hero-copy">
+            <span class="eyebrow">Юзербот Heroku</span>
+            <h1 id="bot-title">—</h1>
+            <p id="bot-subtitle">Получаем состояние…</p>
+          </div>
+          <dl class="hero-stats">
+            <div><dt>CPU бота</dt><dd id="bot-cpu">—</dd></div>
+            <div><dt>Память бота</dt><dd id="bot-rss">—</dd></div>
+            <div><dt>Версия</dt><dd id="bot-version">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="action primary" data-action="start" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg><span>Запустить</span>
+            </button>
+            <button class="action" data-action="restart" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7L20 8.6" /><path d="M20 3.5v5.1h-5.1" /></svg><span>Перезапуск</span>
+            </button>
+            <button class="action danger" data-action="stop" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg><span>Стоп</span>
+            </button>
+          </div>
+        </article>
+
+        <button class="row watchdog" id="watchdog" type="button" data-state="off">
+          <span class="row-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 10 4-1.7 7-5.6 7-10V6z" /><path d="m9 12 2 2 4-4" /></svg>
+          </span>
+          <span class="row-main"><strong>Автовосстановление</strong><small id="watchdog-text">—</small></span>
+          <span class="pill" id="watchdog-pill">—</span>
+        </button>
+
+        <h2 class="section-title">Сервер <small id="host-line"></small></h2>
+        <div class="metrics">
+          <article class="metric" data-metric="cpu">
+            <span>CPU</span><strong id="metric-cpu">—</strong>
+            <canvas data-spark="cpu" aria-hidden="true"></canvas>
+          </article>
+          <article class="metric" data-metric="memory">
+            <span>Память</span><strong id="metric-memory">—</strong>
+            <canvas data-spark="memory" aria-hidden="true"></canvas>
+          </article>
+          <article class="metric" data-metric="disk">
+            <span>Диск</span><strong id="metric-disk">—</strong>
+            <canvas data-spark="disk" aria-hidden="true"></canvas>
+          </article>
+        </div>
+        <p class="footnote" id="system-line"></p>
+
+        <h2 class="section-title">Происшествия <small>за сутки</small></h2>
+        <div class="list" id="incidents"></div>
+        <p class="empty" id="incidents-empty" hidden>Ошибок в журнале не было. Красота.</p>
+
+        <button class="link-button" id="open-panel" type="button">Открыть полную панель ↗</button>
+      </section>
+
+      <!-- Модули -->
+      <section class="screen" data-screen="modules" aria-label="Модули" hidden>
+        <header class="screen-head">
+          <h1>Модули</h1>
+          <p id="modules-message">—</p>
+        </header>
+        <div class="tally" id="modules-tally">
+          <div data-tally="ready"><strong>0</strong><span>готовы</span></div>
+          <div data-tally="problems"><strong>0</strong><span>с ошибкой</span></div>
+          <div data-tally="loading"><strong>0</strong><span>грузятся</span></div>
+        </div>
+        <div class="segmented" role="tablist" aria-label="Фильтр модулей">
+          <button type="button" role="tab" data-modules-filter="all" aria-selected="true">Все</button>
+          <button type="button" role="tab" data-modules-filter="problems" aria-selected="false">Проблемы</button>
+          <button type="button" role="tab" data-modules-filter="installed" aria-selected="false">Установленные</button>
+        </div>
+        <input class="search" id="modules-search" type="search" placeholder="Поиск модуля" autocomplete="off" />
+        <div class="list" id="modules"></div>
+        <p class="empty" id="modules-empty" hidden>Ничего не найдено.</p>
+      </section>
+
+      <!-- Журнал -->
+      <section class="screen" data-screen="logs" aria-label="Журнал" hidden>
+        <header class="screen-head">
+          <h1>Журнал</h1>
+          <p id="logs-message">Последние 200 строк, обновляются сами.</p>
+        </header>
+        <div class="segmented" role="tablist" aria-label="Уровень журнала">
+          <button type="button" role="tab" data-logs-level="all" aria-selected="true">Все</button>
+          <button type="button" role="tab" data-logs-level="ERROR" aria-selected="false">Ошибки</button>
+          <button type="button" role="tab" data-logs-level="WARNING" aria-selected="false">Предупреждения</button>
+        </div>
+        <div class="log" id="log" role="log" aria-live="off"></div>
+        <button class="jump" id="log-jump" type="button" hidden aria-label="К последним строкам">↓</button>
+      </section>
+    </main>
+
+    <nav class="tabbar" id="tabbar" aria-label="Разделы" hidden>
+      <button type="button" data-tab="home" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7" /><path d="M6 9.5V20h12V9.5" /></svg><span>Главная</span>
+      </button>
+      <button type="button" data-tab="modules">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></svg><span>Модули</span><i class="badge" id="modules-badge" hidden></i>
+      </button>
+      <button type="button" data-tab="logs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9" /></svg><span>Журнал</span>
+      </button>
+    </nav>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

@@ -1,0 +1,796 @@
+/* Мини-приложение Telegram. Цвета берутся из темы Telegram (--tg-theme-*), которую задаёт мост;
+ * без моста — тёмная тема панели. Отступы учитывают вырезы экрана и панели клиента Telegram. */
+
+:root {
+  color-scheme: dark;
+  --bg: var(--tg-theme-secondary-bg-color, #0a0b0e);
+  --surface: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #14161c));
+  --surface-2: color-mix(in srgb, var(--text) 5%, var(--surface));
+  --border: color-mix(in srgb, var(--text) 9%, transparent);
+  --text: var(--tg-theme-text-color, #eceef2);
+  --hint: var(--tg-theme-hint-color, #8a909c);
+  --section: var(--tg-theme-section-header-text-color, var(--hint));
+  --accent: var(--tg-theme-button-color, #7c8cff);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --link: var(--tg-theme-link-color, var(--accent));
+  --bad: var(--tg-theme-destructive-text-color, #f2555a);
+  --ok: #34c77b;
+  --warn: #f5a524;
+  --chart-1: var(--accent);
+  --chart-2: #34c77b;
+  --chart-3: #f5a524;
+  --radius: 16px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --top: max(env(safe-area-inset-top), var(--tg-content-safe-area-inset-top, 0px));
+  --bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+}
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --bg: var(--tg-theme-secondary-bg-color, #eff1f4);
+  --surface: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+  --text: var(--tg-theme-text-color, #11141a);
+  --hint: var(--tg-theme-hint-color, #858c99);
+  --ok: #17a86b;
+  --warn: #c7820a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.4 -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  overscroll-behavior: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+h1,
+h2,
+p,
+dl,
+dd {
+  margin: 0;
+}
+[hidden] {
+  display: none !important;
+}
+svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Экран входа ---------- */
+.gate {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 32px 28px;
+  text-align: center;
+}
+.gate h1 {
+  margin-top: 8px;
+  font-size: 20px;
+}
+.gate p {
+  max-width: 300px;
+  color: var(--hint);
+}
+.gate-mark {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.gate-mark i {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--accent);
+  animation: spin 900ms linear infinite;
+}
+.gate[data-state="forbidden"] .gate-mark,
+.gate[data-state="error"] .gate-mark,
+.gate[data-state="outside"] .gate-mark,
+.gate[data-state="unavailable"] .gate-mark {
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+}
+.gate:not([data-state="loading"]) .gate-mark i {
+  animation: none;
+  border: 0;
+}
+.gate:not([data-state="loading"]) .gate-mark::after {
+  content: "!";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--bad);
+  font-size: 28px;
+  font-weight: 700;
+}
+.gate-copy {
+  margin-top: 6px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.button {
+  margin-top: 6px;
+  padding: 11px 22px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* ---------- Каркас ---------- */
+.app {
+  padding: calc(var(--top) + 14px) 14px calc(var(--bottom) + 86px);
+}
+.screen {
+  display: grid;
+  gap: 12px;
+  animation: screen-in 280ms var(--ease) both;
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  color: var(--hint);
+  font-size: 13px;
+}
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-weight: 600;
+}
+.live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 2s ease-in-out infinite;
+}
+.live[data-offline] {
+  color: var(--warn);
+}
+.live[data-offline] i {
+  animation: none;
+}
+.eyebrow {
+  color: var(--hint);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 4px -2px;
+  color: var(--section);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.section-title small {
+  color: var(--hint);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.footnote,
+.empty {
+  padding: 0 4px;
+  color: var(--hint);
+  font-size: 13px;
+}
+.empty {
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+}
+
+/* ---------- Главная карточка ---------- */
+.hero {
+  --tone: var(--hint);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px 16px;
+  align-items: center;
+  overflow: hidden;
+  padding: 18px;
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tone) 22%, transparent), transparent 60%),
+    var(--surface);
+  transition: background 500ms var(--ease);
+}
+.hero[data-state="running"] {
+  --tone: var(--ok);
+}
+.hero[data-state="stopped"] {
+  --tone: var(--bad);
+}
+.hero[data-state="busy"] {
+  --tone: var(--accent);
+}
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+}
+.orb-core {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--tone) 70%, white), var(--tone));
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--tone) 45%, transparent);
+  color: #fff;
+  transition: background 500ms var(--ease), box-shadow 500ms var(--ease);
+}
+.orb-icon {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 250ms var(--ease), transform 250ms var(--ease);
+}
+.orb-play,
+.orb-stop {
+  fill: currentColor;
+}
+.hero[data-state="running"] .orb-play,
+.hero[data-state="stopped"] .orb-stop,
+.hero[data-state="busy"] .orb-spin,
+.hero[data-state="unknown"] .orb-spin {
+  opacity: 1;
+  transform: none;
+}
+.hero[data-state="busy"] .orb-spin,
+.hero[data-state="unknown"] .orb-spin {
+  animation: spin 900ms linear infinite;
+}
+.orb-ring {
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--tone);
+  opacity: 0;
+}
+.hero[data-state="running"] .orb-ring {
+  animation: ripple 2.6s var(--ease) infinite;
+}
+.hero[data-state="running"] .orb-ring + .orb-ring {
+  animation-delay: 1.3s;
+}
+.hero-copy h1 {
+  margin-top: 2px;
+  font-size: 24px;
+  line-height: 1.15;
+}
+.hero-copy p {
+  margin-top: 3px;
+  color: var(--hint);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.hero-stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.hero-stats div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.hero-stats dt {
+  color: var(--hint);
+  font-size: 11.5px;
+}
+.hero-stats dd {
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.action {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 11px 6px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+  transition: transform 160ms var(--ease), opacity 200ms ease, background 200ms ease;
+}
+.action svg {
+  width: 21px;
+  height: 21px;
+}
+.action[data-action="start"] svg,
+.action[data-action="stop"] svg {
+  fill: currentColor;
+}
+.action.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.action.danger {
+  color: var(--bad);
+}
+.action:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.action[data-busy] svg {
+  animation: spin 900ms linear infinite;
+}
+
+/* ---------- Строки и списки ---------- */
+.row,
+.list > * {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface);
+  text-align: left;
+}
+.row {
+  border-radius: var(--radius);
+}
+.row-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone, var(--hint)) 18%, transparent);
+  color: var(--tone, var(--hint));
+}
+.row-icon svg {
+  width: 19px;
+  height: 19px;
+}
+.row-main {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.row-main small {
+  overflow: hidden;
+  color: var(--hint);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchdog[data-state="on"] {
+  --tone: var(--ok);
+}
+.watchdog[data-state="warn"] {
+  --tone: var(--warn);
+}
+.watchdog[data-state="bad"] {
+  --tone: var(--bad);
+}
+.pill {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone, var(--hint)) 16%, transparent);
+  color: var(--tone, var(--hint));
+  font-size: 12px;
+  font-weight: 600;
+}
+.list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--border);
+}
+.list > * {
+  border-radius: 0;
+}
+
+/* ---------- Метрики ---------- */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.metric {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  min-height: 92px;
+  padding: 11px 12px 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.metric span {
+  color: var(--hint);
+  font-size: 12px;
+}
+.metric strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.metric canvas {
+  align-self: end;
+  width: calc(100% + 24px);
+  height: 40px;
+  margin: 4px -12px 0;
+}
+.metric[data-level="warn"] strong {
+  color: var(--warn);
+}
+.metric[data-level="bad"] strong {
+  color: var(--bad);
+}
+
+/* ---------- Происшествия ---------- */
+.incident {
+  --tone: var(--bad);
+}
+.incident[data-level="WARNING"] {
+  --tone: var(--warn);
+}
+.incident .row-icon {
+  font-weight: 700;
+}
+.count {
+  flex: 0 0 auto;
+  color: var(--hint);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.link-button {
+  justify-self: center;
+  margin-top: 6px;
+  padding: 10px;
+  color: var(--link);
+  font-size: 14px;
+}
+
+/* ---------- Модули ---------- */
+.screen-head {
+  padding: 4px 4px 2px;
+}
+.screen-head h1 {
+  font-size: 26px;
+}
+.screen-head p {
+  margin-top: 2px;
+  color: var(--hint);
+  font-size: 13.5px;
+}
+.tally {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.tally div {
+  display: grid;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.tally strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.tally span {
+  color: var(--hint);
+  font-size: 12.5px;
+}
+.tally [data-tally="ready"] strong {
+  color: var(--ok);
+}
+.tally [data-tally="problems"] strong {
+  color: var(--bad);
+}
+.tally [data-tally="loading"] strong {
+  color: var(--accent);
+}
+.segmented {
+  display: grid;
+  grid-auto-columns: minmax(max-content, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.segmented button {
+  padding: 7px 10px;
+  white-space: nowrap;
+  border-radius: 9px;
+  color: var(--hint);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: background 200ms ease, color 200ms ease;
+}
+.segmented button[aria-selected="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.search {
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.search::placeholder {
+  color: var(--hint);
+}
+.module {
+  display: grid !important;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+.module > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+}
+.module .row-icon {
+  font-size: 15px;
+  font-weight: 700;
+}
+.module[data-state="ready"] {
+  --tone: var(--ok);
+}
+.module[data-state="error"],
+.module[data-state="suspended"] {
+  --tone: var(--bad);
+}
+.module[data-state="loading"] {
+  --tone: var(--accent);
+}
+.module-error {
+  overflow: auto;
+  max-height: 220px;
+  margin: 0 14px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  color: var(--text);
+  font: 12px/1.45 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chevron {
+  color: var(--hint);
+  transition: transform 220ms var(--ease);
+}
+.module[data-open] .chevron {
+  transform: rotate(90deg);
+}
+
+/* ---------- Журнал ---------- */
+.log {
+  overflow: auto;
+  height: calc(100vh - var(--top) - var(--bottom) - 230px);
+  min-height: 260px;
+  padding: 8px 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: 11.5px/1.5 var(--mono);
+  overscroll-behavior: contain;
+}
+.log p {
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log p[data-level="ERROR"],
+.log p[data-level="CRITICAL"] {
+  background: color-mix(in srgb, var(--bad) 11%, transparent);
+  color: color-mix(in srgb, var(--bad) 55%, var(--text));
+}
+.log p[data-level="WARNING"] {
+  color: color-mix(in srgb, var(--warn) 70%, var(--text));
+}
+.log time {
+  color: var(--hint);
+}
+.jump {
+  position: fixed;
+  right: 18px;
+  bottom: calc(var(--bottom) + 84px);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  font-size: 18px;
+}
+
+/* ---------- Нижняя панель ---------- */
+.tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 6px 10px calc(var(--bottom) + 6px);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+}
+.tabbar button {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 5px 0;
+  color: var(--hint);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 200ms ease;
+}
+.tabbar svg {
+  width: 24px;
+  height: 24px;
+  transition: transform 220ms var(--ease);
+}
+.tabbar button[aria-current="page"] {
+  color: var(--accent);
+}
+.tabbar button[aria-current="page"] svg {
+  transform: translateY(-1px) scale(1.06);
+}
+.badge {
+  position: absolute;
+  top: 2px;
+  left: calc(50% + 8px);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 17px;
+}
+
+/* ---------- Уведомление ---------- */
+.toast {
+  position: fixed;
+  right: 14px;
+  bottom: calc(var(--bottom) + 82px);
+  left: 14px;
+  z-index: 20;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 88%, var(--bg));
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: toast-in 280ms var(--ease) both;
+}
+.toast[data-kind="error"] {
+  background: var(--bad);
+  color: #fff;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes ripple {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (max-width: 340px) {
+  .hero-stats,
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

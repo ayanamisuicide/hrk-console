@@ -22,6 +22,8 @@ export function createAudit(ctx) {
     "update.rollback": "Откат версии",
     "update.cancel": "Отмена обновления",
     "alerts.test": "Проверка уведомлений",
+    "telegram.settings": "Настройка Telegram",
+    "panel.restart": "Перезапуск панели",
     "backup.create": "Создание копии",
     "backup.restore": "Восстановление доступа",
     "diagnostic.startup-log": "Проверка лога запуска",

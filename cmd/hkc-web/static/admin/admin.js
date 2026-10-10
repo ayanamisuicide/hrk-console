@@ -5,6 +5,7 @@ import { createOperations } from "./modules/operations.js";
 import { createNavigation } from "./modules/navigation.js";
 import { createAuth } from "./modules/auth.js";
 import { createUpdates } from "./modules/updates.js";
+import { createTelegram } from "./modules/telegram.js";
 
 // Состояние принадлежит этой странице; модули получают его явно через ctx.
 const ctx = {};
@@ -17,6 +18,7 @@ Object.assign(
   createNavigation(ctx),
   createAuth(ctx),
   createUpdates(ctx),
+  createTelegram(ctx),
 );
 
 ctx.$ = (selector) => document.querySelector(selector);
@@ -80,6 +82,8 @@ ctx.bindUpdatesCheck();
 ctx.bindUpdatesInstall();
 
 ctx.bindPanelRestart();
+
+ctx.bindTelegram();
 
 // Все поля и подписки готовы; refresh сам проверит токен и занятость.
 ctx.refresh();

@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -311,30 +312,91 @@ func newAlertDispatcher(getenv func(string) string, settings func() alertSetting
 			dispatcher.sinks = append(dispatcher.sinks, &webhookSink{endpoint: raw, client: client})
 		}
 	}
+	config := readTelegramConfig(getenv)
+	switch {
+	case config.TokenIssue != "":
+		log.Printf("%s; Telegram отключён", config.TokenIssue)
+	case config.Token == "":
+	case config.ChatIssue != "":
+		log.Printf("%s; уведомления в Telegram отключены", config.ChatIssue)
+	case config.ChatID == "":
+		log.Print("HKC_TELEGRAM_CHAT_ID не задан: уведомления в Telegram выключены, управление из Telegram доступно")
+	default:
+		dispatcher.sinks = append(dispatcher.sinks, &telegramSink{token: config.Token, chatID: config.ChatID, apiBase: config.APIBase, client: client})
+	}
+	return dispatcher
+}
+
+// telegramConfig — Настройки Telegram из окружения службы. Уведомлениям нужны токен и чат,
+// управлению — токен и список администраторов. Некорректное значение отключает только свою часть.
+type telegramConfig struct {
+	Token       string
+	TokenIssue  string
+	ChatID      string
+	ChatIssue   string
+	APIBase     string
+	Admins      []int64
+	AdminsIssue string
+	// WebAppURL — публичный HTTPS-адрес панели для мини-приложения, без завершающего «/».
+	WebAppURL   string
+	WebAppIssue string
+}
+
+// readTelegramConfig разбирает окружение без побочных эффектов; предупреждения пишут вызывающие.
+func readTelegramConfig(getenv func(string) string) telegramConfig {
+	config := telegramConfig{APIBase: strings.TrimRight(strings.TrimSpace(getenv("HKC_TELEGRAM_API_URL")), "/")}
+	// Свой адрес нужен для локального Bot API-сервера и тестов.
+	if config.APIBase == "" {
+		config.APIBase = "https://api.telegram.org"
+	}
 	token := strings.TrimSpace(getenv("HKC_TELEGRAM_BOT_TOKEN"))
 	if path := strings.TrimSpace(getenv("HKC_TELEGRAM_BOT_TOKEN_FILE")); token == "" && path != "" {
 		if data, err := os.ReadFile(path); err == nil {
 			token = strings.TrimSpace(string(data))
 		} else {
-			log.Print("не удалось прочитать HKC_TELEGRAM_BOT_TOKEN_FILE; Telegram отключён")
+			config.TokenIssue = "не удалось прочитать HKC_TELEGRAM_BOT_TOKEN_FILE"
 		}
 	}
 	chat := strings.TrimSpace(getenv("HKC_TELEGRAM_CHAT_ID"))
 	switch {
-	case token == "" && chat == "":
-	case !telegramTokenPattern.MatchString(token):
-		log.Print("HKC_TELEGRAM_BOT_TOKEN не похож на токен @BotFather; Telegram отключён")
-	case !telegramChatPattern.MatchString(chat):
-		log.Print("HKC_TELEGRAM_CHAT_ID должен быть числовым ID чата или @username канала; Telegram отключён")
-	default:
-		// Свой адрес нужен для локального Bot API-сервера и тестов.
-		base := strings.TrimRight(strings.TrimSpace(getenv("HKC_TELEGRAM_API_URL")), "/")
-		if base == "" {
-			base = "https://api.telegram.org"
+	case config.TokenIssue != "":
+	case token == "":
+		if chat != "" {
+			config.TokenIssue = "HKC_TELEGRAM_BOT_TOKEN не задан"
 		}
-		dispatcher.sinks = append(dispatcher.sinks, &telegramSink{token: token, chatID: chat, apiBase: base, client: client})
+	case !telegramTokenPattern.MatchString(token):
+		config.TokenIssue = "HKC_TELEGRAM_BOT_TOKEN не похож на токен @BotFather"
+	default:
+		config.Token = token
 	}
-	return dispatcher
+	if chat != "" {
+		if telegramChatPattern.MatchString(chat) {
+			config.ChatID = chat
+		} else {
+			config.ChatIssue = "HKC_TELEGRAM_CHAT_ID должен быть числовым ID чата или @username канала"
+		}
+	}
+	if raw := strings.TrimRight(strings.TrimSpace(getenv("HKC_TELEGRAM_WEBAPP_URL")), "/"); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			config.WebAppIssue = "HKC_TELEGRAM_WEBAPP_URL должен быть публичным HTTPS-адресом панели, например https://panel.example.com"
+		} else {
+			config.WebAppURL = raw
+		}
+	}
+	seen := map[int64]bool{}
+	for _, field := range strings.FieldsFunc(getenv("HKC_TELEGRAM_ADMIN_IDS"), func(r rune) bool { return r == ',' || r == ';' || r == ' ' }) {
+		id, err := strconv.ParseInt(field, 10, 64)
+		if err != nil || id <= 0 {
+			config.AdminsIssue = "HKC_TELEGRAM_ADMIN_IDS: «" + field + "» не числовой ID пользователя Telegram; значение пропущено"
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			config.Admins = append(config.Admins, id)
+		}
+	}
+	return config
 }
 
 // thresholdState — Состояние одного ресурса: с какого момента он выше порога и отправлено ли уведомление.
