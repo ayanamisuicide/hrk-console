@@ -32,6 +32,9 @@ jobs:
       - name: Проверка целостности обновления и отката
         run: python3 deploy/test_update.py
 
+      - name: Проверка мониторинга модулей и подключения Python
+        run: python3 botproc/bridge/test_bridge.py
+
   ui:
     runs-on: windows-latest
     steps:

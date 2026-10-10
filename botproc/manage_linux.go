@@ -61,12 +61,14 @@ func (m *Manager) Start() StartResult {
 	if venv == "" {
 		return StartResult{Err: fmt.Errorf("виртуальное окружение .venv или venv не найдено")}
 	}
-
 	out, err := os.Create(m.StartupLog)
 	if err != nil {
 		return StartResult{Err: err}
 	}
 	defer out.Close()
+	if err := m.InstallModulesBridge(); err != nil {
+		fmt.Fprintf(out, "Мониторинг модулей не подключён: %v\n", err)
+	}
 
 	cmd := exec.Command(filepath.Join(venv, "bin", "python3"), "-m", "heroku", "--root")
 	cmd.Dir = m.HerokuDir

@@ -37,6 +37,7 @@
           <div class="nav-submenu"><button class="nav-subitem" data-view="incidents"><span>!</span><span><b>Происшествия</b><small>Ошибки и предупреждения</small></span></button></div>
         </div>
         <button class="nav-item" data-view="system"><span>▦</span> Система</button>
+        <button class="nav-item" data-view="modules"><span>◈</span> Модули</button>
         <a class="nav-item" href="/admin/"><span>⚙</span> Администрирование</a>
       </nav>
 
@@ -74,6 +75,20 @@
 
       <!-- Раздел notice: содержимое обновляется соответствующим модулем страницы. -->
       <section id="notice" class="notice" hidden></section>
+      <section id="modules-view" class="workspace-view modules-view" hidden>
+        <div class="view-intro"><div><span class="eyebrow">ВНУТРИ HEROKU</span><h3>Модули бота</h3><p>От первого импорта до готовности. Всё состояние загрузки — в одном месте.</p></div><span class="modules-cadence">↻ Каждую секунду</span></div>
+        <div class="modules-overview">
+          <div class="modules-total"><span class="eyebrow">В ТЕКУЩЕМ ЗАПУСКЕ</span><strong id="modules-total">—</strong><span>модулей обнаружено</span></div>
+          <div class="modules-counters"><div><i class="module-dot ready"></i><strong id="modules-ready">—</strong><span>Готовы</span></div><div><i class="module-dot loading"></i><strong id="modules-loading">—</strong><span>Загружаются</span></div><div><i class="module-dot error"></i><strong id="modules-problems">—</strong><span>С проблемами</span></div></div>
+          <div class="modules-progress" aria-hidden="true"><i id="modules-progress"></i></div>
+        </div>
+        <div id="modules-connection" class="modules-connection" role="status"><i></i><span>Ожидаем данные…</span></div>
+        <div class="modules-toolbar"><label class="modules-search"><span aria-hidden="true">⌕</span><input id="modules-search" type="search" placeholder="Найти модуль…" aria-label="Найти модуль"></label><div class="modules-filters" role="group" aria-label="Тип модулей"><button class="compact active" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" data-modules-kind="core" aria-pressed="false">Встроенные</button></div><button id="modules-only-problems" class="compact" aria-pressed="false">Только проблемы</button></div>
+        <div class="modules-list-heading"><span>МОДУЛЬ / ВЕРСИЯ</span><span>СОСТОЯНИЕ</span></div>
+        <div id="modules-list" class="modules-list"></div>
+        <p id="modules-empty" class="modules-empty">Подключаемся к мониторингу…</p>
+        <p class="modules-footnote">«Готов» означает успешную инициализацию. Ошибки при выполнении команд доступны в журнале и происшествиях.</p>
+      </section>
       <!-- Раздел system-view: содержимое обновляется соответствующим модулем страницы. -->
       <section id="system-view" class="workspace-view system-view" hidden>
         <div class="view-intro"><div><span class="eyebrow">СОСТОЯНИЕ ХОСТА</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>

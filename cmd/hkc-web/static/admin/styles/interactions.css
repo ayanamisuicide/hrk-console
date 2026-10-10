@@ -52,31 +52,6 @@
 .table-wrap tr {
   transition: background-color var(--motion-fast) ease;
 }
-.admin-tree-group > summary {
-  transition:
-    background-color var(--motion-base) ease,
-    color var(--motion-base) ease;
-}
-.admin-tree-group > summary::after {
-  transition: transform var(--motion-base) var(--motion-ease);
-}
-.admin-tree-clip {
-  transition:
-    height var(--motion-base) var(--motion-ease),
-    opacity var(--motion-base) var(--motion-ease);
-}
-.audit-group {
-  transition:
-    border-color var(--motion-base) ease,
-    background-color var(--motion-base) ease;
-}
-.audit-expander {
-  transform: translateY(-4px);
-  transition:
-    grid-template-rows var(--motion-base) var(--motion-ease),
-    opacity var(--motion-exit) ease,
-    transform var(--motion-base) var(--motion-ease);
-}
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 900px) {
   .users-table-wrap {

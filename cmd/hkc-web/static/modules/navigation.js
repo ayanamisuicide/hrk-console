@@ -4,7 +4,7 @@
 export function createNavigation(ctx) {
   // Выбирает допустимый раздел, обновляет навигацию и сохраняет выбор; данные загружаются после авторизации.
   function setView(view) {
-    if (!["logs", "system", "incidents"].includes(view)) view = "logs";
+    if (!["logs", "system", "incidents", "modules"].includes(view)) view = "logs";
     ctx.currentView = view;
     document.querySelectorAll(".workspace-view").forEach((panel) => {
       panel.hidden = panel.id !== `${view}-view`;
@@ -28,10 +28,12 @@ export function createNavigation(ctx) {
         logs: "Журнал событий",
         system: "Состояние системы",
         incidents: "Происшествия",
+        modules: "Модули бота",
       }[view],
     );
     if (view === "incidents" && ctx.authenticated) ctx.refreshIncidents();
     if (view === "system" && ctx.authenticated) ctx.refreshHistory();
+    if (view === "modules" && ctx.authenticated) ctx.refreshModules();
     localStorage.setItem("hkc-view", view);
   }
 
@@ -139,7 +141,7 @@ export function createNavigation(ctx) {
       }
       if (
         event.key === "/" &&
-        document.activeElement !== ctx.filterInput &&
+        !document.activeElement?.matches("input, textarea, [contenteditable='true']") &&
         !ctx.authDialog.open
       ) {
         event.preventDefault();

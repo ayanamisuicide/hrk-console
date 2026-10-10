@@ -62,6 +62,7 @@ export function createAuth(ctx) {
       ]);
       if (ctx.currentView === "incidents") ctx.refreshIncidents();
       if (ctx.currentView === "system") ctx.refreshHistory();
+      if (ctx.currentView === "modules") ctx.refreshModules();
       ctx.connectStream();
     } catch (error) {
       if (!ctx.authDialog.open) ctx.showNotice(error.message, "error");

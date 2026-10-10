@@ -1,7 +1,7 @@
 /* Порядок импортов сохраняет существующий каскад правил. */
 @import url("./styles/layout.css");
 @import url("./styles/updates.css");
-@import url("./styles/tree.css");
 @import url("./styles/audit.css");
 @import url("./styles/interactions.css");
 @import url("./styles/operations.css");
+@import url("./styles/workspace.css");

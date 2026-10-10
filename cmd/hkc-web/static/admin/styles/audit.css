@@ -1,125 +1,210 @@
-/* Группы событий аудита и их раскрытые подробности.
- * Положение файла в списке импортов определяет приоритет этих правил. */
+/* История занимает ограниченную область; детали доступны без длинных карточек. */
+.audit-tools {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+}
+.audit-tools label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  max-width: 420px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.audit-tools label > span {
+  color: var(--muted);
+  font-size: 21px;
+}
+.audit-tools input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+}
+.audit-tools .muted {
+  font-size: 9px;
+}
 .audit-groups {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
+  max-height: 400px;
+  overflow: auto;
+  padding: 0 18px;
+  scrollbar-color: var(--line) transparent;
 }
 .audit-group {
+  border-bottom: 1px solid var(--line);
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-2);
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
 }
-.audit-group:hover,
-.audit-group.open {
-  border-color: color-mix(in srgb, var(--mint) 38%, var(--line));
+.audit-group > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 130px 28px 14px;
+  gap: 12px;
+  align-items: center;
+  padding: 15px 0;
+  cursor: pointer;
+  list-style: none;
 }
-.audit-group-head {
+.audit-group > summary::-webkit-details-marker {
+  display: none;
+}
+.audit-group > summary::after {
+  content: "⌄";
+  color: var(--muted);
+  transition: transform 240ms var(--ease);
+}
+.audit-group[open] > summary::after {
+  transform: rotate(180deg);
+}
+.audit-group > summary:hover strong {
+  color: var(--mint);
+}
+.audit-group > summary:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+.audit-group strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.audit-main small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-actor,
+.audit-group time {
+  color: var(--muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-repeat {
+  color: var(--mint);
+  font-size: 9px;
+  text-align: right;
+}
+.audit-detail {
+  padding: 0 0 16px;
+  animation: admin-audit-enter 220ms ease both;
+}
+.audit-detail p {
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.audit-detail small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.audit-occurrences {
+  max-height: 140px;
+  overflow: auto;
+  display: grid;
+  gap: 7px;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.audit-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 14px 16px;
+  padding: 14px 18px;
+  gap: 12px;
 }
-.audit-group-head > div {
-  min-width: 0;
-}
-.audit-group-head strong {
-  display: block;
-  color: var(--mint);
-  font:
-    11px/1.5 "Cascadia Mono",
-    Consolas,
-    monospace;
-  overflow-wrap: anywhere;
-}
-.audit-group-head p {
-  margin: 5px 0;
-  color: var(--text);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.audit-group-head span {
-  color: var(--muted);
-  font-size: 10px;
-  overflow-wrap: anywhere;
-}
-.audit-toggle {
-  flex: none;
-  white-space: nowrap;
-}
-.audit-expander {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transform: translateY(-5px);
-  transition:
-    grid-template-rows 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
-    opacity 0.18s ease,
-    transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.audit-group.open .audit-expander {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transform: none;
-}
-.audit-expander-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-.audit-occurrence {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 11px;
-}
-.audit-occurrence time {
-  color: var(--text);
+.audit-footer .muted {
+  font-size: 9px;
 }
 .audit-more {
-  margin: 0 18px 18px;
+  margin: 0;
 }
-/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
-@media (max-width: 720px) {
-  .admin-tree-group > summary {
-    grid-template-columns: 1fr 24px;
-    gap: 5px 8px;
+@keyframes admin-audit-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
   }
-  .tree-index,
-  .admin-tree-group > summary strong,
-  .admin-tree-group > summary small {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 900px) {
+  .audit-group > summary {
+    grid-template-columns: minmax(0, 1fr) 115px 25px 14px;
+    gap: 8px;
+  }
+  .audit-actor {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .audit-tools {
+    padding: 12px 14px;
+  }
+  .audit-tools > .muted {
+    display: none;
+  }
+  .audit-groups {
+    padding: 0 14px;
+    max-height: 350px;
+  }
+  .audit-group > summary {
+    grid-template-columns: minmax(0, 1fr) 24px 14px;
+    gap: 6px;
+    padding: 12px 0;
+  }
+  .audit-main {
     grid-column: 1;
   }
-  .admin-tree-group > summary::after {
-    grid-row: 1/4;
+  .audit-group time {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 9px;
+  }
+  .audit-repeat {
     grid-column: 2;
+    grid-row: 1 / 3;
   }
-  .admin-tree-children > .admin-section {
-    margin-right: 8px;
-    margin-left: 8px;
+  .audit-group > summary::after {
+    grid-column: 3;
+    grid-row: 1 / 3;
   }
-  .admin-tree-children > .admin-section:last-child {
-    margin-bottom: 12px;
-  }
-  .audit-group-head {
-    align-items: flex-start;
+  .audit-footer {
+    flex-wrap: wrap;
+    padding: 12px 14px;
   }
 }
-/* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
 @media (prefers-reduced-motion: reduce) {
-  .admin-tree-clip,
-  .audit-expander,
-  .admin-tree-group > summary,
-  .admin-tree-group > summary::after,
-  .audit-group {
+  .audit-detail {
+    animation: none;
+  }
+  .audit-group > summary::after {
     transition: none;
   }
 }

@@ -43,24 +43,15 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, result)
 }
 
-// performAction запрещает запуск и перезапуск во время обслуживания; остановка остаётся доступной.
+// Все действия сериализованы с автоматическим восстановлением.
 func (s *server) performAction(action string) (actionResponse, int) {
-	if s.operations != nil && action != "stop" {
-		maintenance := s.operations.maintenanceState()
-		if maintenance.Enabled {
-			message := "режим обслуживания включён"
-			if maintenance.Message != "" {
-				message += ": " + maintenance.Message
-			}
-			return actionResponse{Message: message}, http.StatusConflict
-		}
-	}
-	return s.performActionUnchecked(action)
+	s.botActionMu.Lock()
+	defer s.botActionMu.Unlock()
+	return s.performActionLocked(action)
 }
 
-// performActionUnchecked преобразует start, stop или restart в операции менеджера процесса и результат
-// HTTP. Вызывать после необходимых проверок доступа и обслуживания.
-func (s *server) performActionUnchecked(action string) (actionResponse, int) {
+// performActionLocked вызывается с захваченным botActionMu.
+func (s *server) performActionLocked(action string) (actionResponse, int) {
 	result := actionResponse{OK: true}
 	switch action {
 	case "start":

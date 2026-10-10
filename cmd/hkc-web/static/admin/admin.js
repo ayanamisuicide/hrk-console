@@ -32,7 +32,7 @@ document.documentElement.dataset.theme =
 
 ctx.bindAdminTheme();
 
-// Токен хранится в рамках вкладки; тема и раскрытие разделов живут дольше в localStorage.
+// Токен хранится в рамках вкладки; тема и выбранный раздел — в localStorage.
 ctx.adminToken = sessionStorage.getItem("hkc-admin-token") || "";
 
 ctx.refreshTimer = undefined;
@@ -50,27 +50,11 @@ ctx.configHistorySignature = "";
 
 ctx.securitySignature = "";
 
-ctx.schedulesSignature = "";
-
-ctx.maintenanceEnabled = false;
-
 ctx.configSignature = "";
 
-try {
-  const openBranches = JSON.parse(
-    localStorage.getItem("hkc-admin-tree") || "null",
-  );
-  if (Array.isArray(openBranches))
-    document.querySelectorAll(".admin-tree-group").forEach((branch) => {
-      branch.open = openBranches.includes(branch.dataset.tree);
-    });
-} catch (_) {
-  localStorage.removeItem("hkc-admin-tree");
-}
+ctx.bindAdminNavigation();
 
-ctx.bindAdminTreeGroup();
-
-ctx.auditVisible = 12;
+ctx.auditVisible = 8;
 
 ctx.auditSignature = "";
 
@@ -94,9 +78,7 @@ ctx.bindCreateBackup();
 
 ctx.bindDownloadDiagnostics();
 
-ctx.bindMaintenanceForm();
-
-ctx.bindScheduleForm();
+ctx.bindWatchdogForm();
 
 ctx.bindConfigPreview();
 

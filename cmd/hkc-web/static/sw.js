@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v22-russian";
+const CACHE = "hkc-shell-v24-watchdog";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -33,6 +33,8 @@ const ASSETS = [
   "/modules/navigation.js",
   "/modules/service.js",
   "/modules/system.js",
+  "/modules/modules.js",
+  "/styles/modules.css",
 ];
 // Установка кеширует весь набор целиком: неполная цепочка модулей не считается готовой.
 self.addEventListener("install", (event) => {

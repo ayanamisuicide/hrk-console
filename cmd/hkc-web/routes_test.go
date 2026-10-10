@@ -11,7 +11,7 @@ import (
 func TestRoutesKeepProtectedEndpoints(t *testing.T) {
 	s := newTestServer(t)
 	handler := s.routes()
-	for _, path := range []string{"/api/status", "/api/metrics", "/api/insights", "/api/diagnostics", "/api/v1/status", "/api/admin/config"} {
+	for _, path := range []string{"/api/admin/watchdog", "/api/modules", "/api/status", "/api/metrics", "/api/insights", "/api/diagnostics", "/api/v1/status", "/api/admin/config"} {
 		t.Run(path, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))

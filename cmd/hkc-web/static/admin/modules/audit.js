@@ -1,8 +1,14 @@
-// Компактный аудит с группировкой повторов и сохранением раскрытых подробностей.
-// Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
-// Подписки вызываются точкой входа после заполнения состояния страницы.
+// Компактные строки аудита; подробности и повторы раскрываются по запросу.
 export function createAudit(ctx) {
-  // Объединяет повторяющиеся события аудита в группы для компактного списка.
+  const actionLabels = {
+    "bot.recover": "Автовосстановление бота",
+    "bot.start": "Запуск бота",
+    "bot.stop": "Остановка бота",
+    "bot.restart": "Перезапуск бота",
+    "config.update": "Изменение настроек",
+    "config.restore": "Восстановление настроек",
+    "watchdog.update": "Настройка автовосстановления",
+  };
   function auditGroups(events) {
     const groups = [];
     const byIdentity = new Map();
@@ -23,103 +29,101 @@ export function createAudit(ctx) {
     return groups;
   }
 
-  // Выбирает русскую форму подписи количества повторений.
-  function repetitionLabel(count) {
-    const suffix =
-      count % 100 >= 11 && count % 100 <= 14
-        ? "раз"
-        : count % 10 >= 2 && count % 10 <= 4
-          ? "раза"
-          : "раз";
-    return `${count} ${suffix}`;
-  }
-
-  // Рисует ограниченную часть сгруппированного аудита, сохраняя раскрытые группы.
   function drawAudit() {
-    const groups = ctx.auditGroups(ctx.auditEvents);
+    const query = ctx.$("#audit-search").value.trim().toLocaleLowerCase();
+    const groups = auditGroups(ctx.auditEvents).filter(
+      (group) =>
+        !query ||
+        JSON.stringify(group.events[0]).toLocaleLowerCase().includes(query),
+    );
     const list = ctx.$("#audit-groups");
+    const focusedKey =
+      document.activeElement?.closest(".audit-group")?.dataset.key;
     list.replaceChildren();
+    ctx.$("#audit-count").textContent =
+      `${groups.length} групп · ${ctx.auditEvents.length} событий`;
     ctx.$("#audit-empty").hidden = groups.length !== 0;
-    groups.slice(0, ctx.auditVisible).forEach((group, index) => {
+    ctx.$("#audit-empty").textContent = query
+      ? "По этому запросу действий нет."
+      : "Действий пока нет.";
+    groups.slice(0, ctx.auditVisible).forEach((group) => {
       const event = group.events[0];
-      const key = group.identity;
-      const card = document.createElement("article");
+      const card = document.createElement("details");
       card.className = "audit-group";
-      const head = document.createElement("div");
-      head.className = "audit-group-head";
+      card.dataset.key = group.identity;
+      card.open = ctx.auditOpen.has(group.identity);
+      const head = document.createElement("summary");
+      const main = document.createElement("span");
+      main.className = "audit-main";
       const action = document.createElement("strong");
-      action.textContent = event.action || "Действие";
-      const detail = document.createElement("p");
-      detail.textContent = event.detail || "Без описания";
-      const meta = document.createElement("span");
-      meta.textContent = `${event.actor || "—"} · ${ctx.formatDate(event.time)} · ${event.ip || "—"}`;
-      const main = document.createElement("div");
-      main.append(action, detail, meta);
-      head.append(main);
+      action.textContent =
+        actionLabels[event.action] || event.action || "Действие";
+      const preview = document.createElement("small");
+      preview.textContent = event.detail || "Без описания";
+      main.append(action, preview);
+      const actor = document.createElement("span");
+      actor.className = "audit-actor";
+      actor.textContent = event.actor || "—";
+      const time = document.createElement("time");
+      time.textContent = ctx.formatDate(event.time);
+      const repeat = document.createElement("span");
+      repeat.className = "audit-repeat";
+      repeat.textContent =
+        group.events.length > 1 ? `×${group.events.length}` : "";
+      head.append(main, actor, time, repeat);
+      const detail = document.createElement("div");
+      detail.className = "audit-detail";
+      const description = document.createElement("p");
+      description.textContent = event.detail || "Без описания";
+      const origin = document.createElement("small");
+      origin.textContent = `${event.action || "Действие"} · Автор: ${event.actor || "—"} · IP: ${event.ip || "—"}`;
+      detail.append(description, origin);
       if (group.events.length > 1) {
-        const button = document.createElement("button");
-        button.className = "compact audit-toggle";
-        const panel = document.createElement("div");
-        panel.className = "audit-expander";
-        panel.id = `audit-detail-${index}`;
-        const inner = document.createElement("div");
-        inner.className = "audit-expander-inner";
+        const occurrences = document.createElement("div");
+        occurrences.className = "audit-occurrences";
         for (const occurrence of group.events) {
           const row = document.createElement("div");
-          row.className = "audit-occurrence";
-          const time = document.createElement("time");
-          time.textContent = ctx.formatDate(occurrence.time);
-          const copy = document.createElement("span");
-          copy.textContent = `${occurrence.actor || "—"} · ${occurrence.ip || "—"}`;
-          row.append(time, copy);
-          inner.append(row);
+          row.textContent = ctx.formatDate(occurrence.time);
+          occurrences.append(row);
         }
-        panel.append(inner);
-        const toggle = (open) => {
-          card.classList.toggle("open", open);
-          button.setAttribute("aria-expanded", String(open));
-          button.textContent = `${ctx.repetitionLabel(group.events.length)} ${open ? "▴" : "▾"}`;
-          panel.inert = !open;
-          panel.setAttribute("aria-hidden", String(!open));
-          if (open) ctx.auditOpen.add(key);
-          else ctx.auditOpen.delete(key);
-        };
-        button.setAttribute("aria-controls", panel.id);
-        button.addEventListener("click", () =>
-          toggle(!card.classList.contains("open")),
-        );
-        head.append(button);
-        card.append(head, panel);
-        toggle(ctx.auditOpen.has(key));
-      } else card.append(head);
+        detail.append(occurrences);
+      }
+      card.append(head, detail);
+      card.addEventListener("toggle", () => {
+        if (card.open) ctx.auditOpen.add(group.identity);
+        else ctx.auditOpen.delete(group.identity);
+      });
       list.append(card);
+      if (focusedKey === group.identity) head.focus();
     });
     ctx.$("#audit-more").hidden = ctx.auditVisible >= groups.length;
     ctx.$("#audit-more").textContent =
-      `Показать ещё · ${Math.min(12, groups.length - ctx.auditVisible)}`;
+      `Показать ещё · ${Math.min(8, groups.length - ctx.auditVisible)}`;
+    // Удалённые сервером группы не накапливаются в состоянии раскрытия.
+    const current = new Set(
+      auditGroups(ctx.auditEvents).map((group) => group.identity),
+    );
+    for (const key of ctx.auditOpen)
+      if (!current.has(key)) ctx.auditOpen.delete(key);
   }
 
-  // Сохраняет новые события и перерисовывает аудит только при изменении сигнатуры.
   function renderAudit(events) {
     const signature = JSON.stringify(events);
     if (signature === ctx.auditSignature) return;
     ctx.auditSignature = signature;
     ctx.auditEvents = events;
-    ctx.drawAudit();
-  }
-  // Увеличивает число видимых групп аудита.
-  function bindAuditMore() {
-    ctx.$("#audit-more").addEventListener("click", () => {
-      ctx.auditVisible += 12;
-      ctx.drawAudit();
-    });
+    drawAudit();
   }
 
-  return {
-    auditGroups,
-    repetitionLabel,
-    drawAudit,
-    renderAudit,
-    bindAuditMore,
-  };
+  function bindAuditMore() {
+    ctx.$("#audit-more").addEventListener("click", () => {
+      ctx.auditVisible += 8;
+      drawAudit();
+    });
+    ctx.$("#audit-search").addEventListener("input", () => {
+      ctx.auditVisible = 8;
+      drawAudit();
+    });
+  }
+  return { auditGroups, drawAudit, renderAudit, bindAuditMore };
 }

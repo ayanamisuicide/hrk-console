@@ -1,31 +1,118 @@
-// Тема, подтверждения и анимированное дерево разделов администрирования.
-// Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
-// Подписки вызываются точкой входа после заполнения состояния страницы.
+// Навигация по рабочим областям и вкладкам истории; формы остаются в DOM.
 export function createNavigation(ctx) {
-  // Сохраняет имена раскрытых ветвей админки в localStorage.
-  function saveTreeState() {
-    const open = [...document.querySelectorAll(".admin-tree-group[open]")].map(
-      (item) => item.dataset.tree,
-    );
-    localStorage.setItem("hkc-admin-tree", JSON.stringify(open));
+  const pages = {
+    operations: [
+      "01 / НАБЛЮДЕНИЕ",
+      "Автовосстановление",
+      "Бот вернётся в работу после остановки или зависания.",
+    ],
+    access: [
+      "02 / ДОСТУП",
+      "Пользователи и инвайты",
+      "Аккаунты, роли и приглашения в панель.",
+    ],
+    settings: [
+      "03 / НАСТРОЙКИ",
+      "Конфигурация и защита",
+      "Параметры Heroku и состояние безопасности.",
+    ],
+    history: [
+      "04 / ИСТОРИЯ",
+      "История и восстановление",
+      "События, резервные копии доступа и версии настроек.",
+    ],
+    service: [
+      "05 / ДИАГНОСТИКА",
+      "Проверки и терминал",
+      "Инструменты для работы с установкой Heroku.",
+    ],
+    updates: [
+      "06 / ОБНОВЛЕНИЯ",
+      "Версии и установка",
+      "Сверка работающей сборки, исходников и релиза.",
+    ],
+  };
+
+  function setAdminView(view) {
+    if (!pages[view]) view = "operations";
+    document.querySelectorAll("[data-admin-page]").forEach((page) => {
+      page.hidden = page.dataset.adminPage !== view;
+    });
+    document.querySelectorAll("[data-admin-view]").forEach((button) => {
+      const active = button.dataset.adminView === view;
+      button.classList.toggle("active", active);
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+    ["index", "title", "description"].forEach((name, index) => {
+      ctx.$(`#admin-page-${name}`).textContent = pages[view][index];
+    });
+    localStorage.setItem("hkc-admin-view", view);
   }
 
-  // Возвращает Promise результата модального подтверждения, не блокируя поток браузера.
+  function setHistoryTab(tab, focus = false) {
+    if (!["audit", "backups", "config"].includes(tab)) tab = "audit";
+    document.querySelectorAll("[data-history-tab]").forEach((button) => {
+      const active = button.dataset.historyTab === tab;
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+      ctx.$(`#${button.getAttribute("aria-controls")}`).hidden = !active;
+      if (active && focus) button.focus();
+    });
+    localStorage.setItem("hkc-admin-history-tab", tab);
+  }
+
+  function bindAdminNavigation() {
+    let view = localStorage.getItem("hkc-admin-view");
+    if (!view) {
+      try {
+        view = JSON.parse(localStorage.getItem("hkc-admin-tree") || "[]").at(
+          -1,
+        );
+      } catch (_) {}
+    }
+    setAdminView(view);
+    setHistoryTab(localStorage.getItem("hkc-admin-history-tab"));
+    document
+      .querySelectorAll("[data-admin-view]")
+      .forEach((button) =>
+        button.addEventListener("click", () =>
+          setAdminView(button.dataset.adminView),
+        ),
+      );
+    const tabs = [...document.querySelectorAll("[data-history-tab]")];
+    tabs.forEach((button, index) => {
+      button.addEventListener("click", () =>
+        setHistoryTab(button.dataset.historyTab),
+      );
+      button.addEventListener("keydown", (event) => {
+        let next;
+        if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+        if (event.key === "ArrowLeft")
+          next = (index + tabs.length - 1) % tabs.length;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = tabs.length - 1;
+        if (next === undefined) return;
+        event.preventDefault();
+        setHistoryTab(tabs[next].dataset.historyTab, true);
+      });
+    });
+  }
+
   function confirmAction(title, message) {
     const dialog = ctx.$("#confirm-dialog");
     ctx.$("#confirm-title").textContent = title;
     ctx.$("#confirm-message").textContent = message;
     dialog.showModal();
-    return new Promise((resolve) => {
+    return new Promise((resolve) =>
       dialog.addEventListener(
         "close",
         () => resolve(dialog.returnValue === "confirm"),
         { once: true },
-      );
-    });
+      ),
+    );
   }
 
-  // Форматирует время на русском с учётом отсутствующего значения.
   function formatDate(value) {
     if (!value) return "никогда";
     return new Intl.DateTimeFormat("ru-RU", {
@@ -34,11 +121,10 @@ export function createNavigation(ctx) {
     }).format(new Date(value));
   }
 
-  // Показывает сообщение через общий помощник анимации и автоматического скрытия.
   function showNotice(message, kind = "ok") {
     window.motionNotice(ctx.$("#admin-notice"), message, kind);
   }
-  // Переключает тему админки и общую сохранённую настройку.
+
   function bindAdminTheme() {
     ctx.$("#admin-theme").addEventListener("click", () => {
       const theme =
@@ -48,109 +134,13 @@ export function createNavigation(ctx) {
       localStorage.setItem("hkc-theme", theme);
     });
   }
-  // Анимирует высоту ветви, отменяет незавершённый переход и сохраняет раскрытие; уменьшенное движение
-  // переключает сразу.
-  function bindAdminTreeGroup() {
-    document.querySelectorAll(".admin-tree-group").forEach((branch) => {
-      const summary = branch.querySelector(":scope > summary");
-      const clip = branch.querySelector(":scope > .admin-tree-clip");
-      let frame = 0;
-      let motionTimer;
-      let motionEnd;
-      const cancelMotion = () => {
-        cancelAnimationFrame(frame);
-        clearTimeout(motionTimer);
-        if (motionEnd && clip)
-          clip.removeEventListener("transitionend", motionEnd);
-        motionEnd = null;
-      };
-      summary.setAttribute("aria-expanded", String(branch.open));
-      summary.addEventListener("click", (event) => {
-        event.preventDefault();
-        const visuallyOpen =
-          branch.open && !branch.classList.contains("is-closing");
-        const open = !visuallyOpen;
-        cancelMotion();
-        if (open) {
-          const startHeight =
-            branch.open && clip ? clip.getBoundingClientRect().height : 0;
-          if (clip) clip.style.height = `${startHeight}px`;
-          branch.classList.remove("is-closing");
-          if (clip) clip.inert = false;
-          branch.open = true;
-          summary.setAttribute("aria-expanded", "true");
-          if (clip && !window.prefersReducedMotion?.()) {
-            void clip.offsetHeight;
-            frame = requestAnimationFrame(() => {
-              clip.style.height = `${clip.scrollHeight}px`;
-            });
-            const finish = (transitionEvent) => {
-              if (
-                transitionEvent &&
-                (transitionEvent.target !== clip ||
-                  transitionEvent.propertyName !== "height")
-              )
-                return;
-              cancelMotion();
-              clip.style.height = "";
-            };
-            motionEnd = finish;
-            clip.addEventListener("transitionend", finish);
-            motionTimer = setTimeout(() => finish(), 700);
-          } else if (clip) clip.style.height = "";
-          ctx.saveTreeState();
-          return;
-        }
-        summary.setAttribute("aria-expanded", "false");
-        if (
-          window.prefersReducedMotion?.() ||
-          window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
-          !branch.open ||
-          !clip
-        ) {
-          branch.open = false;
-          if (clip) {
-            clip.inert = true;
-            clip.style.height = "";
-          }
-          branch.classList.remove("is-closing");
-          ctx.saveTreeState();
-          return;
-        }
-        clip.inert = true;
-        clip.style.height = `${clip.getBoundingClientRect().height}px`;
-        void clip.offsetHeight;
-        branch.classList.add("is-closing");
-        const finish = (transitionEvent) => {
-          if (
-            transitionEvent &&
-            (transitionEvent.target !== clip ||
-              transitionEvent.propertyName !== "height")
-          )
-            return;
-          if (!branch.classList.contains("is-closing")) return;
-          cancelMotion();
-          branch.open = false;
-          clip.style.height = "";
-          branch.classList.remove("is-closing");
-          ctx.saveTreeState();
-        };
-        motionEnd = finish;
-        clip.addEventListener("transitionend", finish);
-        frame = requestAnimationFrame(() => {
-          clip.style.height = "0px";
-        });
-        motionTimer = setTimeout(() => finish(), 700);
-      });
-    });
-  }
-
   return {
-    saveTreeState,
+    setAdminView,
+    setHistoryTab,
+    bindAdminNavigation,
     confirmAction,
     formatDate,
     showNotice,
     bindAdminTheme,
-    bindAdminTreeGroup,
   };
 }

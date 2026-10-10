@@ -1,224 +1,628 @@
 <!doctype html>
 <html lang="ru">
-<head>
-  <!-- Общие стили загружаются перед специфичными: порядок сохраняет каскад. -->
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HEROKU · АДМИНКА</title>
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/motion.css">
-  <link rel="stylesheet" href="/admin/admin.css">
-</head>
-<body class="admin-body">
-  <header class="admin-header">
-    <div>
-      <span class="eyebrow">ПАНЕЛЬ / АДМИНКА</span>
-      <h1>Доступ и пользователи</h1>
-      <p class="admin-subtitle">Управление доступом, сессиями и процессом Heroku</p>
-    </div>
-    <nav>
-      <a href="/">Консоль</a>
-      <button id="admin-theme" class="compact">◐ Тема</button>
-      <button id="admin-refresh" class="compact">↻ Обновить</button>
-      <button id="admin-logout" class="compact">Закрыть сессию</button>
-    </nav>
-  </header>
-
-  <main class="admin-main">
-    <div class="admin-tree" aria-label="Разделы админки">
-    <details class="admin-tree-group" data-tree="updates">
-      <summary><span class="tree-index">01 / СИСТЕМА</span><strong>Обновления и сверка</strong><small>Версии, исходники, установка</small></summary>
-      <div class="admin-tree-clip"><div class="admin-tree-children">
-    <!-- Раздел updates-title: содержимое обновляется соответствующим модулем страницы. -->
-    <section class="admin-section updates-section" aria-labelledby="updates-title">
-      <div class="section-heading"><div><span class="eyebrow">РЕЛИЗЫ / СВЕРКА ИСХОДНИКОВ</span><h2 id="updates-title">Обновления и сверка</h2></div><button id="updates-check" class="compact">Проверить GitHub</button></div>
-      <div class="updates-grid">
-        <article><span class="eyebrow">ЗАПУЩЕННАЯ СБОРКА</span><strong id="update-installed">—</strong><code id="update-installed-commit">—</code></article>
-        <article><span class="eyebrow">СЕРВЕР / ИСХОДНИКИ</span><strong id="update-source">—</strong><code id="update-source-commit">—</code></article>
-        <article><span class="eyebrow">ЛОКАЛЬНО / WINDOWS</span><strong id="update-local">—</strong><code id="update-local-commit">—</code></article>
-        <article><span class="eyebrow">GITHUB / РЕЛИЗ</span><strong id="update-release">—</strong><code id="update-release-commit">—</code></article>
-      </div>
-      <div class="updates-details"><p id="update-summary" role="status">Получаем сведения о версиях…</p><p id="update-job" role="status"></p><p id="update-main" class="muted"></p><p class="muted">Проверка каждые 10 минут. Установка — только по кнопке. Изменённые локальные файлы блокируют обновление; предыдущая сборка сохраняется для отката.</p><div class="update-actions"><button id="updates-install" class="primary" disabled>Открыть окно обновления</button><a id="updates-open" class="compact" href="/admin/update.html" target="hkc-update-progress">Посмотреть ход установки ↗</a></div></div>
-    </section>
-      </div></div>
-    </details>
-    <section class="summary" aria-label="Сводка">
-      <article><i>01</i><span>ПОЛЬЗОВАТЕЛИ</span><strong id="users-count">—</strong><small>зарегистрировано</small></article>
-      <article><i>02</i><span>СЕЙЧАС ОНЛАЙН</span><strong id="online-count">—</strong><small>за последние 30 секунд</small></article>
-      <article><i>03</i><span>АКТИВНЫЕ ИНВАЙТЫ</span><strong id="invites-count">—</strong><small>готовы к использованию</small></article>
-    </section>
-
-    <section class="bot-deck">
-      <div class="bot-orbit"><span id="bot-orbit-dot"></span></div>
-      <div class="bot-copy">
-        <span class="eyebrow">ПРОЦЕСС БОТА</span>
-        <h2 id="admin-bot-status">Проверка процесса…</h2>
-        <p id="admin-bot-meta">—</p>
-      </div>
-      <div class="bot-actions">
-        <button data-bot-action="start" class="primary">▶ Запустить</button>
-        <button data-bot-action="restart">↻ Перезапустить</button>
-        <button data-bot-action="stop" class="danger">■ Остановить</button>
-      </div>
-    </section>
-
-    <details class="admin-tree-group" data-tree="operations">
-      <summary><span class="tree-index">02 / ОПЕРАЦИИ</span><strong>Обслуживание и расписание</strong><small>Блокировка запусков и одноразовые задания</small></summary>
-      <div class="admin-tree-clip"><div class="admin-tree-children">
-    <section class="admin-section operations-section">
-      <div class="section-heading"><div><span class="eyebrow">РЕЖИМ ОБСЛУЖИВАНИЯ</span><h2>Режим обслуживания</h2></div><strong id="maintenance-state" class="operation-state">Выключен</strong></div>
-      <form id="maintenance-form" class="operation-form">
-        <label class="operation-check"><input id="maintenance-enabled" type="checkbox"><span>Блокировать запуск и перезапуск бота</span></label>
-        <label>Сообщение <input id="maintenance-message" maxlength="240" placeholder="Например: обновление конфигурации"></label>
-        <label class="operation-check"><input id="maintenance-stop" type="checkbox"><span>Остановить бота при включении</span></label>
-        <button class="primary" type="submit">Сохранить режим</button>
-      </form>
-    </section>
-
-    <section class="admin-section operations-section">
-      <div class="section-heading"><div><span class="eyebrow">РАСПИСАНИЕ</span><h2>Расписание действий</h2></div><span class="muted">Одноразовые задания · время вашего устройства</span></div>
-      <form id="schedule-form" class="schedule-form">
-        <label>Действие <select id="schedule-action"><option value="start">Запустить</option><option value="restart">Перезапустить</option><option value="stop">Остановить</option></select></label>
-        <label>Дата и время <input id="schedule-run-at" type="datetime-local" required></label>
-        <button class="primary" type="submit">Запланировать</button>
-      </form>
-      <div id="schedule-list" class="backup-list"></div>
-      <p id="schedule-empty" class="empty" hidden>Запланированных действий нет.</p>
-    </section>
-      </div></div>
-    </details>
-
-    <details class="admin-tree-group" data-tree="service">
-      <summary><span class="tree-index">03 / СЛУЖБА</span><strong>Диагностика и консоль</strong><small>Команды внутри WSL / HEROKU_DIR</small></summary>
-      <div class="admin-tree-clip"><div class="admin-tree-children">
-    <section class="admin-section console-section">
-      <div class="section-heading"><div><span class="eyebrow">ДИАГНОСТИКА</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
-      <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
-      <pre id="diagnostic-output">Выберите проверку выше.</pre>
-      <div class="bundle-actions"><button id="download-diagnostics" class="primary compact" type="button">Скачать диагностический ZIP</button><small>Секреты конфигурации не включаются; типичные токены в логах маскируются.</small></div>
-      <form id="terminal-form" class="terminal-form">
-        <label for="terminal-command"><span>WSL / HEROKU_DIR</span><small>Команда выполняется с правами службы панели · Ctrl+Enter для запуска</small></label>
-        <div class="terminal-prompt"><b>$</b><textarea id="terminal-command" rows="2" maxlength="4096" spellcheck="false" placeholder="git status --short"></textarea></div>
-        <div class="terminal-actions"><button id="terminal-run" type="submit" class="primary compact">▶ Выполнить</button><button id="terminal-clear" type="button" class="compact">Очистить вывод</button><span id="terminal-meta">Готово к команде</span></div>
-      </form>
-      <pre id="terminal-output" class="terminal-output">Команды ещё не выполнялись.</pre>
-    </section>
-      </div></div>
-    </details>
-
-    <details class="admin-tree-group" data-tree="access">
-      <summary><span class="tree-index">04 / ДОСТУП</span><strong>Пользователи и инвайты</strong><small>Роли, приглашения, сессии</small></summary>
-      <div class="admin-tree-clip"><div class="admin-tree-children">
-    <section class="admin-section">
-      <div class="section-heading">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HEROKU · АДМИНКА</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/motion.css" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+  </head>
+  <body class="admin-body">
+    <header class="admin-header">
+      <div class="admin-brand">
+        <span class="admin-brand-icon" aria-hidden="true">◈</span>
         <div>
-          <span class="eyebrow">ПОЛЬЗОВАТЕЛИ</span>
-          <h2>Пользователи</h2>
+          <span class="eyebrow">HEROKU / УПРАВЛЕНИЕ</span>
+          <h1>Администрирование</h1>
         </div>
-        <span class="muted">Онлайн — активность за последние 30 секунд</span>
       </div>
-      <div class="table-wrap users-table-wrap">
-        <table class="users-table">
-          <thead><tr><th>Пользователь</th><th>Роль</th><th>Статус</th><th>Регистрация</th><th>Последняя активность</th><th>Действия</th></tr></thead>
-          <tbody id="users-body"></tbody>
-        </table>
+      <nav aria-label="Действия администратора">
+        <a href="/">← Консоль</a
+        ><button id="admin-theme" class="compact">◐ Тема</button
+        ><button id="admin-refresh" class="compact">↻ Обновить</button
+        ><button id="admin-logout" class="compact">Выйти</button>
+      </nav>
+    </header>
+    <main class="admin-main">
+      <div class="admin-overview">
+        <section class="bot-deck" aria-label="Управление ботом">
+          <div class="bot-orbit"><span id="bot-orbit-dot"></span></div>
+          <div class="bot-copy">
+            <span class="eyebrow">ПРОЦЕСС БОТА</span>
+            <h2 id="admin-bot-status">Проверка процесса…</h2>
+            <p id="admin-bot-meta">—</p>
+          </div>
+          <div class="bot-actions">
+            <button data-bot-action="start" class="primary">▶ Запустить</button
+            ><button data-bot-action="restart">↻ Перезапустить</button
+            ><button data-bot-action="stop" class="danger">■ Остановить</button>
+          </div>
+        </section>
+        <section class="summary" aria-label="Сводка доступа">
+          <article>
+            <strong id="users-count">—</strong><span>Пользователи</span>
+          </article>
+          <article>
+            <strong id="online-count">—</strong><span>Онлайн</span>
+          </article>
+          <article>
+            <strong id="invites-count">—</strong><span>Инвайты</span>
+          </article>
+        </section>
       </div>
-      <p id="users-empty" class="empty" hidden>Пользователей пока нет.</p>
-    </section>
+      <div class="admin-layout">
+        <nav class="admin-nav" aria-label="Разделы админки">
+          <span class="eyebrow admin-nav-label">РАБОЧАЯ ОБЛАСТЬ</span>
+          <button data-admin-view="operations" type="button">
+            <span aria-hidden="true">↻</span
+            ><span
+              ><strong>Восстановление</strong
+              ><small>Наблюдение за ботом</small></span
+            >
+          </button>
+          <button data-admin-view="access" type="button">
+            <span aria-hidden="true">◎</span
+            ><span
+              ><strong>Доступ</strong
+              ><small>Пользователи и инвайты</small></span
+            >
+          </button>
+          <button data-admin-view="settings" type="button">
+            <span aria-hidden="true">⚙</span
+            ><span
+              ><strong>Настройки</strong
+              ><small>Конфигурация и защита</small></span
+            >
+          </button>
+          <button data-admin-view="history" type="button">
+            <span aria-hidden="true">≡</span
+            ><span
+              ><strong>История и копии</strong
+              ><small>События и откат</small></span
+            >
+          </button>
+          <button data-admin-view="service" type="button">
+            <span aria-hidden="true">⌘</span
+            ><span
+              ><strong>Диагностика</strong
+              ><small>Проверки и терминал</small></span
+            >
+          </button>
+          <button data-admin-view="updates" type="button">
+            <span aria-hidden="true">↑</span
+            ><span
+              ><strong>Обновления</strong
+              ><small>Версии и установка</small></span
+            >
+          </button>
+        </nav>
+        <div class="admin-content">
+          <div class="admin-page-heading">
+            <div>
+              <span class="eyebrow" id="admin-page-index">01 / НАБЛЮДЕНИЕ</span>
+              <h2 id="admin-page-title">Автовосстановление</h2>
+              <p id="admin-page-description">
+                Бот вернётся в работу после остановки или зависания.
+              </p>
+            </div>
+            <span class="admin-sync"><i></i> Данные · 1 с</span>
+          </div>
 
-    <section class="admin-section">
-      <div class="section-heading">
-        <div>
-          <span class="eyebrow">ПРИГЛАШЕНИЯ</span>
-          <h2>Инвайты</h2>
+          <section
+            class="admin-page"
+            id="admin-operations"
+            data-admin-page="operations"
+            aria-labelledby="admin-page-title"
+          >
+            <section class="admin-section operations-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">НАБЛЮДЕНИЕ ЗА ПРОЦЕССОМ</span>
+                  <h2>Автоматический перезапуск</h2>
+                </div>
+                <strong id="watchdog-state" class="watchdog-state" role="status"
+                  >Подключаемся</strong
+                >
+              </div>
+              <div class="watchdog-intro">
+                <p>
+                  Если процесс закрылся или основной цикл Python перестал
+                  отвечать, остановим его принудительно и запустим заново. По
+                  умолчанию ждём 3 минуты.
+                </p>
+                <small>Работает на сервере, даже когда браузер закрыт.</small>
+              </div>
+              <form id="watchdog-form" class="watchdog-form">
+                <label class="watchdog-switch"
+                  ><input id="watchdog-enabled" type="checkbox" /><span
+                    ><strong>Автовосстановление</strong
+                    ><small>Следить за процессом и ответом Python</small></span
+                  ></label
+                ><label
+                  >Ожидание, секунд<input
+                    id="watchdog-timeout"
+                    type="number"
+                    min="30"
+                    max="3600"
+                    step="1"
+                    value="180"
+                    required /></label
+                ><button class="primary" type="submit">Сохранить</button>
+              </form>
+              <div class="watchdog-live">
+                <div>
+                  <span>ДО ПЕРЕЗАПУСКА</span
+                  ><strong id="watchdog-countdown">—</strong>
+                </div>
+                <div>
+                  <span>ПОПЫТОК В СЕАНСЕ</span
+                  ><strong id="watchdog-attempts">0</strong>
+                </div>
+                <p id="watchdog-message">Получаем состояние наблюдения…</p>
+              </div>
+              <p id="watchdog-last-result" class="watchdog-result">
+                Восстановление пока не требовалось.
+              </p>
+              <p class="watchdog-note">
+                Ручная остановка тоже временная. Для длительной остановки
+                выключите автовосстановление. Неудачные попытки повторяются с
+                выбранным интервалом.
+              </p>
+            </section>
+          </section>
+
+          <section
+            class="admin-page"
+            id="admin-access"
+            data-admin-page="access"
+            aria-labelledby="admin-page-title"
+            hidden
+          >
+            <section class="admin-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">АККАУНТЫ</span>
+                  <h2>Пользователи</h2>
+                </div>
+                <span class="muted">Онлайн · активность за 30 секунд</span>
+              </div>
+              <div class="table-wrap users-table-wrap">
+                <table class="users-table">
+                  <thead>
+                    <tr>
+                      <th>Пользователь</th>
+                      <th>Роль</th>
+                      <th>Статус</th>
+                      <th>Регистрация</th>
+                      <th>Последняя активность</th>
+                      <th>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-body"></tbody>
+                </table>
+              </div>
+              <p id="users-empty" class="empty" hidden>
+                Пользователей пока нет.
+              </p>
+            </section>
+            <section class="admin-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ПРИГЛАШЕНИЯ</span>
+                  <h2>Инвайты</h2>
+                </div>
+              </div>
+              <form id="invite-form" class="invite-form">
+                <label
+                  >Срок, часов
+                  <input
+                    id="invite-hours"
+                    type="number"
+                    min="1"
+                    max="720"
+                    value="24"
+                    required /></label
+                ><label
+                  >Роль
+                  <select id="invite-role">
+                    <option value="operator">Оператор</option>
+                    <option value="viewer">Наблюдатель</option>
+                  </select></label
+                ><button class="primary" type="submit">Создать инвайт</button>
+              </form>
+              <div id="invites-grid" class="invites-grid"></div>
+              <p id="invites-empty" class="empty" hidden>
+                Активных инвайтов нет.
+              </p>
+            </section>
+          </section>
+
+          <section
+            class="admin-page"
+            id="admin-settings"
+            data-admin-page="settings"
+            aria-labelledby="admin-page-title"
+            hidden
+          >
+            <section class="admin-section config-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ПАРАМЕТРЫ HEROKU</span>
+                  <h2>Конфигурация</h2>
+                </div>
+                <span class="muted">Секреты не возвращаются в браузер</span>
+              </div>
+              <div id="config-status" class="config-status"></div>
+              <form id="config-form" class="config-form" autocomplete="off">
+                <label
+                  >API ID
+                  <input
+                    name="api_id"
+                    inputmode="numeric"
+                    placeholder="Новое значение" /></label
+                ><label
+                  >Хеш API
+                  <input
+                    name="api_hash"
+                    type="password"
+                    placeholder="Новое значение" /></label
+                ><label
+                  >Адрес Redis
+                  <input
+                    name="redis_uri"
+                    type="password"
+                    placeholder="Новое значение" /></label
+                ><label
+                  >Адрес базы данных
+                  <input
+                    name="db_uri"
+                    type="password"
+                    placeholder="Новое значение" /></label
+                ><label
+                  >Имя приложения
+                  <input name="app_name" placeholder="Новое значение"
+                /></label>
+                <div class="config-actions">
+                  <button id="config-preview" type="button" class="compact">
+                    Проверить</button
+                  ><button type="submit" class="primary">Сохранить</button>
+                </div>
+              </form>
+              <p id="config-preview-output" class="backup-note">
+                Заполните только параметры, которые нужно изменить.
+              </p>
+            </section>
+            <section class="admin-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ДОСТУП И ЗАЩИТА</span>
+                  <h2>Контур безопасности</h2>
+                </div>
+                <span class="muted">Агрегаты без ключей и токенов</span>
+              </div>
+              <div
+                id="security-overview"
+                class="security-grid"
+                aria-live="polite"
+              ></div>
+            </section>
+          </section>
+
+          <section
+            class="admin-page"
+            id="admin-history"
+            data-admin-page="history"
+            aria-labelledby="admin-page-title"
+            hidden
+          >
+            <div
+              class="history-tabs"
+              role="tablist"
+              aria-label="История и восстановление"
+            >
+              <button
+                id="history-tab-audit"
+                role="tab"
+                type="button"
+                data-history-tab="audit"
+                aria-controls="history-audit"
+                aria-selected="true"
+              >
+                Действия</button
+              ><button
+                id="history-tab-backups"
+                role="tab"
+                type="button"
+                data-history-tab="backups"
+                aria-controls="history-backups"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Копии доступа</button
+              ><button
+                id="history-tab-config"
+                role="tab"
+                type="button"
+                data-history-tab="config"
+                aria-controls="history-config"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Снимки настроек
+              </button>
+            </div>
+            <section
+              id="history-audit"
+              class="admin-section audit-section"
+              role="tabpanel"
+              aria-labelledby="history-tab-audit"
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ЖУРНАЛ АДМИНИСТРАТОРА</span>
+                  <h2>Последние действия</h2>
+                </div>
+                <span id="audit-count" class="muted">Получаем события…</span>
+              </div>
+              <div class="audit-tools">
+                <label
+                  ><span aria-hidden="true">⌕</span
+                  ><input
+                    id="audit-search"
+                    type="search"
+                    placeholder="Действие, автор или описание…"
+                    aria-label="Поиск по истории действий" /></label
+                ><span class="muted">Подробности — по нажатию</span>
+              </div>
+              <div id="audit-groups" class="audit-groups"></div>
+              <div class="audit-footer">
+                <button
+                  id="audit-more"
+                  class="compact audit-more"
+                  type="button"
+                  hidden
+                >
+                  Показать ещё
+                </button>
+                <p class="muted">Последние 100 событий · повторы объединены</p>
+              </div>
+              <p id="audit-empty" class="empty" hidden>Действий пока нет.</p>
+            </section>
+            <section
+              id="history-backups"
+              class="admin-section backup-section"
+              role="tabpanel"
+              aria-labelledby="history-tab-backups"
+              hidden
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ПОЛЬЗОВАТЕЛИ И ИНВАЙТЫ</span>
+                  <h2>Резервные копии доступа</h2>
+                </div>
+                <button id="create-backup" class="primary">
+                  Создать копию
+                </button>
+              </div>
+              <p class="backup-note">
+                При восстановлении текущая база сначала сохраняется
+                автоматически. Пользовательские сессии завершатся.
+              </p>
+              <div id="backup-list" class="backup-list"></div>
+              <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
+            </section>
+            <section
+              id="history-config"
+              class="admin-section"
+              role="tabpanel"
+              aria-labelledby="history-tab-config"
+              hidden
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ВЕРСИИ КОНФИГУРАЦИИ</span>
+                  <h2>Снимки настроек</h2>
+                </div>
+                <span class="muted">До 50 версий</span>
+              </div>
+              <p class="backup-note">
+                Автоматические снимки перед изменениями. Сравнение показывает
+                изменённые ключи без их значений.
+              </p>
+              <div id="config-history-list" class="backup-list"></div>
+              <p id="config-history-empty" class="empty" hidden>
+                Снимков конфигурации пока нет.
+              </p>
+            </section>
+          </section>
+
+          <section
+            class="admin-page"
+            id="admin-service"
+            data-admin-page="service"
+            aria-labelledby="admin-page-title"
+            hidden
+          >
+            <section class="admin-section console-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">ПРОВЕРКИ HEROKU</span>
+                  <h2>Диагностика</h2>
+                </div>
+                <span class="muted">Фиксированные команды</span>
+              </div>
+              <div class="console-actions">
+                <button data-diagnostic="process" class="compact">
+                  Процесс</button
+                ><button data-diagnostic="startup-log" class="compact">
+                  Лог запуска</button
+                ><button data-diagnostic="git-status" class="compact">
+                  Git</button
+                ><button data-diagnostic="python-version" class="compact">
+                  Python
+                </button>
+              </div>
+              <pre id="diagnostic-output">Выберите проверку выше.</pre>
+              <div class="bundle-actions">
+                <button
+                  id="download-diagnostics"
+                  class="primary compact"
+                  type="button"
+                >
+                  Скачать ZIP</button
+                ><small
+                  >Конфигурационные секреты исключены; типичные токены в логах
+                  маскируются.</small
+                >
+              </div>
+            </section>
+            <section class="admin-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">WSL / HEROKU_DIR</span>
+                  <h2>Терминал</h2>
+                </div>
+                <span class="muted">Ctrl + Enter</span>
+              </div>
+              <form id="terminal-form" class="terminal-form">
+                <label for="terminal-command"
+                  ><span>Команда</span
+                  ><small>Выполняется с правами службы панели</small></label
+                >
+                <div class="terminal-prompt">
+                  <b>$</b
+                  ><textarea
+                    id="terminal-command"
+                    rows="2"
+                    maxlength="4096"
+                    spellcheck="false"
+                    placeholder="git status --short"
+                  ></textarea>
+                </div>
+                <div class="terminal-actions">
+                  <button
+                    id="terminal-run"
+                    type="submit"
+                    class="primary compact"
+                  >
+                    ▶ Выполнить</button
+                  ><button id="terminal-clear" type="button" class="compact">
+                    Очистить</button
+                  ><span id="terminal-meta">Готово к команде</span>
+                </div>
+              </form>
+              <pre id="terminal-output" class="terminal-output">
+Команды ещё не выполнялись.</pre
+              >
+            </section>
+          </section>
+
+          <section
+            class="admin-page"
+            id="admin-updates"
+            data-admin-page="updates"
+            aria-labelledby="admin-page-title"
+            hidden
+          >
+            <section
+              class="admin-section updates-section"
+              aria-labelledby="updates-title"
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">СВЕРКА СБОРКИ</span>
+                  <h2 id="updates-title">Версии и исходники</h2>
+                </div>
+                <button id="updates-check" class="compact">
+                  Проверить GitHub
+                </button>
+              </div>
+              <div class="updates-grid">
+                <article>
+                  <span class="eyebrow">ЗАПУЩЕННАЯ СБОРКА</span
+                  ><strong id="update-installed">—</strong
+                  ><code id="update-installed-commit">—</code>
+                </article>
+                <article>
+                  <span class="eyebrow">СЕРВЕР / ИСХОДНИКИ</span
+                  ><strong id="update-source">—</strong
+                  ><code id="update-source-commit">—</code>
+                </article>
+                <article>
+                  <span class="eyebrow">ЛОКАЛЬНО / WINDOWS</span
+                  ><strong id="update-local">—</strong
+                  ><code id="update-local-commit">—</code>
+                </article>
+                <article>
+                  <span class="eyebrow">GITHUB / РЕЛИЗ</span
+                  ><strong id="update-release">—</strong
+                  ><code id="update-release-commit">—</code>
+                </article>
+              </div>
+              <div class="updates-details">
+                <p id="update-summary" role="status">
+                  Получаем сведения о версиях…
+                </p>
+                <p id="update-job" role="status"></p>
+                <p id="update-main" class="muted"></p>
+                <p class="muted">
+                  Проверка каждые 10 минут. Установка — по кнопке, предыдущая
+                  сборка сохраняется. Изменённые локальные файлы блокируют
+                  обновление.
+                </p>
+                <div class="update-actions">
+                  <button id="updates-install" class="primary" disabled>
+                    Открыть обновление</button
+                  ><a
+                    id="updates-open"
+                    class="compact"
+                    href="/admin/update.html"
+                    target="hkc-update-progress"
+                    >Ход установки ↗</a
+                  >
+                </div>
+              </div>
+            </section>
+          </section>
         </div>
-        <form id="invite-form" class="invite-form">
-          <label>Срок, часов <input id="invite-hours" type="number" min="1" max="720" value="24" required></label>
-          <label>Роль <select id="invite-role"><option value="operator">Оператор</option><option value="viewer">Наблюдатель</option></select></label>
-          <button class="primary" type="submit">Создать инвайт</button>
-        </form>
       </div>
-      <div id="invites-grid" class="invites-grid"></div>
-      <p id="invites-empty" class="empty" hidden>Активных инвайтов нет.</p>
-    </section>
-      </div></div>
-    </details>
-
-    <details class="admin-tree-group" data-tree="history">
-      <summary><span class="tree-index">05 / СОБЫТИЯ</span><strong>История и восстановление</strong><small>Действия и резервные копии доступа</small></summary>
-      <div class="admin-tree-clip"><div class="admin-tree-children">
-    <section class="admin-section audit-section">
-      <div class="section-heading"><div><span class="eyebrow">АУДИТ ДЕЙСТВИЙ</span><h2>История действий</h2></div><span class="muted">Повторы среди последних 100 · хранится до 1000 событий</span></div>
-      <div id="audit-groups" class="audit-groups"></div>
-      <button id="audit-more" class="compact audit-more" type="button" hidden>Показать ещё</button>
-      <p id="audit-empty" class="empty" hidden>Действий пока нет.</p>
-    </section>
-
-    <section class="admin-section backup-section">
-      <div class="section-heading"><div><span class="eyebrow">ВОССТАНОВЛЕНИЕ</span><h2>Резервные копии доступа</h2></div><button id="create-backup" class="primary">Создать копию</button></div>
-      <p class="backup-note">Копии сохраняются на сервере рядом с базой авторизации. При восстановлении текущая база сначала сохраняется автоматически.</p>
-      <div id="backup-list" class="backup-list"></div>
-      <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
-    </section>
-
-    <section class="admin-section config-section">
-      <div class="section-heading"><div><span class="eyebrow">БЕЗОПАСНЫЕ НАСТРОЙКИ</span><h2>Конфигурация Heroku</h2></div><span class="muted">Текущие значения никогда не возвращаются в браузер</span></div>
-      <form id="config-form" class="config-form" autocomplete="off">
-        <label>API ID <input name="api_id" inputmode="numeric" placeholder="Новое значение"></label>
-        <label>Хеш API <input name="api_hash" type="password" placeholder="Новое значение"></label>
-        <label>Адрес Redis <input name="redis_uri" type="password" placeholder="Новое значение"></label>
-        <label>Адрес базы данных <input name="db_uri" type="password" placeholder="Новое значение"></label>
-        <label>Имя приложения <input name="app_name" placeholder="Новое значение"></label>
-        <div class="config-actions"><button id="config-preview" type="button" class="compact">Проверить изменения</button><button type="submit" class="primary">Сохранить</button></div>
+      <p id="admin-notice" class="notice" hidden></p>
+    </main>
+    <dialog id="admin-auth">
+      <form id="admin-auth-form">
+        <span class="eyebrow">ДОСТУП АДМИНИСТРАТОРА</span>
+        <h2>Административный токен</h2>
+        <p>
+          Введите <code>HKC_ADMIN_TOKEN</code>. Он останется в памяти этой
+          вкладки.
+        </p>
+        <input
+          id="admin-token"
+          type="password"
+          aria-label="Административный токен"
+          autocomplete="off"
+          required
+          autofocus
+        />
+        <p id="admin-auth-error" class="auth-error"></p>
+        <button class="primary" type="submit">Открыть панель</button>
       </form>
-      <div id="config-status" class="config-status"></div>
-      <p id="config-preview-output" class="backup-note">Заполните только параметры, которые нужно изменить.</p>
-    </section>
-
-    <section class="admin-section">
-      <div class="section-heading"><div><span class="eyebrow">ИСТОРИЯ НАСТРОЕК</span><h2>История конфигурации</h2></div><span class="muted">До 50 автоматических снимков перед изменениями</span></div>
-      <div id="config-history-list" class="backup-list"></div>
-      <p id="config-history-empty" class="empty" hidden>Снимков конфигурации пока нет.</p>
-    </section>
-
-    <section class="admin-section">
-      <div class="section-heading"><div><span class="eyebrow">БЕЗОПАСНОСТЬ</span><h2>Контур безопасности</h2></div><span class="muted">Только агрегаты — без ключей и токенов</span></div>
-      <div id="security-overview" class="security-grid" aria-live="polite"></div>
-    </section>
-      </div></div>
-    </details>
-    </div>
-
-    <p id="admin-notice" class="notice" hidden></p>
-  </main>
-
-  <!-- Модальный диалог admin-auth: взаимодействие управляется модулем страницы. -->
-  <dialog id="admin-auth">
-    <form id="admin-auth-form">
-      <span class="eyebrow">ДОСТУП АДМИНИСТРАТОРА</span>
-      <h2>Административный токен</h2>
-      <p>Введите значение <code>HKC_ADMIN_TOKEN</code>. Оно останется только в памяти этой вкладки.</p>
-      <input id="admin-token" type="password" aria-label="Административный токен" autocomplete="off" required autofocus>
-      <p id="admin-auth-error" class="auth-error"></p>
-      <button class="primary" type="submit">Открыть панель</button>
-    </form>
-  </dialog>
-
-  <!-- Модальный диалог confirm-dialog: взаимодействие управляется модулем страницы. -->
-  <dialog id="confirm-dialog" class="confirm-dialog">
-    <form method="dialog">
-      <span class="eyebrow">ПОДТВЕРЖДЕНИЕ</span>
-      <h2 id="confirm-title">Подтвердите действие</h2>
-      <p id="confirm-message"></p>
-      <div class="confirm-actions">
-        <button value="cancel">Отмена</button>
-        <button id="confirm-accept" value="confirm" class="danger">Подтвердить</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
-  <script src="/motion.js" defer></script>
-  <script src="/admin/admin.js" type="module"></script>
-</body>
+    </dialog>
+    <dialog id="confirm-dialog" class="confirm-dialog">
+      <form method="dialog">
+        <span class="eyebrow">ПОДТВЕРЖДЕНИЕ</span>
+        <h2 id="confirm-title">Подтвердите действие</h2>
+        <p id="confirm-message"></p>
+        <div class="confirm-actions">
+          <button value="cancel">Отмена</button
+          ><button id="confirm-accept" value="confirm" class="danger">
+            Подтвердить
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/motion.js" defer></script>
+    <script src="/admin/admin.js" type="module"></script>
+  </body>
 </html>

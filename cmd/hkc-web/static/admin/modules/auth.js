@@ -42,8 +42,7 @@ export function createAuth(ctx) {
         backups,
         configHistory,
         security,
-        maintenance,
-        schedules,
+        watchdog,
         config,
       ] = await Promise.all([
         ctx.adminRequest("/api/admin/overview"),
@@ -51,8 +50,7 @@ export function createAuth(ctx) {
         ctx.adminRequest("/api/admin/backups"),
         ctx.adminRequest("/api/admin/config/history"),
         ctx.adminRequest("/api/admin/security"),
-        ctx.adminRequest("/api/admin/maintenance"),
-        ctx.adminRequest("/api/admin/schedules"),
+        ctx.adminRequest("/api/admin/watchdog"),
         ctx.adminRequest("/api/admin/config"),
       ]);
       ctx.animateValue(ctx.$("#users-count"), data.users.length);
@@ -68,8 +66,7 @@ export function createAuth(ctx) {
       ctx.renderBackups(backups.backups || []);
       ctx.renderConfigHistory(configHistory.history || []);
       ctx.renderSecurity(security);
-      ctx.renderMaintenance(maintenance);
-      ctx.renderSchedules(schedules.schedules || []);
+      ctx.renderWatchdog(watchdog);
       ctx.renderConfig(config);
       await ctx.refreshUpdates();
     } catch (error) {

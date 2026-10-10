@@ -70,6 +70,14 @@ test.beforeEach(async ({ page }) => {
           },
         ],
       },
+      "/api/modules": {
+        status: "live", message: "Состояние загрузки обновляется каждую секунду.", session: "test-run",
+        modules: [
+          { id: "core", name: "Loader", kind: "core", state: "ready", version: "2.1.0", error: "" },
+          { id: "external", name: "Weather", kind: "external", state: "loading", version: "1.2.0", error: "" },
+          { id: "broken", name: "Music", kind: "external", state: "error", version: "", error: "ImportError: missing dependency" },
+        ],
+      },
     };
     if (path === "/api/events") return route.abort();
     return route.fulfill({
@@ -96,7 +104,7 @@ for (const width of [390, 1440])
         page.locator('[data-view="overview"], #overview-view'),
       ).toHaveCount(0);
       await expect(page.locator("#logs-view")).toBeVisible();
-      for (const view of ["logs", "incidents", "system"]) {
+      for (const view of ["logs", "incidents", "modules", "system"]) {
         if (
           view === "incidents" &&
           (await page
@@ -179,6 +187,8 @@ test.describe("PWA", () => {
             "/modules/auth.js",
             "/styles/foundation.css",
             "/styles/navigation.css",
+            "/modules/modules.js",
+            "/styles/modules.css",
           ];
           return (
             await Promise.all(
@@ -261,9 +271,9 @@ test("терминал требует подтверждение и показы
   expect(executions).toBe(1);
 });
 
-test("админка управляет обслуживанием и расписанием", async ({ page }) => {
-  let maintenance = { enabled: false, message: "" };
-  const schedules = [];
+test("админка настраивает автоматическое восстановление", async ({ page }, testInfo) => {
+  let settings = { enabled: true, timeoutSeconds: 180 };
+  const oldRequests = [];
   await page.addInitScript(() => {
     sessionStorage.setItem("hkc-admin-token", "test-token");
     localStorage.setItem("hkc-admin-tree", JSON.stringify(["operations"]));
@@ -271,7 +281,7 @@ test("админка управляет обслуживанием и распи
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    let status = 200;
+    const status = 200;
     let body =
       path === "/api/admin/overview"
         ? {
@@ -287,25 +297,13 @@ test("админка управляет обслуживанием и распи
               ? { history: [] }
               : path === "/api/admin/security"
                 ? { rateLimiter: {}, features: {} }
-                : path === "/api/admin/maintenance"
-                  ? maintenance
-                  : path === "/api/admin/schedules"
-                    ? { schedules }
-                    : {};
-    if (path === "/api/admin/maintenance" && request.method() === "PUT") {
-      maintenance = request.postDataJSON();
-      body = maintenance;
-    }
-    if (path === "/api/admin/schedules" && request.method() === "POST") {
-      const input = request.postDataJSON();
-      schedules.push({
-        id: "schedule-1",
-        action: input.action,
-        runAt: input.runAt,
-        status: "pending",
-      });
-      body = schedules[0];
-      status = 201;
+                : path === "/api/admin/watchdog"
+                  ? { settings, status: { state: settings.enabled ? "waiting" : "disabled", message: "Процесс бота остановлен.", remainingSeconds: settings.enabled ? 120 : 0, attempts: 2, lastAttempt: "2026-10-10T09:00:00Z", lastResult: "Heroku запущен заново." } }
+                  : {};
+    if (path.includes("maintenance") || path.includes("schedules")) oldRequests.push(path);
+    if (path === "/api/admin/watchdog" && request.method() === "PUT") {
+      settings = request.postDataJSON();
+      body = { settings, status: { state: settings.enabled ? "waiting" : "disabled", remainingSeconds: 0, attempts: 2, message: "Настройки сохранены." } };
     }
     return route.fulfill({
       status,
@@ -314,21 +312,22 @@ test("админка управляет обслуживанием и распи
     });
   });
   await page.goto("/admin/");
-  await page.locator("#maintenance-enabled").check();
-  await page.locator("#maintenance-message").fill("Плановые работы");
-  await page.locator('#maintenance-form button[type="submit"]').click();
-  await expect(page.locator("#maintenance-state")).toHaveText("Включён");
-  await expect(page.locator('[data-bot-action="start"]')).toBeDisabled();
-
-  const future = new Date(Date.now() + 10 * 60 * 1000);
-  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-  await page.locator("#schedule-action").selectOption("stop");
-  await page.locator("#schedule-run-at").fill(local);
-  await page.locator('#schedule-form button[type="submit"]').click();
-  await expect(page.locator("#schedule-list")).toContainText("Остановка");
-  await expect(page.locator("#schedule-list")).toContainText("ожидает");
+  await expect(page.locator("#watchdog-enabled")).toBeChecked();
+  await expect(page.locator("#watchdog-countdown")).toHaveText("120 с");
+  await expect(page.locator('#maintenance-form, #schedule-form')).toHaveCount(0);
+  await expect(page.locator('[data-bot-action="start"]')).toBeEnabled();
+  await page.locator("#watchdog-timeout").fill("240");
+  await page.locator("#admin-refresh").click();
+  await expect(page.locator("#watchdog-timeout")).toHaveValue("240");
+  await page.screenshot({ path: testInfo.outputPath("watchdog-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath("watchdog-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  await page.locator("#watchdog-enabled").uncheck();
+  await page.locator('#watchdog-form button[type="submit"]').click();
+  await expect(page.locator("#watchdog-state")).toHaveText("Выключено");
+  expect(settings).toEqual({ enabled: false, timeoutSeconds: 240 });
+  expect(oldRequests).toEqual([]);
 });
 
 test("настройки проверяются предварительно без раскрытия значений", async ({
@@ -337,7 +336,7 @@ test("настройки проверяются предварительно б�
   let savedPayload;
   await page.addInitScript(() => {
     sessionStorage.setItem("hkc-admin-token", "test-token");
-    localStorage.setItem("hkc-admin-tree", JSON.stringify(["history"]));
+    localStorage.setItem("hkc-admin-view", "settings");
   });
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
@@ -353,11 +352,9 @@ test("настройки проверяются предварительно б�
               ? { history: [] }
               : path === "/api/admin/security"
                 ? { rateLimiter: {}, features: {} }
-                : path === "/api/admin/maintenance"
-                  ? { enabled: false }
-                  : path === "/api/admin/schedules"
-                    ? { schedules: [] }
-                    : path === "/api/admin/config" && request.method() === "GET"
+                : path === "/api/admin/watchdog"
+                  ? { settings: { enabled: true, timeoutSeconds: 180 }, status: { state: "healthy" } }
+                  : path === "/api/admin/config" && request.method() === "GET"
                       ? {
                           configured: {
                             api_id: true,

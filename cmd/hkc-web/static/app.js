@@ -5,6 +5,7 @@ import { createSystem } from "./modules/system.js";
 import { createIncidents } from "./modules/incidents.js";
 import { createNavigation } from "./modules/navigation.js";
 import { createAuth } from "./modules/auth.js";
+import { createModules } from "./modules/modules.js";
 
 // Состояние принадлежит этой странице; модули получают его явно через ctx.
 // Фабрики лишь создают замыкания. Сначала собираем функции, затем задаём
@@ -17,6 +18,7 @@ Object.assign(
   createIncidents(ctx),
   createNavigation(ctx),
   createAuth(ctx),
+  createModules(ctx),
 );
 Object.assign(ctx, createServiceBindings(ctx));
 
@@ -120,6 +122,7 @@ ctx.systemBusy = false;
 ctx.bindSystemRefresh();
 
 ctx.bindIncidentsRefresh();
+ctx.bindModules();
 
 ctx.historyBusy = false;
 
@@ -149,6 +152,7 @@ ctx.commands = [
   { name: "Открыть журнал", run: () => ctx.setView("logs") },
   { name: "Открыть происшествия", run: () => ctx.setView("incidents") },
   { name: "Открыть состояние системы", run: () => ctx.setView("system") },
+  { name: "Открыть модули бота", run: () => ctx.setView("modules") },
   {
     name: "Найти в журнале",
     run: () => {
@@ -212,5 +216,10 @@ setInterval(() => {
 }, 1000);
 
 // Работа без сети необязательна: отсутствие поддержки не мешает онлайн-панели.
+setInterval(() => {
+  if (ctx.authenticated && ctx.currentView === "modules" && !document.hidden)
+    ctx.refreshModules();
+}, 1000);
+
 if ("serviceWorker" in navigator)
   navigator.serviceWorker.register("/sw.js").catch(() => {});

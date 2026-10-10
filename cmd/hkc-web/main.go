@@ -37,6 +37,8 @@ type server struct {
 	updates      *updateChecker
 	authLimiter  *authRateLimiter
 	operations   *operationStore
+	botActionMu  sync.Mutex
+	watchdog     watchdogMonitor
 }
 
 // statusResponse — Состояние бота для браузера; поля JSON сохраняют контракт API.
@@ -71,6 +73,13 @@ func main() {
 	herokuDir := os.Getenv("HEROKU_DIR")
 	if herokuDir == "" {
 		herokuDir = filepath.Join(home, "Heroku")
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--install-modules-bridge" {
+		if err := botproc.New(herokuDir).InstallModulesBridge(); err != nil {
+			log.Fatal(err)
+		}
+		log.Print("мониторинг модулей подключён; данные появятся после следующего запуска Heroku")
+		return
 	}
 	addr := envOr("HKC_WEB_ADDR", "127.0.0.1:8080")
 	authFile := os.Getenv("HKC_AUTH_FILE")
@@ -119,7 +128,7 @@ func main() {
 	// контекстом, но здесь общий жизненный цикл задаёт сама служба systemd.
 	go s.collectHostHistory(context.Background())
 	go watchBotState(context.Background(), notifier, s.bot)
-	go s.runSchedules(context.Background())
+	go s.runWatchdog(context.Background())
 	s.updates = &updateChecker{}
 	s.updates.check()
 	go func() {

@@ -1,4 +1,4 @@
-/* Режим обслуживания и очередь отложенных действий.
+/* Автоматическое восстановление, безопасность и настройки.
  * Положение файла в списке импортов определяет приоритет этих правил. */
 .bundle-actions {
   display: flex;
@@ -48,25 +48,20 @@
     grid-template-columns: 1fr;
   }
 }
-.operation-form,
-.schedule-form {
+.watchdog-form {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 2fr) auto auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(200px, 1fr) auto;
   align-items: end;
   gap: 12px;
   padding: 18px 20px;
 }
-.operation-form label,
-.schedule-form label {
+.watchdog-form label {
   display: grid;
   gap: 6px;
   color: var(--muted);
   font-size: 10px;
 }
-.operation-form input[type="text"],
-.operation-form input:not([type]),
-.schedule-form input,
-.schedule-form select {
+.watchdog-form input[type="number"] {
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -75,43 +70,145 @@
   padding: 8px 10px;
   font: inherit;
 }
-.operation-check {
+.watchdog-switch {
   display: flex !important;
   align-items: center;
   gap: 8px;
   min-height: 38px;
 }
-.operation-check input {
-  accent-color: var(--mint);
+.watchdog-switch input {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 38px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 250ms ease, border-color 250ms ease;
 }
-.operation-state {
+.watchdog-switch input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 250ms var(--ease), background 250ms ease;
+}
+.watchdog-switch input:checked {
+  background: rgba(97, 242, 202, .15);
+  border-color: var(--mint);
+}
+.watchdog-switch input:checked::after {
+  transform: translateX(16px);
+  background: var(--mint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .watchdog-switch input,
+  .watchdog-switch input::after {
+    transition: none;
+  }
+}
+.watchdog-state {
   color: var(--muted);
   font:
     11px "Cascadia Mono",
     Consolas,
     monospace;
 }
-.operation-state.active {
+.watchdog-state[data-state="healthy"] {
+  color: var(--mint);
+}
+.watchdog-state[data-state="recovering"],
+.watchdog-state[data-state="failed"] {
   color: var(--red);
 }
-.schedule-failed small {
-  color: var(--red);
+.watchdog-state[data-state="waiting"] {
+  color: var(--amber);
 }
-.schedule-completed {
-  opacity: 0.72;
+.watchdog-intro,
+.watchdog-result,
+.watchdog-note {
+  margin: 18px 20px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.watchdog-intro small {
+  display: block;
+  margin-top: 6px;
+  color: var(--mint);
+  font-size: 10px;
+}
+.watchdog-switch span {
+  display: grid;
+  gap: 5px;
+}
+.watchdog-switch strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.watchdog-switch small {
+  font-size: 10px;
+}
+.watchdog-live {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 28px;
+  align-items: center;
+  margin: 6px 20px 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.watchdog-live > div {
+  display: grid;
+  gap: 8px;
+}
+.watchdog-live span {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+.watchdog-live strong {
+  color: var(--mint);
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
+}
+.watchdog-live p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.watchdog-note {
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
 }
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 900px) {
-  .operation-form,
-  .schedule-form {
+  .watchdog-form {
     grid-template-columns: 1fr 1fr;
   }
 }
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 560px) {
-  .operation-form,
-  .schedule-form {
+  .watchdog-form {
     grid-template-columns: 1fr;
+  }
+  .watchdog-live {
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .watchdog-live p {
+    grid-column: 1 / -1;
   }
 }
 .config-form {
