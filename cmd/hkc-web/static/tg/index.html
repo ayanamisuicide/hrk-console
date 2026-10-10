@@ -2,7 +2,8 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="dark light" />
     <title>Heroku · Панель</title>
     <!-- Мост Telegram. Если он не загрузится, приложение возьмёт данные запуска из адреса. -->
     <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
@@ -11,29 +12,44 @@
   </head>
   <body>
     <div class="gate" id="gate" data-state="loading" role="status" aria-live="polite">
-      <div class="gate-mark" aria-hidden="true"><i></i></div>
+      <div class="gate-mark" aria-hidden="true"><i></i><i></i></div>
       <h1 id="gate-title">Подключаемся…</h1>
       <p id="gate-text">Проверяем доступ через Telegram.</p>
       <button id="gate-copy" class="gate-copy" type="button" hidden></button>
       <button id="gate-retry" class="button" type="button" hidden>Повторить</button>
     </div>
 
-    <main class="app" id="app" hidden>
-      <!-- Главная -->
-      <section class="screen" data-screen="home" aria-label="Главная">
-        <header class="topline">
-          <span id="who">—</span>
-          <span class="live" id="live"><i></i><span id="live-text">Live</span></span>
-        </header>
+    <header class="bar" id="bar" hidden>
+      <div class="bar-brand">
+        <span class="bar-avatar" aria-hidden="true">H</span>
+        <div><strong id="bar-title">Heroku</strong><small id="bar-sub">—</small></div>
+      </div>
+      <span class="live" id="live"><i></i><span id="live-text">Live</span></span>
+    </header>
 
+    <main class="app" id="app" hidden>
+      <!-- Скелетон показывается, пока не пришли первые данные -->
+      <div class="skeleton" id="skeleton" aria-hidden="true">
+        <div class="sk sk-hero"></div>
+        <div class="sk sk-row"></div>
+        <div class="sk-metrics"><div class="sk sk-metric"></div><div class="sk sk-metric"></div><div class="sk sk-metric"></div></div>
+        <div class="sk sk-row"></div>
+      </div>
+
+      <!-- Главная -->
+      <section class="screen" data-screen="home" aria-label="Главная" hidden>
         <article class="hero" id="hero" data-state="unknown">
+          <div class="aurora" aria-hidden="true"><i></i><i></i></div>
           <div class="orb" aria-hidden="true">
-            <span class="orb-ring"></span>
-            <span class="orb-ring"></span>
+            <svg class="orb-ring" viewBox="0 0 88 88">
+              <circle class="orb-track" cx="44" cy="44" r="38" />
+              <circle class="orb-arc" cx="44" cy="44" r="38" pathLength="100" />
+            </svg>
             <span class="orb-core">
               <svg class="orb-icon orb-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" /></svg>
-              <svg class="orb-icon orb-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>
+              <svg class="orb-icon orb-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2.2" /></svg>
               <svg class="orb-icon orb-spin" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+              <svg class="orb-icon orb-done" viewBox="0 0 24 24"><path d="m5.5 12.5 4.2 4.2L18.5 8" /></svg>
             </span>
           </div>
           <div class="hero-copy">
@@ -43,20 +59,21 @@
           </div>
           <dl class="hero-stats">
             <div><dt>CPU бота</dt><dd id="bot-cpu">—</dd></div>
-            <div><dt>Память бота</dt><dd id="bot-rss">—</dd></div>
+            <div><dt>Память</dt><dd id="bot-rss">—</dd></div>
             <div><dt>Версия</dt><dd id="bot-version">—</dd></div>
           </dl>
           <div class="actions">
-            <button class="action primary" data-action="start" type="button">
+            <button class="action" data-action="start" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg><span>Запустить</span>
             </button>
             <button class="action" data-action="restart" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7L20 8.6" /><path d="M20 3.5v5.1h-5.1" /></svg><span>Перезапуск</span>
             </button>
             <button class="action danger" data-action="stop" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg><span>Стоп</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2" /></svg><span>Стоп</span>
             </button>
           </div>
+          <div class="hero-progress" aria-hidden="true"><i></i></div>
         </article>
 
         <button class="row watchdog" id="watchdog" type="button" data-state="off">
@@ -69,24 +86,27 @@
 
         <h2 class="section-title">Сервер <small id="host-line"></small></h2>
         <div class="metrics">
-          <article class="metric" data-metric="cpu">
+          <button class="metric" data-metric="cpu" type="button" aria-label="CPU: подробности">
             <span>CPU</span><strong id="metric-cpu">—</strong>
             <canvas data-spark="cpu" aria-hidden="true"></canvas>
-          </article>
-          <article class="metric" data-metric="memory">
+          </button>
+          <button class="metric" data-metric="memory" type="button" aria-label="Память: подробности">
             <span>Память</span><strong id="metric-memory">—</strong>
             <canvas data-spark="memory" aria-hidden="true"></canvas>
-          </article>
-          <article class="metric" data-metric="disk">
+          </button>
+          <button class="metric" data-metric="disk" type="button" aria-label="Диск: подробности">
             <span>Диск</span><strong id="metric-disk">—</strong>
             <canvas data-spark="disk" aria-hidden="true"></canvas>
-          </article>
+          </button>
         </div>
         <p class="footnote" id="system-line"></p>
 
         <h2 class="section-title">Происшествия <small>за сутки</small></h2>
         <div class="list" id="incidents"></div>
-        <p class="empty" id="incidents-empty" hidden>Ошибок в журнале не было. Красота.</p>
+        <p class="empty" id="incidents-empty" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4.2 4.2L18.5 8" /></svg>
+          Ошибок в журнале не было
+        </p>
 
         <button class="link-button" id="open-panel" type="button">Открыть полную панель ↗</button>
       </section>
@@ -98,18 +118,22 @@
           <p id="modules-message">—</p>
         </header>
         <div class="tally" id="modules-tally">
-          <div data-tally="ready"><strong>0</strong><span>готовы</span></div>
+          <div data-tally="ready"><strong>0</strong><span>работают</span></div>
           <div data-tally="problems"><strong>0</strong><span>с ошибкой</span></div>
           <div data-tally="loading"><strong>0</strong><span>грузятся</span></div>
         </div>
         <div class="segmented" role="tablist" aria-label="Фильтр модулей">
+          <i class="seg-thumb" aria-hidden="true"></i>
           <button type="button" role="tab" data-modules-filter="all" aria-selected="true">Все</button>
           <button type="button" role="tab" data-modules-filter="problems" aria-selected="false">Проблемы</button>
           <button type="button" role="tab" data-modules-filter="installed" aria-selected="false">Установленные</button>
         </div>
-        <input class="search" id="modules-search" type="search" placeholder="Поиск модуля" autocomplete="off" />
-        <div class="list" id="modules"></div>
-        <p class="empty" id="modules-empty" hidden>Ничего не найдено.</p>
+        <label class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input id="modules-search" type="search" placeholder="Поиск модуля" autocomplete="off" enterkeyhint="search" />
+        </label>
+        <div class="list modules" id="modules"></div>
+        <p class="empty" id="modules-empty" hidden>Ничего не найдено</p>
       </section>
 
       <!-- Журнал -->
@@ -119,26 +143,43 @@
           <p id="logs-message">Последние 200 строк, обновляются сами.</p>
         </header>
         <div class="segmented" role="tablist" aria-label="Уровень журнала">
+          <i class="seg-thumb" aria-hidden="true"></i>
           <button type="button" role="tab" data-logs-level="all" aria-selected="true">Все</button>
-          <button type="button" role="tab" data-logs-level="ERROR" aria-selected="false">Ошибки</button>
-          <button type="button" role="tab" data-logs-level="WARNING" aria-selected="false">Предупреждения</button>
+          <button type="button" role="tab" data-logs-level="ERROR" aria-selected="false">Ошибки <b data-log-count="ERROR"></b></button>
+          <button type="button" role="tab" data-logs-level="WARNING" aria-selected="false">Предупр. <b data-log-count="WARNING"></b></button>
         </div>
-        <div class="log" id="log" role="log" aria-live="off"></div>
-        <button class="jump" id="log-jump" type="button" hidden aria-label="К последним строкам">↓</button>
+        <button class="chip" id="log-chip" type="button" hidden aria-label="Сбросить фильтр по модулю"><span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg></button>
+        <div class="log-wrap">
+          <div class="log" id="log" role="log" aria-live="off"></div>
+          <button class="jump" id="log-jump" type="button" hidden aria-label="К последним строкам">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m0 0-6-6m6 6 6-6" /></svg><b id="log-unread" hidden></b>
+          </button>
+        </div>
       </section>
     </main>
 
     <nav class="tabbar" id="tabbar" aria-label="Разделы" hidden>
-      <button type="button" data-tab="home" aria-current="page">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7" /><path d="M6 9.5V20h12V9.5" /></svg><span>Главная</span>
-      </button>
-      <button type="button" data-tab="modules">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></svg><span>Модули</span><i class="badge" id="modules-badge" hidden></i>
-      </button>
-      <button type="button" data-tab="logs">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9" /></svg><span>Журнал</span>
-      </button>
+      <div class="tabbar-inner">
+        <i class="tab-pill" aria-hidden="true"></i>
+        <button type="button" data-tab="home" aria-current="page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7" /><path d="M6 9.5V20h12V9.5" /></svg><span>Главная</span>
+        </button>
+        <button type="button" data-tab="modules">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></svg><span>Модули</span><i class="badge" id="modules-badge" hidden></i>
+        </button>
+        <button type="button" data-tab="logs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9" /></svg><span>Журнал</span>
+        </button>
+      </div>
     </nav>
+
+    <div class="sheet-layer" id="sheet-layer" hidden>
+      <div class="sheet-backdrop" id="sheet-backdrop"></div>
+      <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <div class="sheet-grip" id="sheet-grip" aria-hidden="true"><i></i></div>
+        <div class="sheet-body" id="sheet-body"></div>
+      </section>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   </body>

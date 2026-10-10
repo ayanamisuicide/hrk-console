@@ -137,7 +137,7 @@ async function mockMiniApp(page, { forbidden = false } = {}) {
     if (path === "/api/tg/overview")
       return json(route, {
         bot: running
-          ? { running: true, pid: 4821, uptime: "3ч 12м", version: "1.7.2", rssBytes: 312 * 1048576, cpuPercent: 4.2 }
+          ? { running: true, pid: 4821, uptime: "34м 05с", version: "1.7.2", rssBytes: 312 * 1048576, cpuPercent: 4.2 }
           : { running: false, pid: 0, uptime: "—", version: "1.7.2" },
         watchdog: { enabled: true, state: "healthy", message: "Бот отвечает" },
         host: "vps-1",
@@ -180,47 +180,124 @@ async function mockMiniApp(page, { forbidden = false } = {}) {
   return actions;
 }
 
-test("мини-приложение: главная, модули, журнал и действие с подтверждением", async ({ page }, testInfo) => {
+test("мини-приложение: главная, шторки, модули, журнал и действие с подтверждением", async ({ page }, testInfo) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const actions = await mockMiniApp(page);
-  page.on("dialog", (dialog) => dialog.accept());
   await page.goto("/tg/#tgWebAppData=query_id%3DAAE%26user%3D%257B%2522id%2522%253A1%257D%26hash%3Dx");
   await expect(page.locator("#hero")).toHaveAttribute("data-state", "running");
+  await expect(page.locator("#skeleton")).toBeHidden();
   await expect(page.locator("#bot-title")).toHaveText("Работает");
   await expect(page.locator("#bot-rss")).toHaveText("312 МБ");
   await expect(page.locator("#watchdog-pill")).toHaveText("Вкл");
+  await expect(page.locator("#bar-sub")).toHaveText("vps-1 · v2.10.0");
   await expect(page.locator(".incident")).toHaveCount(1);
   await expect(page.locator("#metric-cpu")).toHaveText(/^\d+%$/);
-  await page.waitForTimeout(800);
+  // Секунды времени работы идут между опросами.
+  const first = await page.locator("#bot-subtitle").textContent();
+  await page.waitForTimeout(1300);
+  expect(await page.locator("#bot-subtitle").textContent()).not.toBe(first);
+  await page.waitForTimeout(700);
   await page.screenshot({ path: testInfo.outputPath("miniapp-home.png"), fullPage: true });
 
+  // Метрика открывает шторку с большим числом и графиком; шторка закрывается по затемнению.
+  await page.locator('[data-metric="cpu"]').click();
+  await expect(page.locator("#sheet-layer")).toHaveAttribute("data-open", "");
+  await expect(page.locator("#sheet-title")).toHaveText("CPU");
+  await expect(page.locator(".bigvalue")).toHaveText(/^\d+%$/);
+  await expect(page.locator(".fact")).toHaveCount(3);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: testInfo.outputPath("miniapp-metric.png") });
+  await page.locator("#sheet-backdrop").click({ position: { x: 190, y: 40 } });
+  await expect(page.locator("#sheet-layer")).toBeHidden();
+
+  // Остановка спрашивает подтверждение шторкой; отмена ничего не делает.
   await page.locator('[data-action="stop"]').click();
+  await expect(page.locator("#sheet-title")).toHaveText("Остановить бота?");
+  await page.locator(".sbtn", { hasText: "Отмена" }).click();
+  await expect(page.locator("#sheet-layer")).toBeHidden();
+  expect(actions).toEqual([]);
+  await page.locator('[data-action="stop"]').click();
+  await page.waitForTimeout(550);
+  await page.screenshot({ path: testInfo.outputPath("miniapp-confirm.png") });
+  await page.locator(".sbtn.danger").click();
   await expect.poll(() => actions).toEqual(["stop"]);
   await expect(page.locator("#toast")).toHaveText("Бот остановлен");
   await expect(page.locator("#hero")).toHaveAttribute("data-state", "stopped");
   await expect(page.locator('[data-action="start"]')).toBeEnabled();
   await expect(page.locator('[data-action="stop"]')).toBeDisabled();
 
+  // Происшествие открывает шторку и ведёт в журнал с фильтром по модулю.
+  await page.locator(".incident").click();
+  await expect(page.locator("#sheet-title")).toHaveText("TimeoutError: api не ответил");
+  await page.locator(".sbtn.primary", { hasText: "Показать в журнале" }).click();
+  await expect(page.locator("#log-chip")).toBeVisible();
+  await expect(page.locator("#log-chip span")).toHaveText("модуль: weather");
+  // Происшествие уровня ERROR открывает журнал уже с фильтром «Ошибки» и модулем.
+  await expect(page.locator("#log p")).toHaveCount(1);
+  await expect(page.locator('[data-logs-level="ERROR"]')).toHaveAttribute("aria-selected", "true");
+  await page.locator("#log-chip").click();
+  await expect(page.locator("#log-chip")).toBeHidden();
+  await page.locator('[data-logs-level="all"]').click();
+  await expect(page.locator("#log p")).toHaveCount(4);
+
   await page.locator('[data-tab="modules"]').click();
-  await expect(page.locator(".module")).toHaveCount(4);
-  await expect(page.locator(".module").first()).toHaveAttribute("data-state", "error");
+  await expect(page.locator(".mod")).toHaveCount(4);
+  await expect(page.locator(".mod").first()).toHaveAttribute("data-state", "error");
   await expect(page.locator("#modules-badge")).toHaveText("1");
-  await page.locator(".module").first().locator("button").click();
-  await expect(page.locator(".module-error")).toContainText("TimeoutError");
+  await page.waitForTimeout(700);
+  // Бегунок стоит под выбранной кнопкой, а не сбит анимацией появления.
+  expect(await page.locator('[aria-label="Фильтр модулей"]').evaluate((el) => getComputedStyle(el.querySelector(".seg-thumb")).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
   await page.screenshot({ path: testInfo.outputPath("miniapp-modules.png"), fullPage: true });
+  await page.locator(".mod").first().click();
+  await expect(page.locator("#sheet-title")).toHaveText("Weather");
+  await expect(page.locator(".code.bad")).toContainText("TimeoutError");
+  await page.waitForTimeout(550);
+  await page.screenshot({ path: testInfo.outputPath("miniapp-module.png") });
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sheet-layer")).toBeHidden();
   await page.locator('[data-modules-filter="problems"]').click();
-  await expect(page.locator(".module")).toHaveCount(1);
+  await expect(page.locator(".mod")).toHaveCount(1);
+  await expect(page.locator(".segmented").first().evaluate((el) => el.style.getPropertyValue("--i"))).resolves.toBe("1");
 
   await page.locator('[data-tab="logs"]').click();
   await expect(page.locator("#log p")).toHaveCount(4);
+  await expect(page.locator('[data-log-count="ERROR"]')).toHaveText("1");
   await page.locator('[data-logs-level="ERROR"]').click();
   await expect(page.locator("#log p")).toHaveCount(1);
   await expect(page.locator("#log p")).toHaveAttribute("data-level", "ERROR");
   await page.screenshot({ path: testInfo.outputPath("miniapp-logs.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
   expect(errors).toEqual([]);
+});
+
+test("мини-приложение: новые строки журнала дописываются, не сбивая прокрутку", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMiniApp(page);
+  let lines = Array.from({ length: 60 }, (_, index) => `2026-10-10 09:00:${String(index).padStart(2, "0")} [INFO] app: line ${index}`);
+  await page.route("**/api/tg/logs*", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ lines }) }));
+  await page.clock.install();
+  await page.goto("/tg/#tgWebAppData=hash%3Dx");
+  await page.locator('[data-tab="logs"]').click();
+  await expect(page.locator("#log p")).toHaveCount(60);
+  const marker = page.locator("#log p").nth(30);
+  await marker.evaluate((element) => (element.dataset.persistent = "yes"));
+  // Пользователь ушёл вверх по журналу: новые строки не сдёргивают его вниз, а копятся в счётчике.
+  await page.locator("#log").evaluate((element) => {
+    element.style.scrollBehavior = "auto";
+    element.scrollTop = 0;
+  });
+  await expect(page.locator("#log-jump")).toBeVisible();
+  lines = [...lines.slice(3), ...Array.from({ length: 3 }, (_, index) => `2026-10-10 09:01:0${index} [ERROR] app: fresh ${index}`)];
+  await page.clock.runFor(3200);
+  await expect(page.locator("#log p")).toHaveCount(60);
+  await expect(page.locator("#log p").last()).toContainText("fresh 2");
+  await expect(page.locator("#log p.fresh")).toHaveCount(3);
+  await expect(page.locator('[data-persistent="yes"]')).toHaveCount(1);
+  await expect(page.locator("#log-unread")).toHaveText("3");
+  expect(await page.locator("#log").evaluate((element) => element.scrollTop)).toBeLessThan(40);
 });
 
 test("мини-приложение: без доступа показывает ID для настройки", async ({ page }) => {
