@@ -253,7 +253,7 @@ export function createSystem(ctx) {
           marker.setAttribute("x2", x(points[i]));
           marker.setAttribute("y1", "0");
           marker.setAttribute("y2", "200");
-          marker.setAttribute("stroke", "var(--red)");
+          marker.setAttribute("stroke", "var(--bad)");
           marker.setAttribute("stroke-dasharray", "5 5");
           markerGroup.append(marker);
         }

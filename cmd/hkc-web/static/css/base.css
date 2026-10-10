@@ -1,0 +1,665 @@
+/* Дизайн-система панели: токены, сброс, типографика и общие компоненты.
+ * Подключается на всех страницах первой; страничные файлы используют только эти токены. */
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0b0e;
+  --bg-subtle: #0e1014;
+  --surface: #121419;
+  --surface-2: #171a20;
+  --surface-hover: #1c2027;
+  --border: #22262e;
+  --border-strong: #2e333d;
+  --text: #eceef2;
+  --text-2: #a3a9b5;
+  --text-3: #6c7381;
+  --accent: #7c8cff;
+  --accent-strong: #98a4ff;
+  --accent-soft: rgba(124, 140, 255, 0.14);
+  --accent-text: #0a0b0e;
+  --ok: #3ecf8e;
+  --ok-soft: rgba(62, 207, 142, 0.13);
+  --warn: #f5a524;
+  --warn-soft: rgba(245, 165, 36, 0.13);
+  --bad: #f2555a;
+  --bad-soft: rgba(242, 85, 90, 0.13);
+  --info: #4ea8f7;
+  --violet: #b583ff;
+  --chart-1: #7c8cff;
+  --chart-2: #3ecf8e;
+  --chart-3: #f5a524;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --radius-sm: 7px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fast: 140ms;
+  --base: 240ms;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --bg-subtle: #eff1f4;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --surface-hover: #f1f3f6;
+  --border: #e3e6eb;
+  --border-strong: #d0d5dd;
+  --text: #11141a;
+  --text-2: #4a5160;
+  --text-3: #858c99;
+  --accent: #5b6cf0;
+  --accent-strong: #4655d6;
+  --accent-soft: rgba(91, 108, 240, 0.1);
+  --accent-text: #ffffff;
+  --ok: #17a86b;
+  --ok-soft: rgba(23, 168, 107, 0.1);
+  --warn: #c7820a;
+  --warn-soft: rgba(199, 130, 10, 0.1);
+  --bad: #dc3a40;
+  --bad-soft: rgba(220, 58, 64, 0.09);
+  --info: #2a83d6;
+  --violet: #8a55e0;
+  --chart-1: #5b6cf0;
+  --chart-2: #17a86b;
+  --chart-3: #d98e0b;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 24px 56px rgba(16, 24, 40, 0.16), 0 2px 6px rgba(16, 24, 40, 0.06);
+}
+
+/* ---------- Сброс ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+:root.theme-switching *,
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition: background-color var(--base) ease, border-color var(--base) ease, color var(--base) ease !important;
+}
+h1,
+h2,
+h3,
+h4,
+p,
+dl,
+dd,
+ol,
+ul {
+  margin: 0;
+}
+ol,
+ul {
+  padding: 0;
+  list-style: none;
+}
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-strong);
+}
+code,
+pre,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+[hidden] {
+  display: none !important;
+}
+::selection {
+  background: var(--accent-soft);
+}
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+svg.icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Типографика ---------- */
+.eyebrow {
+  display: inline-block;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.muted {
+  color: var(--text-3);
+}
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+/* ---------- Кнопки ---------- */
+button,
+a.compact {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--fast) ease, border-color var(--fast) ease, color var(--fast) ease, box-shadow var(--fast) ease, transform var(--fast) ease;
+}
+button:hover,
+a.compact:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.compact {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.primary:hover {
+  border-color: transparent;
+  background: var(--accent-strong);
+  color: var(--accent-text);
+}
+.danger {
+  color: var(--bad);
+}
+.danger:hover {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.danger.primary,
+button.danger[value="confirm"] {
+  border-color: transparent;
+  background: var(--bad);
+  color: #fff;
+}
+.button-icon {
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+}
+/* Мягкая волна от точки нажатия (координаты задаёт motion.js) */
+button.is-rippling::after {
+  content: "";
+  position: absolute;
+  left: var(--ripple-x, 50%);
+  top: var(--ripple-y, 50%);
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.18;
+  pointer-events: none;
+  animation: ripple 520ms var(--ease) forwards;
+}
+@keyframes ripple {
+  to {
+    transform: scale(28);
+    opacity: 0;
+  }
+}
+
+/* ---------- Поля ---------- */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 13.5px;
+  transition: border-color var(--fast) ease, box-shadow var(--fast) ease, background var(--fast) ease;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-3);
+}
+input:hover:not(:focus),
+select:hover:not(:focus) {
+  border-color: var(--border-strong);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+select {
+  appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* Переключатель на основе чекбокса: label.switch > input + span */
+.switch,
+.watchdog-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.switch input,
+.watchdog-switch input {
+  appearance: none;
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background var(--base) var(--ease);
+}
+.switch input::after,
+.watchdog-switch input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform var(--base) var(--ease);
+}
+.switch input:checked,
+.watchdog-switch input:checked {
+  background: var(--accent);
+}
+.switch input:checked::after,
+.watchdog-switch input:checked::after {
+  transform: translateX(14px);
+}
+
+/* ---------- Поверхности ---------- */
+.card,
+.surface-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.card-heading h3 {
+  margin-top: 2px;
+  font-size: 15px;
+}
+.empty,
+.empty-state {
+  padding: 28px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* Бейджи и точки состояния */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.dot {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+.dot.online {
+  background: var(--ok);
+}
+.dot.online::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--ok);
+  opacity: 0;
+  animation: pulse 2.4s ease-out infinite;
+}
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* ---------- Уведомления ---------- */
+.notice {
+  position: fixed;
+  z-index: 60;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 12px 16px 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 13px;
+  animation: notice-in 320ms var(--ease) both;
+}
+.notice.error {
+  border-left-color: var(--bad);
+}
+.notice.warning {
+  border-left-color: var(--warn);
+}
+.notice.is-leaving {
+  animation: notice-out 260ms ease forwards;
+}
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes notice-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ---------- Диалоги ---------- */
+dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+dialog::backdrop {
+  background: rgba(5, 6, 9, 0.6);
+  backdrop-filter: blur(4px);
+}
+dialog[open] {
+  animation: dialog-in 260ms var(--ease) both;
+}
+dialog[open]::backdrop {
+  animation: fade-in 260ms ease both;
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+dialog form {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+}
+dialog h2 {
+  font-size: 18px;
+}
+dialog p {
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+dialog form > button {
+  width: 100%;
+}
+.auth-error,
+.update-error {
+  min-height: 18px;
+  color: var(--bad);
+  font-size: 12.5px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ---------- Таблицы ---------- */
+.table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: left;
+  white-space: nowrap;
+}
+td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+tbody tr {
+  transition: background var(--fast) ease;
+}
+tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+/* ---------- Движение ---------- */
+.value-change {
+  animation: value-change 520ms var(--ease);
+}
+@keyframes value-change {
+  0% {
+    color: var(--accent);
+  }
+}
+[data-reveal="waiting"] {
+  opacity: 0;
+}
+[data-reveal="shown"] {
+  opacity: 1;
+  transition: opacity 420ms var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  [data-reveal] {
+    opacity: 1;
+  }
+}
+
+/* ---------- Публичная страница статуса ---------- */
+.public-status-body {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 60%), var(--bg);
+}
+.public-status-card {
+  display: grid;
+  gap: 18px;
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.public-status-card h1 {
+  font-size: 22px;
+}
+.public-status-card .status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.public-status-card .status-card strong {
+  display: block;
+  font-size: 15px;
+}
+.public-status-card .status-card small,
+#public-time {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.public-status-card .status-card.is-ready {
+  animation: fade-in 400ms ease;
+}

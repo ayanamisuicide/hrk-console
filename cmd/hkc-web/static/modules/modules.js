@@ -135,7 +135,7 @@ export function createModules(ctx) {
         )
           row.animate(
             [
-              { backgroundColor: "var(--panel-2)" },
+              { backgroundColor: "var(--surface-hover)" },
               { backgroundColor: "transparent" },
             ],
             { duration: 650, easing: "ease-out" },
@@ -172,11 +172,11 @@ export function createModules(ctx) {
     }
     // Кольцо делится на доли по состояниям; цвета берутся из CSS-переменных HUD.
     const ringColors = {
-      ready: "var(--hud-ok)",
-      loading: "var(--hud-warn)",
-      problems: "var(--hud-bad)",
-      unloaded: "var(--muted)",
-      unknown: "var(--hud-c2)",
+      ready: "var(--ok)",
+      loading: "var(--warn)",
+      problems: "var(--bad)",
+      unloaded: "var(--text-3)",
+      unknown: "var(--violet)",
     };
     let from = 0;
     const stops = [];
@@ -192,7 +192,7 @@ export function createModules(ctx) {
         "--ring",
         stops.length
           ? `conic-gradient(${stops.join(", ")})`
-          : "conic-gradient(var(--line) 0 100%)",
+          : "conic-gradient(var(--border) 0 100%)",
       );
     const currentMatrix = JSON.stringify(
       items.slice(0, 60).map((item) => [item.id, item.name, item.state]),

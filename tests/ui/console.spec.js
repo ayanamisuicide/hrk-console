@@ -103,6 +103,7 @@ for (const width of [390, 1440])
       for (const view of ["logs", "incidents", "modules", "system"]) {
         if (
           view === "incidents" &&
+          (await page.locator("#journal-nav-toggle").isVisible()) &&
           (await page
             .locator("#journal-nav-toggle")
             .getAttribute("aria-expanded")) === "false"
@@ -124,6 +125,7 @@ for (const width of [390, 1440])
       await page.locator("#bookmarks-only").click();
       await expect(page.locator("#log .line")).toHaveCount(1);
       if (
+        (await page.locator("#journal-nav-toggle").isVisible()) &&
         (await page
           .locator("#journal-nav-toggle")
           .getAttribute("aria-expanded")) === "false"
@@ -181,10 +183,10 @@ test.describe("PWA", () => {
             "/history-chart.js",
             "/modules/journal.js",
             "/modules/auth.js",
-            "/styles/foundation.css",
-            "/styles/navigation.css",
+            "/theme.js",
+            "/css/base.css",
             "/modules/modules.js",
-            "/styles/modules.css",
+            "/css/console.css",
           ];
           return (
             await Promise.all(

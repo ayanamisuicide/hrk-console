@@ -1,26 +1,24 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <!-- Общие стили загружаются перед специфичными: порядок сохраняет каскад. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HEROKU · ВЕБ-ПАНЕЛЬ</title>
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/motion.css">
-  <link rel="stylesheet" href="/logs.css">
-  <link rel="stylesheet" href="/styles/redesign.css">
-  <link rel="stylesheet" href="/hud.css">
+  <title>Heroku · Панель</title>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/console.css">
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#02050b">
+  <meta name="theme-color" content="#0a0b0e">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true"><span></span></div>
-        <div>
-          <span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</span>
-          <h1>HEROKU</h1>
+        <div class="brand-mark" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2.5 20.5 7.5v9L12 21.5 3.5 16.5v-9z"/><path d="M9 8v8M15 8v8M9 12h6"/></svg>
+        </div>
+        <div class="brand-copy">
+          <h1>Heroku</h1>
           <p id="version">Панель — · бот —</p>
         </div>
       </div>
@@ -34,171 +32,198 @@
       </div>
 
       <nav class="side-nav" aria-label="Разделы панели">
+        <span class="nav-label">Разделы</span>
         <div id="journal-nav" class="nav-group">
-          <div class="nav-group-row"><button class="nav-item" data-view="logs"><span>≡</span> Журнал</button><button id="journal-nav-toggle" class="nav-group-toggle" type="button" aria-label="Раскрыть раздел журнала" aria-expanded="false"><span aria-hidden="true">⌄</span></button></div>
-          <div class="nav-submenu"><button class="nav-subitem" data-view="incidents"><span>!</span><span><b>Происшествия</b><small>Ошибки и предупреждения</small></span></button></div>
+          <div class="nav-group-row">
+            <button class="nav-item" data-view="logs"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Журнал</span></button>
+            <button id="journal-nav-toggle" class="nav-group-toggle" type="button" aria-label="Раскрыть раздел журнала" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="nav-submenu">
+            <button class="nav-subitem" data-view="incidents"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg><span><b>Происшествия</b><small>Ошибки и предупреждения</small></span></button>
+          </div>
         </div>
-        <button class="nav-item" data-view="system"><span>▦</span> Система</button>
-        <button class="nav-item" data-view="modules"><span>◈</span> Модули</button>
-        <a class="nav-item" href="/admin/"><span>⚙</span> Администрирование</a>
+        <button class="nav-item" data-view="system"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg><span>Система</span></button>
+        <button class="nav-item" data-view="modules"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Модули</span></button>
+        <a class="nav-item" href="/admin/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Администрирование</span></a>
       </nav>
 
-      <div class="controls">
-        <button data-action="start" class="primary"><span class="button-icon">▶</span><span>Запустить</span></button>
-        <button data-action="restart"><span class="button-icon">↻</span><span>Перезапустить</span></button>
-        <button data-action="stop" class="danger"><span class="button-icon">■</span><span>Остановить</span></button>
-      </div>
+      <div class="sidebar-bottom">
+        <div class="controls">
+          <button data-action="start" class="primary"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Запустить</span></button>
+          <button data-action="restart"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>Перезапустить</span></button>
+          <button data-action="stop" class="danger"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span>Остановить</span></button>
+        </div>
 
-      <div class="settings">
-        <label><input id="autoscroll" type="checkbox" checked> следить за логом</label>
-        <label><input id="timestamps" type="checkbox" checked> показывать время</label>
-      </div>
+        <div class="settings">
+          <label class="switch"><input id="autoscroll" type="checkbox" checked><span>Следить за логом</span></label>
+          <label class="switch"><input id="timestamps" type="checkbox" checked><span>Показывать время</span></label>
+        </div>
 
-      <div class="connection">
-        <span>КАТАЛОГ БОТА</span>
-        <code id="heroku-dir">—</code>
+        <div class="connection">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <code id="heroku-dir" title="Каталог бота">—</code>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span>Светлая тема</span></button>
       </div>
-      <button id="theme-toggle" class="theme-toggle">◐ <span>Цвет интерфейса</span></button>
     </aside>
 
     <main>
-      <header>
-        <div>
-          <span class="eyebrow">HEROKU / УПРАВЛЕНИЕ</span>
-          <div class="title-row"><h2 id="view-title">Обзор системы</h2><span class="live-badge"><i></i> В ЭФИРЕ</span></div>
+      <header class="topbar">
+        <div class="title-row">
+          <h2 id="view-title">Журнал событий</h2>
+          <span class="live-badge"><i></i>Live</span>
         </div>
         <div class="header-actions">
           <span id="username"></span>
-          <button id="copy-console-link" class="compact" type="button">Скопировать ссылку</button>
-          <button id="command-open" class="compact" type="button">⌘ Быстрые действия <kbd>Ctrl K</kbd></button>
-          <button id="logout" class="compact" type="button">Выйти</button>
+          <button id="command-open" class="compact command-trigger" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Быстрые действия</span><kbd>Ctrl K</kbd></button>
+          <button id="copy-console-link" class="compact" type="button" title="Скопировать ссылку"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span>Ссылка</span></button>
+          <button id="logout" class="compact" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg><span>Выйти</span></button>
         </div>
       </header>
 
-      <!-- Раздел notice: содержимое обновляется соответствующим модулем страницы. -->
       <section id="notice" class="notice" hidden></section>
-      <section id="modules-view" class="workspace-view modules-view" hidden>
-        <div class="view-intro">
-          <div>
-            <span class="eyebrow">HEROKU / ИНВЕНТАРЬ</span>
-            <h3>Модули</h3>
-            <p>Состояние загрузчика и готовность модулей к работе.</p>
-          </div>
-          <span class="modules-cadence"><i></i> LIVE <b>·</b> 1 СЕК</span>
-        </div>
-        <div class="modules-health">
-          <div class="modules-overview">
-            <div class="modules-total">
-              <span class="modules-kicker">ТЕКУЩИЙ ЗАПУСК</span>
-              <div id="modules-ring" class="modules-ring">
-                <div class="modules-number"><strong id="modules-total">—</strong><span>модулей</span></div>
-              </div>
-              <p id="modules-summary">Знакомимся с загрузчиком…</p>
-            </div>
-            <div class="modules-map">
-              <div class="modules-map-heading"><span>КАРТА МОДУЛЕЙ</span><small id="modules-map-caption">Ожидаем снимок</small></div>
-              <div id="modules-matrix" class="modules-matrix" aria-hidden="true"></div>
-              <div class="modules-progress" role="img" aria-label="Распределение состояний модулей"><i id="modules-progress"></i><i data-module-segment="loading"></i><i data-module-segment="problems"></i><i data-module-segment="unloaded"></i><i data-module-segment="unknown"></i></div>
-            </div>
-          </div>
-          <div class="modules-counters" role="group" aria-label="Фильтр по состоянию модулей">
-            <button type="button" data-modules-state="ready" aria-pressed="false"><span><i class="module-dot ready"></i>Готовы</span><strong id="modules-ready">—</strong></button>
-            <button type="button" data-modules-state="loading" aria-pressed="false"><span><i class="module-dot loading"></i>Загрузка</span><strong id="modules-loading">—</strong></button>
-            <button type="button" data-modules-state="problems" aria-pressed="false"><span><i class="module-dot error"></i>Проблемы</span><strong id="modules-problems">—</strong></button>
-            <button type="button" data-modules-state="unloaded" aria-pressed="false"><span><i class="module-dot unloaded"></i>Выгружены</span><strong id="modules-unloaded">—</strong></button>
-            <button type="button" data-modules-state="unknown" aria-pressed="false"><span><i class="module-dot unknown"></i>Неизвестно</span><strong id="modules-unknown">—</strong></button>
-          </div>
-        </div>
-        <div id="modules-connection" class="modules-connection" role="status"><i></i><span>Ожидаем данные…</span></div>
-        <div class="modules-toolbar"><label class="modules-search"><span aria-hidden="true">⌕</span><input id="modules-search" type="search" placeholder="Найти модуль…" aria-label="Найти модуль"></label><div class="modules-filters" role="group" aria-label="Тип модулей"><button class="compact active" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" data-modules-kind="core" aria-pressed="false">Встроенные</button></div><button id="modules-only-problems" class="compact" aria-pressed="false">Только проблемы</button></div>
 
-        <div class="modules-directory-heading"><span>КАТАЛОГ МОДУЛЕЙ</span><button id="modules-reset" type="button" class="compact" hidden>Сбросить фильтры ×</button></div>
-        <div id="modules-list" class="modules-list"></div>
-        <div class="modules-pagination"><button id="modules-prev" class="compact" type="button">← Назад</button><span id="modules-page">1 / 1</span><button id="modules-next" class="compact" type="button">Далее →</button></div>
-        <p id="modules-empty" class="modules-empty">Подключаемся к мониторингу…</p>
-        <p class="modules-footnote">«Готов» означает успешную инициализацию. Ошибки при выполнении команд доступны в журнале и происшествиях.</p>
-      </section>
-      <!-- Раздел system-view: содержимое обновляется соответствующим модулем страницы. -->
-      <section id="system-view" class="workspace-view system-view" hidden>
-        <div class="view-intro"><div><span class="eyebrow">СОСТОЯНИЕ ХОСТА</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>
-        <div class="system-kpis">
-          <article class="resource-card"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
-          <article class="resource-card"><div class="resource-heading"><span>ОПЕРАТИВНАЯ ПАМЯТЬ</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
-          <article class="resource-card"><div class="resource-heading"><span>ДИСК HEROKU</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
-        </div>
-        <article class="surface-card history-card"><div class="card-heading"><div><span class="eyebrow">ИСТОРИЯ РЕСУРСОВ</span><h3>История нагрузки</h3><p class="muted">CPU, RAM и диск обновляются каждую секунду; вертикальные метки — смена процесса бота.</p></div><div class="history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">Сейчас · 5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div></div><div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div><div class="history-legend"><span>● CPU</span><span>● RAM</span><span>● Диск</span><span id="history-count">Ожидание данных…</span></div></article>
-        <div class="system-columns">
-          <article class="surface-card load-card"><div class="card-heading"><div><span class="eyebrow">СРЕДНЯЯ НАГРУЗКА</span><h3>Средняя нагрузка</h3></div><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
-          <article class="surface-card host-card"><div class="card-heading"><div><span class="eyebrow">ОКРУЖЕНИЕ</span><h3>Среда выполнения</h3></div></div><div class="host-details"><span>Узел</span><strong id="system-host">—</strong><span>Платформа</span><strong id="system-platform">—</strong><span>Ядро</span><strong id="system-kernel">—</strong><span>Время работы</span><strong id="system-uptime">—</strong></div></article>
-        </div>
-      </section>
-      <!-- Раздел incident-list: содержимое обновляется соответствующим модулем страницы. -->
-      <section id="incidents-view" class="workspace-view incidents-view" hidden><div class="view-intro"><div><span class="eyebrow">ПРОИСШЕСТВИЯ</span><h3>Происшествия</h3><p>Ошибки и частые предупреждения, сгруппированные по модулю и времени. Источник — последние 3000 строк журнала.</p></div><button id="incidents-refresh" class="compact">↻ Обновить</button></div><div id="incident-list" class="incident-list"><p class="empty-state">Загружаем события…</p></div></section>
-      <!-- Раздел logs-view: содержимое обновляется соответствующим модулем страницы. -->
-      <section id="logs-view" class="workspace-view logs-view" hidden>
-        <div class="logs-controls">
-          <div class="log-console-bar">
-            <span id="stream-state"><i></i> подключение к потоку</span>
-            <span class="line-count"><b id="line-count">0</b> строк</span>
-            <div class="log-actions">
-              <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
-              <button id="export-logs" class="compact" type="button" title="Экспорт журнала" aria-label="Экспорт журнала">↓ <span>Экспорт</span></button>
-              <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные строки">☆ <span>Закладки</span></button>
-              <button id="clear" class="compact" type="button" title="Очистить экран" aria-label="Очистить экран">⌫ <span>Очистить</span></button>
+      <div class="workspace">
+        <!-- Модули -->
+        <section id="modules-view" class="workspace-view modules-view" hidden>
+          <div class="view-intro">
+            <div>
+              <h3>Модули</h3>
+              <p>Состояние загрузчика и готовность модулей к работе.</p>
             </div>
+            <span class="modules-cadence"><i></i>Live<b>·</b>1 сек</span>
           </div>
-          <div class="log-filterbar">
-            <div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Найти в журнале…"><kbd>/</kbd></div>
-            <div class="level-filters" role="group" aria-label="Уровень событий">
-          <button class="filter-chip active" data-level="ALL">Все</button>
-          <button class="filter-chip" data-level="INFO">Информация</button>
-          <button class="filter-chip warning" data-level="WARNING">Предупреждения</button>
-          <button class="filter-chip error" data-level="ERROR">Ошибки</button>
-            </div>
-            <details class="log-advanced">
-              <summary>Ещё фильтры <i>⌄</i></summary>
-              <div class="log-advanced-grid">
-                <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
-                <label>С <input id="time-from" type="datetime-local"></label>
-                <label>По <input id="time-to" type="datetime-local"></label>
-                <div class="preset-row"><label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label><button id="preset-delete" class="compact" type="button" title="Удалить выбранный фильтр" aria-label="Удалить выбранный фильтр" disabled>×</button></div>
-                <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
-                <button id="preset-save" class="compact">Сохранить</button>
+          <div class="modules-health">
+            <div class="modules-overview card">
+              <div class="modules-total">
+                <span class="modules-kicker">Текущий запуск</span>
+                <div id="modules-ring" class="modules-ring">
+                  <div class="modules-number"><strong id="modules-total">—</strong><span>модулей</span></div>
+                </div>
+                <p id="modules-summary">Знакомимся с загрузчиком…</p>
               </div>
-            </details>
+              <div class="modules-map">
+                <div class="modules-map-heading"><span>Карта модулей</span><small id="modules-map-caption">Ожидаем снимок</small></div>
+                <div id="modules-matrix" class="modules-matrix" aria-hidden="true"></div>
+                <div class="modules-progress" role="img" aria-label="Распределение состояний модулей"><i id="modules-progress"></i><i data-module-segment="loading"></i><i data-module-segment="problems"></i><i data-module-segment="unloaded"></i><i data-module-segment="unknown"></i></div>
+              </div>
+            </div>
+            <div class="modules-counters card" role="group" aria-label="Фильтр по состоянию модулей">
+              <button type="button" data-modules-state="ready" aria-pressed="false"><span><i class="module-dot ready"></i>Готовы</span><strong id="modules-ready">—</strong></button>
+              <button type="button" data-modules-state="loading" aria-pressed="false"><span><i class="module-dot loading"></i>Загрузка</span><strong id="modules-loading">—</strong></button>
+              <button type="button" data-modules-state="problems" aria-pressed="false"><span><i class="module-dot error"></i>Проблемы</span><strong id="modules-problems">—</strong></button>
+              <button type="button" data-modules-state="unloaded" aria-pressed="false"><span><i class="module-dot unloaded"></i>Выгружены</span><strong id="modules-unloaded">—</strong></button>
+              <button type="button" data-modules-state="unknown" aria-pressed="false"><span><i class="module-dot unknown"></i>Неизвестно</span><strong id="modules-unknown">—</strong></button>
+            </div>
           </div>
-        </div>
-        <section class="log-frame">
-        <div class="log-head" aria-hidden="true"><span>ВРЕМЯ</span><span>УРОВЕНЬ</span><span>МОДУЛЬ</span><span>СООБЩЕНИЕ</span></div>
-        <!-- Раздел log: содержимое обновляется соответствующим модулем страницы. -->
-        <section id="log" class="log" aria-live="polite"></section>
-      </section>
-      </section>
+          <div id="modules-connection" class="modules-connection" role="status"><i></i><span>Ожидаем данные…</span></div>
+          <div class="modules-toolbar">
+            <label class="modules-search"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="modules-search" type="search" placeholder="Найти модуль…" aria-label="Найти модуль"></label>
+            <div class="segmented modules-filters" role="group" aria-label="Тип модулей"><button class="compact active" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" data-modules-kind="core" aria-pressed="false">Встроенные</button></div>
+            <button id="modules-only-problems" class="compact" aria-pressed="false">Только проблемы</button>
+          </div>
+          <div class="modules-directory-heading"><span>Каталог модулей</span><button id="modules-reset" type="button" class="compact" hidden>Сбросить фильтры</button></div>
+          <div id="modules-list" class="modules-list"></div>
+          <div class="modules-pagination"><button id="modules-prev" class="compact" type="button">← Назад</button><span id="modules-page">1 / 1</span><button id="modules-next" class="compact" type="button">Далее →</button></div>
+          <p id="modules-empty" class="modules-empty empty">Подключаемся к мониторингу…</p>
+          <p class="modules-footnote">«Готов» означает успешную инициализацию. Ошибки при выполнении команд доступны в журнале и происшествиях.</p>
+        </section>
+
+        <!-- Система -->
+        <section id="system-view" class="workspace-view system-view" hidden>
+          <div class="view-intro">
+            <div><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div>
+            <button id="system-refresh" class="compact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Обновить</button>
+          </div>
+          <div class="system-kpis">
+            <article class="resource-card card" data-resource="cpu"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
+            <article class="resource-card card" data-resource="memory"><div class="resource-heading"><span>Память</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
+            <article class="resource-card card" data-resource="disk"><div class="resource-heading"><span>Диск Heroku</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
+          </div>
+          <article class="surface-card history-card">
+            <div class="card-heading">
+              <div><h3>История нагрузки</h3><p class="muted">Обновляется каждую секунду; пунктир — смена процесса бота.</p></div>
+              <div class="segmented history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div>
+            </div>
+            <div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div>
+            <div class="history-legend"><span data-series="cpu">CPU</span><span data-series="memory">Память</span><span data-series="disk">Диск</span><span id="history-count">Ожидание данных…</span></div>
+          </article>
+          <div class="system-columns">
+            <article class="surface-card load-card"><div class="card-heading"><h3>Средняя нагрузка</h3><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
+            <article class="surface-card host-card"><div class="card-heading"><h3>Среда выполнения</h3></div><dl class="host-details"><dt>Узел</dt><dd id="system-host">—</dd><dt>Платформа</dt><dd id="system-platform">—</dd><dt>Ядро</dt><dd id="system-kernel">—</dd><dt>Время работы</dt><dd id="system-uptime">—</dd></dl></article>
+          </div>
+        </section>
+
+        <!-- Происшествия -->
+        <section id="incidents-view" class="workspace-view incidents-view" hidden>
+          <div class="view-intro">
+            <div><h3>Происшествия</h3><p>Ошибки и частые предупреждения, сгруппированные по модулю и времени. Источник — последние 3000 строк журнала.</p></div>
+            <button id="incidents-refresh" class="compact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Обновить</button>
+          </div>
+          <div id="incident-list" class="incident-list"><p class="empty-state">Загружаем события…</p></div>
+        </section>
+
+        <!-- Журнал -->
+        <section id="logs-view" class="workspace-view logs-view" hidden>
+          <div class="logs-controls">
+            <div class="log-console-bar">
+              <span id="stream-state"><i></i> подключение к потоку</span>
+              <span class="line-count"><b id="line-count">0</b> строк</span>
+              <div class="log-actions">
+                <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
+                <button id="export-logs" class="compact" type="button" title="Экспорт журнала" aria-label="Экспорт журнала"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Экспорт</span></button>
+                <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные строки"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Закладки</span></button>
+                <button id="clear" class="compact" type="button" title="Очистить экран" aria-label="Очистить экран"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Очистить</span></button>
+              </div>
+            </div>
+            <div class="log-filterbar">
+              <div class="search-wrap"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="filter" type="search" placeholder="Найти в журнале…"><kbd>/</kbd></div>
+              <div class="segmented level-filters" role="group" aria-label="Уровень событий">
+                <button class="filter-chip active" data-level="ALL">Все</button>
+                <button class="filter-chip" data-level="INFO">Инфо</button>
+                <button class="filter-chip warning" data-level="WARNING">Предупреждения</button>
+                <button class="filter-chip error" data-level="ERROR">Ошибки</button>
+              </div>
+              <details class="log-advanced">
+                <summary>Фильтры <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+                <div class="log-advanced-grid">
+                  <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
+                  <label>С <input id="time-from" type="datetime-local"></label>
+                  <label>По <input id="time-to" type="datetime-local"></label>
+                  <div class="preset-row"><label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label><button id="preset-delete" class="compact" type="button" title="Удалить выбранный фильтр" aria-label="Удалить выбранный фильтр" disabled>×</button></div>
+                  <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
+                  <button id="preset-save" class="compact">Сохранить фильтр</button>
+                </div>
+              </details>
+            </div>
+          </div>
+          <section class="log-frame">
+            <div class="log-head" aria-hidden="true"><span>Время</span><span>Уровень</span><span>Модуль</span><span>Сообщение</span></div>
+            <section id="log" class="log" aria-live="polite"></section>
+          </section>
+        </section>
+      </div>
     </main>
   </div>
 
-  <!-- Модальный диалог command-results: взаимодействие управляется модулем страницы. -->
-  <dialog id="command-dialog" class="command-dialog"><div class="command-shell"><input id="command-query" type="search" placeholder="Перейти или выполнить действие…" autocomplete="off" aria-label="Быстрые действия"><div id="command-results"></div><p>↑ ↓ выбор · Enter открыть · Esc закрыть</p></div></dialog>
+  <dialog id="command-dialog" class="command-dialog"><div class="command-shell"><div class="command-input"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="command-query" type="search" placeholder="Перейти или выполнить действие…" autocomplete="off" aria-label="Быстрые действия"></div><div id="command-results"></div><p><kbd>↑</kbd><kbd>↓</kbd> выбор · <kbd>Enter</kbd> открыть · <kbd>Esc</kbd> закрыть</p></div></dialog>
 
-  <!-- Модальный диалог auth-dialog: взаимодействие управляется модулем страницы. -->
   <dialog id="auth-dialog">
     <form id="auth-form">
-      <span class="eyebrow">ЛИЧНЫЙ ДОСТУП</span>
+      <div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2.5 20.5 7.5v9L12 21.5 3.5 16.5v-9z"/><path d="M9 8v8M15 8v8M9 12h6"/></svg></div>
       <h2 id="auth-title">Вход</h2>
       <p id="auth-note">Войдите в аккаунт, созданный по инвайту.</p>
-      <input id="invite" name="invite" placeholder="инвайт" aria-label="Инвайт" autocomplete="off" hidden>
-      <input id="auth-username" name="username" placeholder="логин" aria-label="Логин" autocomplete="username" required>
-      <input id="auth-password" name="password" type="password" placeholder="пароль" aria-label="Пароль" autocomplete="current-password" required>
-      <input id="auth-password-confirm" name="password-confirm" type="password" placeholder="повторите пароль" aria-label="Повторите пароль" autocomplete="new-password" hidden>
+      <input id="invite" name="invite" placeholder="Инвайт" aria-label="Инвайт" autocomplete="off" hidden>
+      <input id="auth-username" name="username" placeholder="Логин" aria-label="Логин" autocomplete="username" required>
+      <input id="auth-password" name="password" type="password" placeholder="Пароль" aria-label="Пароль" autocomplete="current-password" required>
+      <input id="auth-password-confirm" name="password-confirm" type="password" placeholder="Повторите пароль" aria-label="Повторите пароль" autocomplete="new-password" hidden>
       <p id="auth-error" class="auth-error"></p>
       <button class="primary" type="submit">Продолжить</button>
       <button id="auth-switch" type="button">У меня есть инвайт</button>
     </form>
   </dialog>
 
-  <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
   <script src="/motion.js" defer></script>
-  <script src="/hud.js" defer></script>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

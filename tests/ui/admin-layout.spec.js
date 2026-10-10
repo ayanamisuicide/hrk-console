@@ -199,7 +199,7 @@ test("история анимирует смену подробностей, н�
     })),
   ).toEqual(before);
   expect(
-    await stat.evaluate((el) => getComputedStyle(el, "::before").display),
+    await stat.evaluate((el) => getComputedStyle(el, "::before").content),
   ).toBe("none");
   await page.locator('[data-admin-view="history"]').click();
   await page.locator(".audit-group").nth(1).click();
@@ -221,7 +221,7 @@ test("история анимирует смену подробностей, н�
     await page
       .locator("#history-tab-audit")
       .evaluate((el) => getComputedStyle(el).borderRadius),
-  ).toBe("0px");
+  ).toBe("6px");
   await page.screenshot({
     path: testInfo.outputPath("audit-selected.png"),
     fullPage: true,

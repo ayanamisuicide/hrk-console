@@ -1,5 +1,0 @@
-/* Разделы подключаются в этом порядке для сохранения каскада. */
-@import url("./styles/log-controls.css");
-@import url("./styles/log-lines.css");
-@import url("./styles/log-motion.css");
-@import url("./styles/log-responsive.css");

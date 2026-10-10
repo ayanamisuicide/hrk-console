@@ -186,38 +186,6 @@
       observer.observe(element);
     });
 
-    // Частые pointermove объединяются в один расчёт на кадр, без очереди устаревших координат.
-    let pointerFrame = 0;
-    let pointerEvent;
-    document.addEventListener(
-      "pointermove",
-      (event) => {
-        pointerEvent = event;
-        if (pointerFrame) return;
-        pointerFrame = requestAnimationFrame(
-          // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
-          () => {
-            pointerFrame = 0;
-            const current = pointerEvent;
-            const card = current?.target.closest?.(
-              ".metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card",
-            );
-            if (!card) return;
-            const rect = card.getBoundingClientRect();
-            card.style.setProperty(
-              "--pointer-x",
-              `${current.clientX - rect.left}px`,
-            );
-            card.style.setProperty(
-              "--pointer-y",
-              `${current.clientY - rect.top}px`,
-            );
-          },
-        );
-      },
-      { passive: true },
-    );
-
     document.addEventListener("pointerdown", (event) => {
       const button = event.target.closest?.("button:not(:disabled)");
       if (!button) return;

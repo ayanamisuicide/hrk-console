@@ -1,34 +1,17 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v32-hud-calm";
+const CACHE = "hkc-shell-v33-dashboard";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
   "/",
-  "/style.css",
-  "/motion.css",
-  "/logs.css",
+  "/theme.js",
+  "/css/base.css",
+  "/css/console.css",
   "/motion.js",
-  "/hud.css",
-  "/hud.js",
   "/history-chart.js",
   "/app.js",
   "/icon.svg",
   "/manifest.webmanifest",
-  "/styles/controls.css",
-  "/styles/dialogs.css",
-  "/styles/foundation.css",
-  "/styles/interactions.css",
-  "/styles/journal-controls.css",
-  "/styles/journal-frame.css",
-  "/styles/log-controls.css",
-  "/styles/log-lines.css",
-  "/styles/log-motion.css",
-  "/styles/log-responsive.css",
-  "/styles/navigation.css",
-  "/styles/shell.css",
-  "/styles/system.css",
-  "/styles/workspace.css",
-  "/styles/redesign.css",
   "/modules/auth.js",
   "/modules/incidents.js",
   "/modules/journal.js",
@@ -36,7 +19,6 @@ const ASSETS = [
   "/modules/service.js",
   "/modules/system.js",
   "/modules/modules.js",
-  "/styles/modules.css",
 ];
 // Установка кеширует весь набор целиком: неполная цепочка модулей не считается готовой.
 self.addEventListener("install", (event) => {

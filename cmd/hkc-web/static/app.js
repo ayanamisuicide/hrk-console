@@ -163,7 +163,7 @@ ctx.commands = [
       location.href = "/admin/";
     },
   },
-  { name: "Сменить цвет интерфейса", run: () => ctx.$("#theme-toggle").click() },
+  { name: "Сменить тему", run: () => ctx.$("#theme-toggle").click() },
 ];
 
 ctx.commandIndex = 0;

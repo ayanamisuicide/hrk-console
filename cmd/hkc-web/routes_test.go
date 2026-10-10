@@ -20,7 +20,7 @@ func TestRoutesKeepProtectedEndpoints(t *testing.T) {
 			}
 		})
 	}
-	for _, path := range []string{"/", "/motion.js", "/app.js", "/modules/journal.js", "/styles/foundation.css", "/admin/", "/admin/modules/auth.js", "/admin/styles/layout.css", "/api/version"} {
+	for _, path := range []string{"/", "/motion.js", "/app.js", "/modules/journal.js", "/css/base.css", "/admin/", "/admin/modules/auth.js", "/css/admin.css", "/theme.js", "/api/version"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {
