@@ -91,9 +91,12 @@ const (
 type alertDispatcher struct {
 	sinks    []alertSink
 	settings func() alertSettings
-	host     string
-	mu       sync.Mutex
-	sent     []time.Time
+	// record получает каждое событие до фильтров и лимита: так лента графика полна
+	// независимо от настроек доставки.
+	record func(alertEvent)
+	host   string
+	mu     sync.Mutex
+	sent   []time.Time
 }
 
 func (d *alertDispatcher) active() bool { return d != nil && len(d.sinks) > 0 }
@@ -138,6 +141,12 @@ func (d *alertDispatcher) prepare(event alertEvent) alertEvent {
 
 // notify фильтрует событие настройками и лимитом и отправляет его в фоне.
 func (d *alertDispatcher) notify(event alertEvent) {
+	if d == nil {
+		return
+	}
+	if d.record != nil {
+		d.record(d.prepare(event))
+	}
 	if !d.active() {
 		return
 	}
@@ -478,7 +487,7 @@ func firstLine(text string) string {
 
 // runModuleAlerts раз в пять секунд проверяет снимок модулей работающего бота.
 func (s *server) runModuleAlerts(ctx context.Context) {
-	if !s.alerts.active() {
+	if s.alerts == nil {
 		return
 	}
 	ticker := time.NewTicker(5 * time.Second)
@@ -501,7 +510,7 @@ func (s *server) runModuleAlerts(ctx context.Context) {
 
 // observeHostAlerts вызывается сборщиком истории после каждого замера.
 func (s *server) observeHostAlerts(now time.Time, status systemStatus) {
-	if !s.alerts.active() || s.operations == nil || !status.Supported {
+	if s.alerts == nil || s.operations == nil || !status.Supported {
 		return
 	}
 	values := map[string]float64{"cpu": status.CPUPercent,

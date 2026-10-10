@@ -1,5 +1,5 @@
 import { createServiceBindings } from "./modules/service.js";
-import * as historyChart from "./history-chart.js";
+import { createLiveChart, drawSparkline } from "./live-chart.js";
 import { createJournal } from "./modules/journal.js";
 import { createSystem } from "./modules/system.js";
 import { createIncidents } from "./modules/incidents.js";
@@ -76,6 +76,17 @@ ctx.bookmarksOnly = false;
 
 ctx.historyRange = "live";
 
+ctx.historyView = "resources";
+
+// Скрытые серии графика переживают переключение вида и диапазона в пределах вкладки.
+ctx.hiddenSeries = new Set();
+
+try {
+  ctx.historyView = localStorage.getItem("hkc-history-view") || "resources";
+} catch (_) {
+  /* Без хранилища используется вид по умолчанию. */
+}
+
 try {
   ctx.bookmarks = new Set(
     JSON.parse(localStorage.getItem("hkc-log-bookmarks") || "[]"),
@@ -123,12 +134,11 @@ ctx.bindModules();
 
 ctx.historyBusy = false;
 
-({
-  historyColors: ctx.historyColors,
-  resampleSeries: ctx.resampleSeries,
-  ensureHistorySVG: ctx.ensureHistorySVG,
-  morphHistorySeries: ctx.morphHistorySeries,
-} = historyChart);
+ctx.detailsBusy = false;
+
+ctx.createLiveChart = createLiveChart;
+
+ctx.drawSparkline = drawSparkline;
 
 ctx.bindHistoryChart();
 
@@ -199,11 +209,16 @@ setInterval(() => {
 }, 1000);
 
 // Частые обновления запускаются лишь при нужном состоянии страницы.
+// Живой диапазон опрашивается раз в секунду, длинные — раз в 5 секунд: их точки
+// усреднены по интервалам и чаще не меняются. Подробности тяжелее и идут раз в 5 секунд.
+let systemTick = 0;
 setInterval(() => {
   if (ctx.authenticated && ctx.currentView === "system") {
     ctx.refreshSystem();
-    ctx.refreshHistory();
-  }
+    if (ctx.historyRange === "live" || systemTick % 5 === 0) ctx.refreshHistory();
+    if (systemTick % 5 === 0) ctx.refreshDetails();
+    systemTick++;
+  } else systemTick = 0;
 }, 1000);
 
 // Частые обновления запускаются лишь при нужном состоянии страницы.

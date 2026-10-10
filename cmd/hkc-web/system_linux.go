@@ -26,8 +26,14 @@ func readSystemStatus(diskPath string) systemStatus {
 	status.Kernel = kernelRelease()
 	status.CPUPercent = cpuPercent()
 	status.Load1, status.Load5, status.Load15 = loadAverage()
-	status.MemoryTotal, status.MemoryAvailable = memoryInfo()
+	memory := memoryInfo()
+	status.MemoryTotal, status.MemoryAvailable = memory.total, memory.available
 	status.MemoryUsed = status.MemoryTotal - status.MemoryAvailable
+	status.MemoryCached = memory.cached
+	status.SwapTotal = memory.swapTotal
+	if memory.swapTotal > memory.swapFree {
+		status.SwapUsed = memory.swapTotal - memory.swapFree
+	}
 	status.UptimeSeconds = uptimeSeconds()
 	status.DiskTotal, status.DiskFree = diskInfo(diskPath)
 	status.DiskUsed = status.DiskTotal - status.DiskFree
@@ -66,11 +72,17 @@ func cpuPercent() float64 {
 	return float64(deltaTotal-deltaIdle) * 100 / float64(deltaTotal)
 }
 
-// memoryInfo читает MemTotal и MemAvailable из /proc/meminfo и переводит килобайты в байты.
-func memoryInfo() (total, available uint64) {
+type memoryCounters struct {
+	total, available, cached, swapTotal, swapFree uint64
+}
+
+// memoryInfo читает /proc/meminfo и переводит килобайты в байты. Кеш — страничный кеш,
+// буферы и освобождаемые структуры ядра: эту память система отдаст по требованию.
+func memoryInfo() memoryCounters {
+	var counters memoryCounters
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return 0, 0
+		return counters
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
@@ -80,12 +92,18 @@ func memoryInfo() (total, available uint64) {
 		value, _ := strconv.ParseUint(fields[1], 10, 64)
 		switch fields[0] {
 		case "MemTotal:":
-			total = value * 1024
+			counters.total = value * 1024
 		case "MemAvailable:":
-			available = value * 1024
+			counters.available = value * 1024
+		case "Cached:", "Buffers:", "SReclaimable:":
+			counters.cached += value * 1024
+		case "SwapTotal:":
+			counters.swapTotal = value * 1024
+		case "SwapFree:":
+			counters.swapFree = value * 1024
 		}
 	}
-	return total, available
+	return counters
 }
 
 // loadAverage читает среднюю нагрузку за 1, 5 и 15 минут; это не процент CPU.

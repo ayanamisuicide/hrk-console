@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v34-alerts";
+const CACHE = "hkc-shell-v35-system";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -8,7 +8,7 @@ const ASSETS = [
   "/css/base.css",
   "/css/console.css",
   "/motion.js",
-  "/history-chart.js",
+  "/live-chart.js",
   "/app.js",
   "/icon.svg",
   "/manifest.webmanifest",

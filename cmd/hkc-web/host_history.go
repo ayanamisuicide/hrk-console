@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,6 +28,14 @@ type hostPoint struct {
 	Memory float64   `json:"memory"`
 	Disk   float64   `json:"disk"`
 	PID    int       `json:"pid"`
+	// Поля ниже появились в 2.5.0; в старых записях они отсутствуют и читаются нулями.
+	BotCPU float64 `json:"botCpu,omitempty"`
+	BotRSS uint64  `json:"botRss,omitempty"`
+	RxRate float64 `json:"rx,omitempty"`
+	TxRate float64 `json:"tx,omitempty"`
+	TgMS   float64 `json:"tgMs,omitempty"`
+	// CPUMax заполняется только при сжатии для графика: пик CPU внутри интервала.
+	CPUMax float64 `json:"cpuMax,omitempty"`
 }
 
 // hostHistoryStore — История в хронологическом порядке и путь JSONL; читателям возвращаются копии, запись
@@ -186,7 +195,7 @@ func (h *hostHistoryStore) sampledSince(cutoff time.Time, limit int) ([]hostPoin
 	defer h.mu.RUnlock()
 	index := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
 	points := h.points[index:]
-	return downsampleHostPoints(points, limit), len(points)
+	return bucketHostPoints(points, limit), len(points)
 }
 
 // restartTimes находит времена смены PID, включая границу выбранного интервала.
@@ -215,17 +224,27 @@ func hostPercent(used, total uint64) float64 {
 // останавливает фоновый цикл.
 func (s *server) collectHostHistory(ctx context.Context) {
 	collect := func() {
+		now := time.Now()
 		status := readSystemStatus(s.bot.HerokuDir)
+		processes := s.procs.scan()
+		pid := s.bot.PID()
+		bot, _ := processTree(processes, pid)
+		rx, tx := readNetDev()
+		live := liveSample{bot: bot, processes: processes, network: s.netCounter.observe(now, rx, tx)}
 		s.systemMu.Lock()
 		s.latestSystem = status
+		s.latestLive = live
 		s.systemMu.Unlock()
 		if !status.Supported {
 			return
 		}
-		s.observeHostAlerts(time.Now(), status)
-		_ = s.hostHistory.add(hostPoint{At: time.Now(), CPU: status.CPUPercent,
+		s.observeHostAlerts(now, status)
+		_ = s.hostHistory.add(hostPoint{At: now, CPU: status.CPUPercent,
 			Memory: hostPercent(status.MemoryUsed, status.MemoryTotal),
-			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: s.bot.PID()})
+			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: pid,
+			BotCPU: round2(bot.CPUPercent), BotRSS: bot.RSS,
+			RxRate: math.Round(live.network.RxRate), TxRate: math.Round(live.network.TxRate),
+			TgMS: s.prober.best()})
 	}
 	collect()
 	ticker := time.NewTicker(time.Second)
@@ -240,49 +259,158 @@ func (s *server) collectHostHistory(ctx context.Context) {
 	}
 }
 
-// systemHistory выбирает временной диапазон и возвращает ограниченную по плотности историю для графика.
+// systemHistory выбирает временной диапазон и возвращает сжатую историю, перезапуски,
+// события ленты, пороги уведомлений и статистику по полным данным диапазона.
 func (s *server) systemHistory(w http.ResponseWriter, r *http.Request) {
 	duration := time.Hour
-	switch r.URL.Query().Get("range") {
+	rangeName := r.URL.Query().Get("range")
+	switch rangeName {
 	case "live":
 		duration = 5 * time.Minute
 	case "24h":
 		duration = 24 * time.Hour
+	default:
+		rangeName = "1h"
 	}
+	now := time.Now()
+	cutoff := now.Add(-duration)
 	points := []hostPoint{}
+	restarts := []time.Time{}
 	count := 0
+	stats := map[string]seriesStats{}
 	if s.hostHistory != nil {
-		points, count = s.hostHistory.sampledSince(time.Now().Add(-duration), historyGraphLimit)
+		points, count = s.hostHistory.sampledSince(cutoff, historyGraphLimit)
+		restarts = s.hostHistory.restartTimes(cutoff)
+		stats = s.statsCache.get(rangeName, now, func() map[string]seriesStats {
+			return historyStats(s.hostHistory.since(cutoff))
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"range": duration.String(), "sampleCount": count, "intervalSeconds": 1, "points": points})
+	thresholds := map[string]int{}
+	if s.operations != nil {
+		settings := s.operations.alertSettings()
+		thresholds = map[string]int{"cpu": settings.CPUPercent, "memory": settings.MemoryPercent, "disk": settings.DiskPercent}
+	}
+	interval := 1.0
+	if count > len(points) && len(points) > 0 {
+		interval = math.Round(duration.Seconds()/float64(len(points))*10) / 10
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"range": duration.String(), "rangeSeconds": duration.Seconds(),
+		"sampleCount": count, "intervalSeconds": interval, "points": points, "restarts": restarts,
+		"events": s.timeline.since(cutoff), "thresholds": thresholds, "stats": stats, "now": now.UTC()})
 }
 
-// downsampleHostPoints выбирает равномерные точки, дополнительно сохраняя соседей смены PID. Поэтому число
-// точек может немного превышать лимит графика.
-func downsampleHostPoints(points []hostPoint, limit int) []hostPoint {
-	if len(points) <= limit {
+// bucketHostPoints сжимает точки до limit интервалов равной длительности: значения усредняются,
+// для CPU дополнительно сохраняется пик. PID берётся последним в интервале; сами перезапуски
+// передаются отдельным списком, поэтому сжатие их не теряет.
+func bucketHostPoints(points []hostPoint, limit int) []hostPoint {
+	if len(points) <= limit || limit < 2 {
 		return append([]hostPoint(nil), points...)
 	}
-	result := make([]hostPoint, 0, limit+16)
-	// Оставляем начало и конец и равномерно выбираем промежуточные индексы.
-	// Границы смены процесса добавим отдельно, чтобы сокращение их не потеряло.
-	step := float64(len(points)-1) / float64(limit-1)
-	last := -1
-	for i := 0; i < limit; i++ {
-		index := int(float64(i)*step + 0.5)
-		if index <= last {
+	start, end := points[0].At, points[len(points)-1].At
+	span := end.Sub(start)
+	if span <= 0 {
+		return append([]hostPoint(nil), points[len(points)-1])
+	}
+	result := make([]hostPoint, 0, limit)
+	index := 0
+	for bucket := 0; bucket < limit; bucket++ {
+		bucketEnd := start.Add(span * time.Duration(bucket+1) / time.Duration(limit))
+		var sum hostPoint
+		n := 0
+		for index < len(points) && (!points[index].At.After(bucketEnd) || bucket == limit-1) {
+			point := points[index]
+			sum.CPU += point.CPU
+			sum.Memory += point.Memory
+			sum.Disk += point.Disk
+			sum.BotCPU += point.BotCPU
+			sum.BotRSS += point.BotRSS
+			sum.RxRate += point.RxRate
+			sum.TxRate += point.TxRate
+			sum.TgMS += point.TgMS
+			sum.CPUMax = max(sum.CPUMax, point.CPU)
+			sum.PID = point.PID
+			sum.At = point.At
+			n++
+			index++
+		}
+		if n == 0 {
 			continue
 		}
-		result = append(result, points[index])
-		last = index
+		f := float64(n)
+		result = append(result, hostPoint{At: sum.At, PID: sum.PID, CPUMax: round2(sum.CPUMax),
+			CPU: round2(sum.CPU / f), Memory: round2(sum.Memory / f), Disk: round2(sum.Disk / f),
+			BotCPU: round2(sum.BotCPU / f), BotRSS: sum.BotRSS / uint64(n),
+			RxRate: math.Round(sum.RxRate / f), TxRate: math.Round(sum.TxRate / f), TgMS: round2(sum.TgMS / f)})
 	}
-	// Сохраняем границы смены PID, даже если они оказались между выбранными точками.
-	for i := 1; i < len(points); i++ {
-		if points[i].PID != points[i-1].PID {
-			result = append(result, points[i-1], points[i])
-		}
-	}
-	// Добавленные маркеры возвращаем в хронологический порядок графика.
-	sort.Slice(result, func(i, j int) bool { return result[i].At.Before(result[j].At) })
 	return result
+}
+
+func round2(value float64) float64 { return math.Round(value*100) / 100 }
+
+// seriesStats — Минимум, среднее, максимум и 95-й перцентиль серии за диапазон.
+type seriesStats struct {
+	Min float64 `json:"min"`
+	Avg float64 `json:"avg"`
+	Max float64 `json:"max"`
+	P95 float64 `json:"p95"`
+}
+
+// historyStats считает статистику по всем секундным точкам диапазона, а не по сжатым.
+// Нулевые значения бота и сети вне его работы не учитываются, чтобы не занижать среднее.
+func historyStats(points []hostPoint) map[string]seriesStats {
+	series := map[string]func(hostPoint) (float64, bool){
+		"cpu":    func(p hostPoint) (float64, bool) { return p.CPU, true },
+		"memory": func(p hostPoint) (float64, bool) { return p.Memory, true },
+		"disk":   func(p hostPoint) (float64, bool) { return p.Disk, true },
+		"botCpu": func(p hostPoint) (float64, bool) { return p.BotCPU, p.PID != 0 },
+		"botRss": func(p hostPoint) (float64, bool) { return float64(p.BotRSS), p.BotRSS > 0 },
+		"rx":     func(p hostPoint) (float64, bool) { return p.RxRate, true },
+		"tx":     func(p hostPoint) (float64, bool) { return p.TxRate, true },
+		"tgMs":   func(p hostPoint) (float64, bool) { return p.TgMS, p.TgMS > 0 },
+	}
+	result := make(map[string]seriesStats, len(series))
+	values := make([]float64, 0, len(points))
+	for key, pick := range series {
+		values = values[:0]
+		sum := 0.0
+		for _, point := range points {
+			if value, ok := pick(point); ok {
+				values = append(values, value)
+				sum += value
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		sort.Float64s(values)
+		result[key] = seriesStats{Min: round2(values[0]), Max: round2(values[len(values)-1]),
+			Avg: round2(sum / float64(len(values))), P95: round2(values[int(float64(len(values)-1)*0.95)])}
+	}
+	return result
+}
+
+// historyStatsCache пересчитывает статистику диапазона не чаще раза в 10 секунд:
+// для суток это сортировка десятков тысяч значений на каждый опрос.
+type historyStatsCache struct {
+	mu      sync.Mutex
+	entries map[string]statsEntry
+}
+
+type statsEntry struct {
+	at    time.Time
+	stats map[string]seriesStats
+}
+
+func (cache *historyStatsCache) get(key string, now time.Time, compute func() map[string]seriesStats) map[string]seriesStats {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if entry, ok := cache.entries[key]; ok && now.Sub(entry.at) < 10*time.Second {
+		return entry.stats
+	}
+	stats := compute()
+	if cache.entries == nil {
+		cache.entries = map[string]statsEntry{}
+	}
+	cache.entries[key] = statsEntry{at: now, stats: stats}
+	return stats
 }

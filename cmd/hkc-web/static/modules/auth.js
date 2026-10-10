@@ -61,7 +61,10 @@ export function createAuth(ctx) {
         ctx.refreshSystem(),
       ]);
       if (ctx.currentView === "incidents") ctx.refreshIncidents();
-      if (ctx.currentView === "system") ctx.refreshHistory();
+      if (ctx.currentView === "system") {
+        ctx.refreshHistory();
+        ctx.refreshDetails();
+      }
       if (ctx.currentView === "modules") ctx.refreshModules();
       ctx.connectStream();
     } catch (error) {

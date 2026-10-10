@@ -13,6 +13,63 @@ const sampleLog = [
   "2026-10-03 10:00:02 [ERROR] Core: retry failed",
 ];
 
+// Пять минут истории с плавной нагрузкой, перезапуском и событиями ленты.
+const historyStart = Date.parse("2026-10-03T09:55:00Z");
+const systemHistory = {
+  range: "5m0s",
+  rangeSeconds: 300,
+  intervalSeconds: 1,
+  sampleCount: 300,
+  now: "2026-10-03T10:00:00Z",
+  points: Array.from({ length: 300 }, (_, index) => ({
+    at: new Date(historyStart + index * 1000).toISOString(),
+    cpu: 22 + 14 * Math.sin(index / 18) + (index % 37 === 0 ? 30 : 0),
+    memory: 48 + index / 40,
+    disk: 31,
+    pid: index < 150 ? 1 : 2,
+    botCpu: 2 + Math.abs(Math.sin(index / 9)) * 3,
+    botRss: (180 + index / 10) * 1048576,
+    rx: 4096 + 2048 * Math.sin(index / 7),
+    tx: 1024,
+    tgMs: index < 2 ? 0 : 80 + 10 * Math.sin(index / 20),
+  })),
+  restarts: ["2026-10-03T09:57:30Z"],
+  events: [
+    { event: "bot.stopped", severity: "critical", title: "Бот остановлен", message: "Процесс Heroku не найден.", time: "2026-10-03T09:57:29Z" },
+    { event: "watchdog.recovered", severity: "warning", title: "Бот перезапущен автоматически", message: "", time: "2026-10-03T09:57:31Z" },
+  ],
+  thresholds: { cpu: 90, memory: 90, disk: 90 },
+  stats: {
+    cpu: { min: 8, avg: 22, max: 66, p95: 40 },
+    memory: { min: 48, avg: 52, max: 55, p95: 55 },
+    disk: { min: 31, avg: 31, max: 31, p95: 31 },
+  },
+};
+const systemDetails = {
+  summary: { level: "warn", title: "Есть на что посмотреть", items: [{ level: "warn", text: "Диск занят на 86%" }] },
+  bot: { running: true, pid: 123, uptime: "1ч", cpuPercent: 2.5, rssBytes: 209715200, threads: 9, children: 1, openFiles: 24, rssTrendPerHour: 0, rssTrendFit: 0 },
+  network: { rxRate: 5120, txRate: 1024, rxTotal: 73400320, txTotal: 4194304 },
+  probes: [
+    { name: "DC2 · Амстердам", address: "149.154.167.51:443", ok: true, latencyMs: 81 },
+    { name: "DC5 · Сингапур", address: "91.108.56.130:443", ok: true, latencyMs: 229 },
+    { name: "Bot API", address: "api.telegram.org:443", ok: false, latencyMs: 0, error: "нет ответа за 4 с" },
+  ],
+  disk: { root: "/srv/Heroku", totalBytes: 230686720, partial: false, scannedAt: "2026-10-03T09:59:00Z", entries: [
+    { name: ".venv", bytes: 181403648, dir: true },
+    { name: ".git", bytes: 42362880, dir: true },
+    { name: "heroku.log", bytes: 7130317, dir: false },
+  ] },
+  inodesTotal: 1000000,
+  inodesFree: 900000,
+  forecast: { growthPerDay: 2147483648, daysToFull: 4.5, basisHours: 6, fit: 0.9 },
+  wsl: { detected: true, configPath: "/mnt/c/Users/test/.wslconfig", memory: "8GB" },
+  processes: [
+    { pid: 123, name: "python3", cpuPercent: 2.5, rssBytes: 209715200, threads: 9 },
+    { pid: 77, name: "hkc-web", cpuPercent: 0.4, rssBytes: 18874368, threads: 8 },
+  ],
+  processesHidden: false,
+};
+
 // Подменяем серверные ответы: проверки интерфейса не запускают и не останавливают настоящий процесс.
 test.beforeEach(async ({ page }) => {
   const errors = [];
@@ -51,12 +108,8 @@ test.beforeEach(async ({ page }) => {
         uptimeSeconds: 1000,
         sampledAt: new Date().toISOString(),
       },
-      "/api/system/history": {
-        points: [
-          { at: "2026-10-03T10:00:00Z", cpu: 20, memory: 50, disk: 30, pid: 1 },
-          { at: "2026-10-03T10:00:30Z", cpu: 40, memory: 55, disk: 30, pid: 2 },
-        ],
-      },
+      "/api/system/history": systemHistory,
+      "/api/system/details": systemDetails,
       "/api/incidents": {
         incidents: [
           {
@@ -119,7 +172,7 @@ for (const width of [390, 1440])
           animations: "disabled",
         });
       }
-      await expect(page.locator("#history-chart svg")).toBeVisible();
+      await expect(page.locator("#history-chart canvas")).toBeVisible();
       await page.locator('[data-view="logs"]').click();
       await page.locator(".line-bookmark").first().click();
       await page.locator("#bookmarks-only").click();
@@ -180,7 +233,7 @@ test.describe("PWA", () => {
         page.evaluate(async () => {
           const assets = [
             "/app.js",
-            "/history-chart.js",
+            "/live-chart.js",
             "/modules/journal.js",
             "/modules/auth.js",
             "/theme.js",
@@ -360,9 +413,9 @@ test("ресурсы обновляются каждую секунду", async 
   await page.goto("/");
   await expect(page.locator("#status-label")).toContainText("бот запущен");
   await page.locator('[data-view="system"]').click();
-  await expect(page.locator("#history-chart svg")).toBeVisible();
-  await page.locator("#history-chart svg").evaluate((svg) => {
-    svg.dataset.identity = "persistent";
+  await expect(page.locator("#history-chart canvas")).toBeVisible();
+  await page.locator("#history-chart canvas").evaluate((canvas) => {
+    canvas.dataset.identity = "persistent";
   });
   const before = { ...hits };
   await page.clock.runFor(2200);
@@ -370,7 +423,7 @@ test("ресурсы обновляются каждую секунду", async 
   for (const key of Object.keys(hits))
     expect(hits[key], key).toBeGreaterThan(before[key]);
   await expect(
-    page.locator('#history-chart svg[data-identity="persistent"]'),
+    page.locator('#history-chart canvas[data-identity="persistent"]'),
   ).toHaveCount(1);
 });
 
@@ -449,4 +502,67 @@ test("админка показывает приостановку и настр
   await page.setViewportSize({ width: 390, height: 900 });
   await page.screenshot({ path: testInfo.outputPath("alerts-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+});
+
+test("вкладка системы: сводка, график, легенда, масштаб и подробности", async ({ page }, testInfo) => {
+  await page.clock.install({ time: new Date("2026-10-03T10:00:00Z") });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await page.locator('[data-view="system"]').click();
+  await expect(page.locator("#system-summary")).toHaveAttribute("data-level", "warn");
+  await expect(page.locator("#system-summary-title")).toHaveText("Есть на что посмотреть");
+  await expect(page.locator("#system-summary-items li")).toHaveText(["Диск занят на 86%"]);
+  await expect(page.locator("#history-legend .legend-chip")).toHaveCount(3);
+  await expect(page.locator('#history-legend [data-series="cpu"] small')).toContainText("макс 66%");
+  // Скрытие серии — отжатая кнопка легенды.
+  const cpuChip = page.locator('#history-legend [data-series="cpu"]');
+  await cpuChip.click();
+  await expect(cpuChip).toHaveAttribute("aria-pressed", "false");
+  await cpuChip.click();
+  await expect(cpuChip).toHaveAttribute("aria-pressed", "true");
+  // Подсказка показывает значения всех серий в точке под курсором.
+  const chart = page.locator("#history-chart canvas");
+  const box = await chart.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.4);
+  await expect(page.locator(".live-chart-tooltip")).toBeVisible();
+  await expect(page.locator(".live-chart-tooltip .live-chart-row")).not.toHaveCount(0);
+  // Выделение мышью приближает участок, кнопка возвращает масштаб.
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.locator("#history-zoom-reset")).toBeVisible();
+  await page.locator("#history-zoom-reset").click();
+  await expect(page.locator("#history-zoom-reset")).toBeHidden();
+  // Виды графика меняют легенду и запоминаются.
+  await page.locator('[data-history-view="network"]').click();
+  await expect(page.locator("#history-legend .legend-chip span")).toHaveText(["Приём", "Отправка", "Задержка Telegram"]);
+  expect(await page.evaluate(() => localStorage.getItem("hkc-history-view"))).toBe("network");
+  await page.locator('[data-history-view="resources"]').click();
+  // Подробности.
+  await expect(page.locator("#bot-pid")).toHaveText("123");
+  await expect(page.locator("#bot-rss")).toHaveText("200.0 МБ");
+  await expect(page.locator("#probe-list li")).toHaveCount(3);
+  await expect(page.locator('#probe-list li[data-level="bad"] strong')).toHaveText("нет ответа");
+  await expect(page.locator("#network-state")).toHaveText("доступно 2 из 3");
+  await expect(page.locator("#disk-list li")).toHaveCount(3);
+  await expect(page.locator("#disk-forecast")).toContainText("через 4.5 дн");
+  await expect(page.locator("#memory-wsl")).toContainText("память 8GB");
+  await expect(page.locator("#process-rows tr")).toHaveCount(2);
+  await expect(page.locator("#process-rows tr.is-bot td").first()).toHaveText("python3");
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: testInfo.outputPath("system-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath("system-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+});
+
+test("наблюдатель не видит процессы хоста", async ({ page }) => {
+  await page.route("**/api/system/details", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...systemDetails, processes: [], processesHidden: true }) }),
+  );
+  await page.goto("/");
+  await page.locator('[data-view="system"]').click();
+  await expect(page.locator("#processes-hidden")).toBeVisible();
+  await expect(page.locator(".process-table")).toBeHidden();
 });

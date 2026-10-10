@@ -132,25 +132,76 @@
         <!-- Система -->
         <section id="system-view" class="workspace-view system-view" hidden>
           <div class="view-intro">
-            <div><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div>
+            <div><h3>Состояние системы</h3><p>Бот, ресурсы, сеть и диск WSL/Linux-среды, в которой работает Heroku.</p></div>
             <button id="system-refresh" class="compact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Обновить</button>
           </div>
+          <section id="system-summary" class="system-summary" data-level="loading" aria-live="polite">
+            <span class="summary-orb" aria-hidden="true"><i></i></span>
+            <div class="summary-text"><strong id="system-summary-title">Собираем сведения…</strong><ul id="system-summary-items"></ul></div>
+            <span id="system-sampled" class="muted">Обновление…</span>
+          </section>
           <div class="system-kpis">
-            <article class="resource-card card" data-resource="cpu"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
-            <article class="resource-card card" data-resource="memory"><div class="resource-heading"><span>Память</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
-            <article class="resource-card card" data-resource="disk"><div class="resource-heading"><span>Диск Heroku</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
+            <article class="resource-card card" data-resource="cpu"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><canvas class="resource-spark" data-spark="cpu" aria-hidden="true"></canvas><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
+            <article class="resource-card card" data-resource="memory"><div class="resource-heading"><span>Память</span><strong id="system-ram">—</strong></div><canvas class="resource-spark" data-spark="memory" aria-hidden="true"></canvas><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
+            <article class="resource-card card" data-resource="disk"><div class="resource-heading"><span>Диск Heroku</span><strong id="system-disk">—</strong></div><canvas class="resource-spark" data-spark="disk" aria-hidden="true"></canvas><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
+            <article class="resource-card card" data-resource="bot"><div class="resource-heading"><span>Процесс бота</span><strong id="system-bot-rss">—</strong></div><canvas class="resource-spark" data-spark="botRss" aria-hidden="true"></canvas><div class="resource-track"><i id="system-bot-bar"></i></div><small id="system-bot-meta">Ищем процесс…</small></article>
           </div>
           <article class="surface-card history-card">
-            <div class="card-heading">
-              <div><h3>История нагрузки</h3><p class="muted">Обновляется каждую секунду; пунктир — смена процесса бота.</p></div>
-              <div class="segmented history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div>
+            <div class="history-toolbar">
+              <div class="segmented history-views" role="tablist" aria-label="Что показать на графике"><button class="compact active" role="tab" aria-selected="true" data-history-view="resources">Ресурсы</button><button class="compact" role="tab" aria-selected="false" data-history-view="bot">Бот</button><button class="compact" role="tab" aria-selected="false" data-history-view="network">Сеть</button></div>
+              <div class="history-actions"><button id="history-zoom-reset" class="compact" type="button" hidden>Сбросить масштаб</button><div class="segmented history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div></div>
             </div>
-            <div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div>
-            <div class="history-legend"><span data-series="cpu">CPU</span><span data-series="memory">Память</span><span data-series="disk">Диск</span><span id="history-count">Ожидание данных…</span></div>
+            <div id="history-chart" class="history-chart"></div>
+            <div id="history-legend" class="history-legend"></div>
+            <p class="history-hint"><span id="history-count">Ожидание данных…</span><span class="history-help">Выделите участок мышью, чтобы приблизить; двойной щелчок возвращает масштаб.</span></p>
           </article>
-          <div class="system-columns">
-            <article class="surface-card load-card"><div class="card-heading"><h3>Средняя нагрузка</h3><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
-            <article class="surface-card host-card"><div class="card-heading"><h3>Среда выполнения</h3></div><dl class="host-details"><dt>Узел</dt><dd id="system-host">—</dd><dt>Платформа</dt><dd id="system-platform">—</dd><dt>Ядро</dt><dd id="system-kernel">—</dd><dt>Время работы</dt><dd id="system-uptime">—</dd></dl></article>
+          <div class="system-grid">
+            <article class="surface-card detail-card" id="bot-card">
+              <div class="card-heading"><h3>Процесс бота</h3><span id="bot-state" class="detail-badge">—</span></div>
+              <dl class="detail-list">
+                <dt>PID</dt><dd id="bot-pid">—</dd>
+                <dt>Работает</dt><dd id="bot-uptime">—</dd>
+                <dt>CPU</dt><dd id="bot-cpu">—</dd>
+                <dt>Память (RSS)</dt><dd id="bot-rss">—</dd>
+                <dt>Потоки</dt><dd id="bot-threads">—</dd>
+                <dt>Дочерние процессы</dt><dd id="bot-children">—</dd>
+                <dt>Открытые файлы</dt><dd id="bot-files">—</dd>
+              </dl>
+              <p id="bot-trend" class="detail-note">Тренд памяти появится через 10 минут работы.</p>
+            </article>
+            <article class="surface-card detail-card" id="network-card">
+              <div class="card-heading"><h3>Сеть и Telegram</h3><span id="network-state" class="detail-badge">—</span></div>
+              <div class="net-rates">
+                <div><span>Приём</span><strong id="net-rx">—</strong><small id="net-rx-total">—</small></div>
+                <div><span>Отправка</span><strong id="net-tx">—</strong><small id="net-tx-total">—</small></div>
+              </div>
+              <ul id="probe-list" class="probe-list"></ul>
+              <p class="detail-note">Время TCP-соединения с дата-центрами Telegram, проверка раз в 30 секунд.</p>
+            </article>
+            <article class="surface-card detail-card" id="disk-card">
+              <div class="card-heading"><h3>Что занимает диск</h3><span id="disk-scanned" class="muted">—</span></div>
+              <div id="disk-bar" class="stack-bar" aria-hidden="true"></div>
+              <ul id="disk-list" class="disk-list"></ul>
+              <p id="disk-forecast" class="detail-note">Прогноз появится через час наблюдений.</p>
+              <p id="disk-inodes" class="detail-note muted">—</p>
+            </article>
+            <article class="surface-card detail-card" id="memory-card">
+              <div class="card-heading"><h3>Память</h3><span id="memory-total" class="muted">—</span></div>
+              <div id="memory-bar" class="stack-bar" aria-hidden="true"></div>
+              <ul id="memory-legend" class="stack-legend"></ul>
+              <dl class="detail-list"><dt>Swap</dt><dd id="memory-swap">—</dd></dl>
+              <p id="memory-wsl" class="detail-note" hidden></p>
+            </article>
+            <article class="surface-card detail-card" id="load-card">
+              <div class="card-heading"><h3>Средняя нагрузка</h3><span class="muted">очередь процессов</span></div>
+              <div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div>
+              <dl class="detail-list"><dt>Узел</dt><dd id="system-host">—</dd><dt>Платформа</dt><dd id="system-platform">—</dd><dt>Ядро</dt><dd id="system-kernel">—</dd><dt>Время работы</dt><dd id="system-uptime">—</dd></dl>
+            </article>
+            <article class="surface-card detail-card" id="processes-card">
+              <div class="card-heading"><h3>Процессы хоста</h3><span class="muted">топ по CPU</span></div>
+              <table class="process-table"><thead><tr><th>Процесс</th><th>PID</th><th>CPU</th><th>Память</th></tr></thead><tbody id="process-rows"></tbody></table>
+              <p id="processes-hidden" class="detail-note" hidden>Список процессов хоста доступен только операторам.</p>
+            </article>
           </div>
         </section>
 

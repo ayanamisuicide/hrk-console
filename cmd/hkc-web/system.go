@@ -21,6 +21,9 @@ type systemStatus struct {
 	MemoryTotal     uint64    `json:"memoryTotalBytes"`
 	MemoryUsed      uint64    `json:"memoryUsedBytes"`
 	MemoryAvailable uint64    `json:"memoryAvailableBytes"`
+	MemoryCached    uint64    `json:"memoryCachedBytes"`
+	SwapTotal       uint64    `json:"swapTotalBytes"`
+	SwapUsed        uint64    `json:"swapUsedBytes"`
 	DiskTotal       uint64    `json:"diskTotalBytes"`
 	DiskUsed        uint64    `json:"diskUsedBytes"`
 	DiskFree        uint64    `json:"diskFreeBytes"`

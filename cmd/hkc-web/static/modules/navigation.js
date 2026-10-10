@@ -32,7 +32,10 @@ export function createNavigation(ctx) {
       }[view],
     );
     if (view === "incidents" && ctx.authenticated) ctx.refreshIncidents();
-    if (view === "system" && ctx.authenticated) ctx.refreshHistory();
+    if (view === "system" && ctx.authenticated) {
+      ctx.refreshHistory();
+      ctx.refreshDetails();
+    }
     if (view === "modules" && ctx.authenticated) ctx.refreshModules();
     localStorage.setItem("hkc-view", view);
   }

@@ -37,9 +37,9 @@ func (n *stateNotifier) observe(running bool) {
 	}
 }
 
-// newStateNotifier создаёт наблюдатель только при наличии хотя бы одного канала доставки.
+// newStateNotifier создаёт наблюдатель; события попадают в ленту, даже если каналов доставки нет.
 func newStateNotifier(alerts *alertDispatcher) *stateNotifier {
-	if !alerts.active() {
+	if alerts == nil {
 		return nil
 	}
 	return &stateNotifier{alerts: alerts}

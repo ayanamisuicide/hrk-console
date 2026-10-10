@@ -34,6 +34,16 @@ type server struct {
 	alerts       *alertDispatcher
 	hostAlerts   hostAlertMonitor
 	moduleAlerts moduleAlertMonitor
+	// Подробности вкладки «Система»: сканер процессов и счётчик сети принадлежат сборщику истории.
+	procs        procScanner
+	netCounter   netCounter
+	latestLive   liveSample
+	prober       networkProber
+	diskScanner  diskScanner
+	timeline     *eventTimeline
+	wsl          wslInfo
+	dataDir      string
+	statsCache   historyStatsCache
 	configMu     sync.Mutex
 	systemMu     sync.RWMutex
 	latestSystem systemStatus
@@ -122,7 +132,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.dataDir = filepath.Dir(authFile)
+	s.wsl = detectWSL()
+	s.timeline = &eventTimeline{}
 	s.alerts = newAlertDispatcher(os.Getenv, s.operations.alertSettings)
+	s.alerts.record = s.timeline.add
 	s.notifier = newStateNotifier(s.alerts)
 	s.notifier.observe(s.bot.PID() != 0)
 	if channels := s.alerts.channels(); s.alerts.active() {
@@ -134,6 +148,7 @@ func main() {
 	go s.collectHostHistory(context.Background())
 	go watchBotState(context.Background(), s.notifier, s.bot)
 	go s.runModuleAlerts(context.Background())
+	go s.prober.run(context.Background())
 	go s.runWatchdog(context.Background())
 	s.updates = &updateChecker{}
 	s.updates.check()

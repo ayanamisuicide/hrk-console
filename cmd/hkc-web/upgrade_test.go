@@ -54,27 +54,31 @@ func TestHostHistoryMigratesLegacyAndPreservesRestartMarkers(t *testing.T) {
 	}
 }
 
-// TestHostHistoryDownsamplesWithoutLosingRestart проверяет сокращение графика с сохранением перезапуска.
-func TestHostHistoryDownsamplesWithoutLosingRestart(t *testing.T) {
+// TestHostHistoryBucketsKeepPeaksAndAverages проверяет сжатие графика: интервалы усредняются,
+// пик CPU сохраняется, а число точек не превышает лимит.
+func TestHostHistoryBucketsKeepPeaksAndAverages(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour)
 	points := make([]hostPoint, 5000)
 	for i := range points {
-		points[i] = hostPoint{At: start.Add(time.Duration(i) * time.Second), CPU: float64(i % 100), PID: 1}
+		points[i] = hostPoint{At: start.Add(time.Duration(i) * time.Second), CPU: 10, Memory: 40, BotRSS: 1000, PID: 1}
 	}
-	points[2500].PID = 2
-	points[2501].PID = 2
-	result := downsampleHostPoints(points, 1200)
-	if len(result) < 1200 || len(result) > 1204 {
+	points[2500].CPU = 95
+	result := bucketHostPoints(points, 1200)
+	if len(result) == 0 || len(result) > 1200 {
 		t.Fatalf("unexpected sample size: %d", len(result))
 	}
-	found := false
+	peak := 0.0
 	for _, point := range result {
-		if point.PID == 2 {
-			found = true
+		peak = max(peak, point.CPUMax)
+		if point.Memory != 40 || point.BotRSS != 1000 {
+			t.Fatalf("average lost: %+v", point)
 		}
 	}
-	if !found {
-		t.Fatal("restart was lost during downsampling")
+	if peak != 95 {
+		t.Fatalf("peak lost: %v", peak)
+	}
+	if !result[len(result)-1].At.Equal(points[len(points)-1].At) {
+		t.Fatal("last bucket must end at the newest point")
 	}
 }
 

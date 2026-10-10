@@ -53,6 +53,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/metrics", s.authorize(s.liveMetrics))
 	mux.HandleFunc("GET /api/system", s.authorize(s.systemHealth))
 	mux.HandleFunc("GET /api/system/history", s.authorize(s.systemHistory))
+	mux.HandleFunc("GET /api/system/details", s.authorize(s.systemDetails))
 	mux.HandleFunc("GET /api/incidents", s.authorize(s.incidents))
 	mux.HandleFunc("GET /api/modules", s.authorize(s.modulesStatus))
 	mux.HandleFunc("GET /api/public/status", s.publicStatus)
