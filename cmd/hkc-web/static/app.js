@@ -107,9 +107,6 @@ ctx.bindJournalNavToggle();
 
 ctx.setView(localStorage.getItem("hkc-view") || "logs");
 
-ctx.setTheme(localStorage.getItem("hkc-theme") || "dark");
-
-ctx.bindThemeToggle();
 
 ctx.bindSearch();
 
@@ -166,7 +163,7 @@ ctx.commands = [
       location.href = "/admin/";
     },
   },
-  { name: "Сменить тему", run: () => ctx.$("#theme-toggle").click() },
+  { name: "Сменить цвет интерфейса", run: () => ctx.$("#theme-toggle").click() },
 ];
 
 ctx.commandIndex = 0;

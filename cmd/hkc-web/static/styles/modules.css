@@ -19,24 +19,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-[data-theme="light"] .modules-view {
-  --module-accent: #1f6fd6;
-  --module-ready: #1f883d;
-  --module-loading: #b07a00;
-  --module-error: #cf222e;
-  --module-off: #6e7781;
-  --module-unknown: #8250df;
-  --module-surface: #fff;
-  --module-raised: #f7f8fa;
-  --module-soft: #f1f3f6;
-  --module-line: #e0e4ea;
-  --module-line-soft: #eceff3;
-  --module-ink: #161b22;
-  --module-muted: #3d4652;
-  --module-faint: #5f6975;
-  color-scheme: light;
-}
-
 .modules-view .view-intro {
   align-items: center;
   margin-bottom: 20px;

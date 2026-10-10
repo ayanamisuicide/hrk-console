@@ -88,32 +88,6 @@
     padding: 9px 12px;
   }
 }
-:root[data-theme="light"] .log-frame {
-  background: #fbfdfb;
-}
-:root[data-theme="light"] .log-head {
-  background: #eef5f1;
-  color: #60776e;
-}
-:root[data-theme="light"] .line time {
-  color: #52675d;
-}
-:root[data-theme="light"] .line .level {
-  color: #52675d;
-}
-:root[data-theme="light"] .line .module {
-  color: #52675d;
-}
-:root[data-theme="light"] .line:nth-child(even) {
-  background-color: rgba(8, 121, 91, 0.025);
-}
-:root[data-theme="light"] .line:hover {
-  background-color: rgba(8, 121, 91, 0.06);
-}
-:root[data-theme="light"] .log-advanced-grid {
-  background: #f8fcf9;
-  box-shadow: 0 20px 45px rgba(15, 50, 38, 0.16);
-}
 .line {
   grid-template-columns: 70px 75px minmax(75px, 110px) minmax(0, 1fr) 22px;
 }
@@ -149,10 +123,6 @@
   .line {
     grid-template-columns: 58px 58px minmax(0, 1fr) 22px;
   }
-}
-:root[data-theme="light"] .log-advanced-grid select,
-:root[data-theme="light"] .log-advanced-grid input {
-  background: #fff;
 }
 /* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
 @media (prefers-reduced-motion: reduce) {

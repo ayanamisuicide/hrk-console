@@ -18,17 +18,6 @@
   const lastValueMotion = new WeakMap();
 
   window.prefersReducedMotion = reducedMotion;
-  // Один живой световой проход при входе, без блокирующей заставки и фиктивных процентов.
-  if (!reducedMotion()) {
-    const arrival = document.createElement("div");
-    arrival.className = "shell-arrival";
-    arrival.setAttribute("aria-hidden", "true");
-    document.body.append(arrival);
-    arrival.addEventListener("animationend", () => arrival.remove(), {
-      once: true,
-    });
-    setTimeout(() => arrival.remove(), 2000);
-  }
   // Реальная высота details анимируется в обе стороны; повторный клик меняет направление.
   window.motionDisclosure = (element, panel) => {
     const summary = element.querySelector("summary");
@@ -73,16 +62,6 @@
           { duration: 380, easing: "ease-out" },
         );
     });
-  };
-  window.motionTheme = () => {
-    if (reducedMotion()) return;
-    const root = document.documentElement;
-    clearTimeout(root.motionThemeTimer);
-    root.classList.add("theme-transition");
-    root.motionThemeTimer = setTimeout(
-      () => root.classList.remove("theme-transition"),
-      700,
-    );
   };
   // Выделяем только реальное изменение текста; частые замеры ограничены по частоте анимации.
   window.motionValue = (element, value) => {

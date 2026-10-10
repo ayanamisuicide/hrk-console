@@ -21,18 +21,6 @@ main {
   left: auto;
   width: min(380px, calc(100vw - 48px));
 }
-:root[data-theme="light"] dialog {
-  background: #f8fcf9;
-  box-shadow: 0 35px 100px rgba(15, 50, 38, 0.25);
-}
-:root[data-theme="light"] .notice {
-  background: #e8f8ef;
-  color: var(--text);
-}
-:root[data-theme="light"] .notice.error {
-  background: #fff0f1;
-  color: #862333;
-}
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 760px) {
   main {

@@ -1,0 +1,388 @@
+/* HUD-слой: перекрывает палитру и оформление остальных стилей, подключается последним.
+ * Эффекты управляются атрибутами html[data-fx] (max / mid / min) и html[data-accent]. */
+
+@property --hud-a {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+:root:root {
+  color-scheme: dark;
+  --hud-c1: #00e5ff;
+  --hud-c2: #ff2bd6;
+  --hud-ok: #3dffa8;
+  --hud-warn: #ffb800;
+  --hud-bad: #ff3860;
+  --hud-font: "Cascadia Mono", "Share Tech Mono", "JetBrains Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  --bg: #02050b;
+  --panel: rgba(4, 13, 24, 0.74);
+  --panel-2: rgba(6, 20, 34, 0.82);
+  --panel-raised: rgba(9, 29, 48, 0.9);
+  --line: color-mix(in srgb, var(--hud-c1) 24%, transparent);
+  --line-strong: color-mix(in srgb, var(--hud-c1) 55%, transparent);
+  --text: #d6f7ff;
+  --muted: #6f9db3;
+  --mint: var(--hud-ok);
+  --blue: var(--hud-c1);
+  --red: var(--hud-bad);
+  --amber: var(--hud-warn);
+  --ink: #02050b;
+  --surface-shadow: 0 0 28px color-mix(in srgb, var(--hud-c1) 10%, transparent), inset 0 0 40px rgba(0, 229, 255, 0.025);
+  --hud-brk:
+    linear-gradient(var(--hud-c1), var(--hud-c1)) left top / 14px 2px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) left top / 2px 14px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) right top / 14px 2px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) right top / 2px 14px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) left bottom / 14px 2px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) left bottom / 2px 14px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) right bottom / 14px 2px no-repeat,
+    linear-gradient(var(--hud-c1), var(--hud-c1)) right bottom / 2px 14px no-repeat;
+  --hud-spot: radial-gradient(260px circle at var(--mx, -80px) var(--my, -80px), color-mix(in srgb, var(--hud-c1) 15%, transparent), transparent 70%);
+  --hud-glass: linear-gradient(160deg, rgba(6, 22, 38, 0.82), rgba(2, 8, 16, 0.9));
+  --hud-border: conic-gradient(from var(--hud-a), color-mix(in srgb, var(--hud-c1) 22%, transparent) 0 52%, var(--hud-c1) 76%, var(--hud-c2) 88%, color-mix(in srgb, var(--hud-c1) 22%, transparent) 100%);
+  --hud-ticker: 28px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--hud-font);
+  animation: hud-spin 7s linear infinite;
+}
+:root:root[data-accent="magenta"] { --hud-c1: #ff2bd6; --hud-c2: #00e5ff; }
+:root:root[data-accent="green"] { --hud-c1: #39ff88; --hud-c2: #00b3ff; }
+:root:root[data-accent="amber"] { --hud-c1: #ffb800; --hud-c2: #ff3d00; }
+
+@keyframes hud-spin { to { --hud-a: 360deg; } }
+
+html body {
+  font-family: var(--hud-font);
+  letter-spacing: 0.02em;
+  cursor: crosshair;
+  background: radial-gradient(ellipse at 50% -10%, color-mix(in srgb, var(--hud-c1) 14%, transparent), transparent 55%), var(--bg);
+  padding-bottom: var(--hud-ticker);
+}
+html body::before,
+html body::after { display: none; }
+html body :is(button, a, summary, select, label, [role="button"]) { cursor: pointer; }
+html body :is(input, textarea) { cursor: text; }
+html body .shell { height: calc(100dvh - var(--hud-ticker)); }
+html body.admin-body, html body.update-body, html body.public-status-body { padding-bottom: calc(var(--hud-ticker) + 8px); }
+html body ::selection { background: var(--hud-c1); color: #000; }
+html, html body { scrollbar-width: thin; scrollbar-color: var(--hud-c1) transparent; }
+
+/* ---------- Типографика ---------- */
+html body :is(h1, h2, h3, h4) { font-family: var(--hud-font); text-transform: uppercase; letter-spacing: 0.12em; text-shadow: 0 0 12px color-mix(in srgb, var(--hud-c1) 55%, transparent); }
+html body :is(h1, h2, h3, h4):hover { animation: hud-glitch 0.45s steps(2, end) 1; }
+html body .eyebrow { color: var(--hud-c1); letter-spacing: 0.28em; font-size: 10px; text-shadow: 0 0 8px color-mix(in srgb, var(--hud-c1) 70%, transparent); }
+html body .eyebrow::before { content: "// "; color: var(--hud-c2); }
+html body #view-title::after { content: "▮"; margin-left: 8px; color: var(--hud-c1); animation: hud-blink 1s steps(1) infinite; }
+html body :is(.muted, small, p) { font-family: var(--hud-font); }
+html body kbd { border: 1px solid var(--line-strong); border-radius: 0; background: transparent; color: var(--hud-c1); }
+
+@keyframes hud-blink { 50% { opacity: 0; } }
+@keyframes hud-glitch {
+  0% { transform: translate(0); text-shadow: 2px 0 var(--hud-c2), -2px 0 var(--hud-c1); }
+  25% { transform: translate(-2px, 1px); text-shadow: -3px 0 var(--hud-c2), 3px 0 var(--hud-c1); clip-path: inset(10% 0 55% 0); }
+  50% { transform: translate(2px, -1px); text-shadow: 2px 0 var(--hud-c1), -2px 0 var(--hud-c2); clip-path: inset(50% 0 10% 0); }
+  75% { transform: translate(-1px, 0); clip-path: inset(0); }
+  100% { transform: translate(0); clip-path: none; }
+}
+
+/* ---------- Каркас панелей ---------- */
+html body :is(.sidebar, .shell > main, .surface-card, .resource-card, .admin-section, .summary article, .bot-deck, .update-versions, .update-timeline, .update-hero, .service-card, .modules-total, .modules-map, .modules-counters button, .invite-card, .security-grid > *, .update-readiness, .public-status-card, .confirm-dialog, .command-shell, #auth-form, .log-frame, .audit-inspector, .modules-toolbar, .status-card, .connection, .admin-header, .update-header) {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--hud-brk), var(--hud-spot), var(--hud-glass);
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: none;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.18s ease-out;
+}
+html body :is(.sidebar, .shell > main) { backdrop-filter: blur(10px); }
+:root:root[data-fx="max"] body :is(.sidebar, .shell > main, .surface-card, .resource-card, .admin-section, .bot-deck, .update-hero, .modules-total, .modules-map, .public-status-card, #auth-form, .log-frame) {
+  border-image: var(--hud-border) 1;
+}
+html body :is(.surface-card, .resource-card, .admin-section, .summary article, .bot-deck, .service-card, .modules-counters button, .invite-card, .security-grid > *):hover {
+  border-color: var(--hud-c1);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--hud-c1) 28%, transparent), inset 0 0 30px color-mix(in srgb, var(--hud-c1) 8%, transparent);
+}
+html body :is(.resource-card, .modules-counters button, .security-grid > *, .invite-card) {
+  transform: perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+}
+
+/* Включение панелей: вспышка + раскрытие */
+:root:root[data-fx="max"] body :is(.surface-card, .resource-card, .admin-section, .summary article, .bot-deck, .update-versions, .update-timeline, .modules-total, .modules-map, .modules-counters button, .invite-card, .service-card, .update-hero, .security-grid > *) {
+  animation: hud-power-on 0.75s steps(14, end) both;
+}
+@keyframes hud-power-on {
+  0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(3) hue-rotate(40deg); }
+  40% { opacity: 0.9; clip-path: inset(0 0 0 0); filter: brightness(2); }
+  55% { opacity: 0.35; }
+  70% { opacity: 1; filter: brightness(1.5); }
+  100% { opacity: 1; clip-path: inset(0); filter: none; }
+}
+
+/* ---------- Боковая панель и навигация ---------- */
+html body .sidebar::before {
+  background: linear-gradient(90deg, transparent, var(--hud-c1), var(--hud-c2), transparent);
+  height: 2px;
+  opacity: 1;
+  animation: hud-sweep-x 3.4s ease-in-out infinite alternate;
+}
+@keyframes hud-sweep-x { from { transform: translateX(-30%); } to { transform: translateX(30%); } }
+html body .brand-mark { border-radius: 0; border-color: var(--hud-c1); box-shadow: 0 0 22px color-mix(in srgb, var(--hud-c1) 55%, transparent), inset 0 0 14px color-mix(in srgb, var(--hud-c1) 35%, transparent); transform: rotate(45deg); animation: hud-brand 6s linear infinite; }
+html body .brand-mark > * { transform: rotate(-45deg); }
+@keyframes hud-brand {
+  0%, 100% { box-shadow: 0 0 14px var(--hud-c1), inset 0 0 8px var(--hud-c1); }
+  50% { box-shadow: 0 0 34px var(--hud-c2), inset 0 0 18px var(--hud-c2); }
+}
+html body .brand h1 { font-size: 22px; letter-spacing: 0.34em; background: linear-gradient(90deg, var(--hud-c1), var(--hud-c2), var(--hud-c1)); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; animation: hud-gradient 5s linear infinite; }
+@keyframes hud-gradient { to { background-position: 200% 0; } }
+
+html body :is(.nav-item, .nav-subitem) {
+  position: relative;
+  border-radius: 0;
+  border: 1px solid transparent;
+  font-family: var(--hud-font);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  transition: background 0.2s, border-color 0.2s, padding-left 0.2s, color 0.2s, text-shadow 0.2s;
+}
+html body :is(.nav-item, .nav-subitem):hover {
+  padding-left: 18px;
+  border-color: var(--line);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hud-c1) 22%, transparent), transparent);
+  color: var(--hud-c1);
+  text-shadow: 0 0 10px var(--hud-c1);
+}
+html body :is(.nav-item, .nav-subitem):hover::after { content: "▶"; position: absolute; right: 10px; font-size: 9px; animation: hud-blink 0.6s steps(1) infinite; }
+html body :is(.nav-item.active, .nav-subitem.active, .nav-item[aria-current], .nav-group.section-active > .nav-group-row .nav-item) {
+  border-color: var(--hud-c1);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hud-c1) 30%, transparent), color-mix(in srgb, var(--hud-c2) 8%, transparent));
+  color: #fff;
+  text-shadow: 0 0 12px var(--hud-c1);
+  box-shadow: inset 3px 0 var(--hud-c1), 0 0 20px color-mix(in srgb, var(--hud-c1) 25%, transparent);
+}
+
+/* Статус */
+html body .dot { position: relative; border-radius: 0; transform: rotate(45deg); background: var(--hud-bad); box-shadow: 0 0 14px var(--hud-bad); animation: hud-alarm 0.9s steps(2) infinite; }
+html body .dot.online { background: var(--hud-ok); box-shadow: 0 0 16px var(--hud-ok); animation: hud-dot 2s ease-out infinite; }
+@keyframes hud-dot { 0% { box-shadow: 0 0 0 0 var(--hud-ok), 0 0 14px var(--hud-ok); } 100% { box-shadow: 0 0 0 14px transparent, 0 0 14px var(--hud-ok); } }
+@keyframes hud-alarm { 50% { opacity: 0.25; } }
+html body .status-card.online { border-color: color-mix(in srgb, var(--hud-ok) 60%, transparent); }
+html[data-bot="down"] body .shell > main { box-shadow: 0 0 60px color-mix(in srgb, var(--hud-bad) 24%, transparent), inset 0 0 80px color-mix(in srgb, var(--hud-bad) 6%, transparent); }
+html[data-bot="down"] body .hud-vignette { background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 56, 96, 0.28) 100%); animation: hud-alert 1.6s ease-in-out infinite; }
+@keyframes hud-alert { 50% { opacity: 0.45; } }
+
+/* ---------- Кнопки ---------- */
+html body :is(button, a.compact, .compact, .primary, .danger):not(.nav-item):not(.nav-group-toggle):not(.module-log) {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hud-c1) 16%, transparent) 50%, transparent 50%) right / 220% 100%, rgba(2, 10, 20, 0.6);
+  color: var(--hud-c1);
+  font-family: var(--hud-font);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  transition: background-position 0.35s, color 0.2s, box-shadow 0.2s, transform 0.12s;
+}
+html body :is(button, a.compact, .compact):not(.nav-item):not(.nav-group-toggle):hover {
+  background-position: left;
+  color: #fff;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--hud-c1) 55%, transparent);
+  text-shadow: 0 0 8px var(--hud-c1);
+}
+html body :is(button, a.compact):not(.nav-item):active { transform: scale(0.95); filter: brightness(1.6); }
+html body .primary { background: linear-gradient(90deg, var(--hud-c1), color-mix(in srgb, var(--hud-c1) 55%, var(--hud-c2))); color: #00131a; font-weight: 700; text-shadow: none; animation: hud-primary 2.4s ease-in-out infinite; }
+html body .primary:hover { color: #000; text-shadow: none; }
+@keyframes hud-primary { 50% { box-shadow: 0 0 26px var(--hud-c1); } }
+html body .danger { border-color: var(--hud-bad); color: var(--hud-bad); }
+html body .danger:hover { background-position: left; box-shadow: 0 0 24px var(--hud-bad); color: #fff; }
+html body :is(.compact.active, [aria-pressed="true"]):not(.nav-item) { background: color-mix(in srgb, var(--hud-c1) 24%, transparent); border-color: var(--hud-c1); color: #fff; box-shadow: inset 0 0 14px color-mix(in srgb, var(--hud-c1) 35%, transparent); }
+html body .filter-chip { border-radius: 0; }
+
+/* ---------- Поля ввода ---------- */
+html body :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border: 1px solid var(--line);
+  border-bottom: 2px solid var(--hud-c1);
+  border-radius: 0;
+  background: rgba(1, 8, 16, 0.75);
+  color: var(--text);
+  font-family: var(--hud-font);
+  caret-color: var(--hud-c1);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+html body :is(input, select, textarea):focus { outline: none; border-color: var(--hud-c1); box-shadow: 0 0 20px color-mix(in srgb, var(--hud-c1) 45%, transparent), inset 0 0 12px color-mix(in srgb, var(--hud-c1) 12%, transparent); }
+html body input[type="checkbox"] { accent-color: var(--hud-c1); }
+html body :is(button, a, input, select, summary):focus-visible { outline: 1px dashed var(--hud-c2); outline-offset: 3px; }
+
+/* ---------- Шапка ---------- */
+html body .shell > main > header { position: relative; border-bottom: 1px solid var(--line); }
+html body .shell > main > header::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 140px; height: 2px; background: linear-gradient(90deg, transparent, var(--hud-c1), #fff, var(--hud-c1), transparent); animation: hud-run 3.2s linear infinite; }
+@keyframes hud-run { from { left: -140px; } to { left: 100%; } }
+html body .live-badge { color: var(--hud-bad); border-color: var(--hud-bad); border-radius: 0; animation: hud-alarm 1.2s steps(2) infinite; }
+html body .live-badge i { background: var(--hud-bad); }
+
+/* ---------- Метрики и прогресс ---------- */
+html body .resource-heading strong,
+html body :is(.modules-number strong, .modules-counters strong, .load-values strong, .metric-primary) {
+  font-family: var(--hud-font);
+  color: #fff;
+  text-shadow: 0 0 14px var(--hud-c1), 0 0 3px var(--hud-c1);
+  font-variant-numeric: tabular-nums;
+}
+html body :is(.resource-track, .modules-progress, .update-progress-track) { border-radius: 0; background: rgba(0, 229, 255, 0.07); border: 1px solid var(--line); overflow: hidden; }
+html body :is(.resource-track i, .modules-progress i, .update-progress-track i) {
+  border-radius: 0;
+  background: repeating-linear-gradient(115deg, var(--hud-c1) 0 8px, color-mix(in srgb, var(--hud-c1) 55%, var(--hud-c2)) 8px 16px);
+  background-size: 32px 100%;
+  box-shadow: 0 0 16px var(--hud-c1), inset -3px 0 #fff;
+  animation: hud-stripes 0.9s linear infinite;
+}
+@keyframes hud-stripes { to { background-position: 32px 0; } }
+html body .history-chart svg path { filter: drop-shadow(0 0 4px currentColor); }
+html body .history-chart { background: repeating-linear-gradient(0deg, transparent 0 39px, color-mix(in srgb, var(--hud-c1) 12%, transparent) 39px 40px), repeating-linear-gradient(90deg, transparent 0 79px, color-mix(in srgb, var(--hud-c1) 8%, transparent) 79px 80px); }
+html body .history-chart::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: linear-gradient(transparent, var(--hud-c1), transparent); box-shadow: 0 0 14px var(--hud-c1); animation: hud-scan-x 4.5s linear infinite; pointer-events: none; }
+html body .history-chart { position: relative; overflow: hidden; }
+@keyframes hud-scan-x { from { left: 0; } to { left: 100%; } }
+
+/* ---------- Модули ---------- */
+html body .module-row { border-radius: 0; border: 1px solid var(--line); background: var(--hud-glass); transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s; }
+html body .module-row:hover { transform: translateX(6px); border-color: var(--hud-c1); box-shadow: -4px 0 var(--hud-c1), 0 0 24px color-mix(in srgb, var(--hud-c1) 25%, transparent); }
+html body .module-symbol { border-radius: 0; box-shadow: 0 0 12px color-mix(in srgb, var(--hud-c1) 50%, transparent); }
+html body .module-dot { border-radius: 0; transform: rotate(45deg); }
+html body .module-dot.ready { background: var(--hud-ok); animation: hud-dot 2.2s ease-out infinite; }
+html body .module-dot.loading { background: var(--hud-warn); animation: hud-alarm 0.7s steps(2) infinite; }
+html body .module-dot.error { background: var(--hud-bad); box-shadow: 0 0 14px var(--hud-bad); animation: hud-alarm 0.45s steps(2) infinite; }
+html body .modules-matrix > * { border-radius: 0; animation: hud-twinkle 3s ease-in-out infinite; }
+html body .modules-matrix > :nth-child(3n) { animation-delay: -1s; }
+html body .modules-matrix > :nth-child(5n) { animation-delay: -2.1s; animation-duration: 2.2s; }
+html body .modules-matrix > :nth-child(7n) { animation-delay: -0.4s; animation-duration: 4s; }
+@keyframes hud-twinkle { 50% { opacity: 0.45; filter: brightness(1.8); } }
+html body .modules-cadence i { animation: hud-alarm 0.8s steps(2) infinite; }
+
+/* ---------- Журнал ---------- */
+html body .log { font-family: var(--hud-font); }
+html body .log .line { border-left: 2px solid transparent; transition: background 0.15s, border-color 0.15s, padding-left 0.15s; }
+html body .log .line:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--hud-c1) 16%, transparent), transparent); border-left-color: var(--hud-c1); padding-left: 6px; }
+html body .log .line.live { animation: hud-line-in 0.7s steps(10, end) both; }
+@keyframes hud-line-in {
+  0% { opacity: 0; transform: translateX(-24px); background: color-mix(in srgb, var(--hud-c1) 55%, transparent); clip-path: inset(0 100% 0 0); }
+  60% { opacity: 1; background: color-mix(in srgb, var(--hud-c1) 28%, transparent); clip-path: inset(0); }
+  100% { background: transparent; transform: none; }
+}
+html body .log-head { background: color-mix(in srgb, var(--hud-c1) 8%, #02070d); color: var(--hud-c1); letter-spacing: 0.22em; }
+html body #stream-state i { border-radius: 0; animation: hud-alarm 1s steps(2) infinite; }
+html body .log::after { content: ""; position: sticky; bottom: 0; display: block; height: 2px; background: linear-gradient(90deg, transparent, var(--hud-c1), transparent); opacity: 0.6; }
+
+/* ---------- Админка, обновление, публичный статус ---------- */
+html body :is(.admin-header, .update-header) { backdrop-filter: blur(12px); border-width: 0 0 1px; }
+html body .admin-brand-icon { color: var(--hud-c1); text-shadow: 0 0 16px var(--hud-c1); animation: hud-spin-icon 8s linear infinite; display: inline-block; }
+@keyframes hud-spin-icon { to { transform: rotate(360deg); } }
+html body .bot-orbit { border-radius: 50%; box-shadow: 0 0 30px color-mix(in srgb, var(--hud-c1) 55%, transparent); animation: hud-spin-icon 9s linear infinite; }
+html body .bot-orbit > * { animation: hud-spin-icon 9s linear infinite reverse; }
+html body .watchdog-switch { border-radius: 0; }
+html body :is(table, .users-table) { font-family: var(--hud-font); }
+html body :is(th) { color: var(--hud-c1); text-transform: uppercase; letter-spacing: 0.14em; }
+html body tbody tr { transition: background 0.15s; }
+html body tbody tr:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--hud-c1) 16%, transparent), transparent); }
+html body .public-status-card h1 { font-size: clamp(26px, 5vw, 44px); animation: hud-flicker 5s infinite; }
+@keyframes hud-flicker { 0%, 92%, 96%, 100% { opacity: 1; } 93% { opacity: 0.4; } 94% { opacity: 1; } 95% { opacity: 0.6; } }
+html body .notice { border-radius: 0; border: 1px solid var(--hud-c1); background: color-mix(in srgb, var(--hud-c1) 12%, #02070d); }
+html body .notice.error { border-color: var(--hud-bad); background: color-mix(in srgb, var(--hud-bad) 14%, #02070d); }
+html body dialog::backdrop { background: rgba(0, 4, 10, 0.72); backdrop-filter: blur(6px) saturate(140%); }
+html body dialog { border-radius: 0; border: 1px solid var(--hud-c1); background: var(--hud-brk), var(--hud-glass); box-shadow: 0 0 60px color-mix(in srgb, var(--hud-c1) 35%, transparent); color: var(--text); }
+html body dialog[open] { animation: hud-power-on 0.5s steps(10, end) both; }
+
+/* ---------- Оверлеи ---------- */
+#hud-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.hud-scan, .hud-vignette, .hud-corners { position: fixed; inset: 0; pointer-events: none; }
+.hud-scan { z-index: 9990; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px); mix-blend-mode: multiply; opacity: 0.55; }
+.hud-scan::after { content: ""; position: absolute; left: 0; right: 0; height: 22vh; top: -22vh; background: linear-gradient(transparent, color-mix(in srgb, var(--hud-c1) 10%, transparent), transparent); animation: hud-roll 6.5s linear infinite; }
+@keyframes hud-roll { to { transform: translateY(150vh); } }
+.hud-vignette { z-index: 9989; background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
+.hud-corners { z-index: 9991; }
+.hud-corners span { position: absolute; width: 38px; height: 38px; border: 2px solid var(--hud-c1); filter: drop-shadow(0 0 6px var(--hud-c1)); animation: hud-corner 3s ease-in-out infinite; }
+.hud-corners span:nth-child(1) { top: 4px; left: 4px; border-width: 2px 0 0 2px; }
+.hud-corners span:nth-child(2) { top: 4px; right: 4px; border-width: 2px 2px 0 0; }
+.hud-corners span:nth-child(3) { bottom: calc(var(--hud-ticker) + 4px); left: 4px; border-width: 0 0 2px 2px; }
+.hud-corners span:nth-child(4) { bottom: calc(var(--hud-ticker) + 4px); right: 4px; border-width: 0 2px 2px 0; }
+@keyframes hud-corner { 50% { width: 52px; height: 52px; opacity: 0.6; } }
+:root:root[data-fx="max"] body { animation: hud-chroma 9s steps(1) infinite; }
+@keyframes hud-chroma { 0%, 96%, 100% { filter: none; } 97% { filter: drop-shadow(3px 0 rgba(255, 43, 214, 0.55)) drop-shadow(-3px 0 rgba(0, 229, 255, 0.55)); } 98% { filter: drop-shadow(-4px 0 rgba(255, 43, 214, 0.55)) drop-shadow(4px 0 rgba(0, 229, 255, 0.55)); } }
+
+/* Нижняя бегущая строка */
+.hud-ticker { position: fixed; z-index: 9995; left: 0; right: 0; bottom: 0; height: var(--hud-ticker); display: flex; align-items: stretch; border-top: 1px solid var(--hud-c1); background: rgba(1, 7, 14, 0.94); font: 11px/var(--hud-ticker) var(--hud-font); color: var(--hud-c1); letter-spacing: 0.12em; box-shadow: 0 -4px 24px color-mix(in srgb, var(--hud-c1) 20%, transparent); }
+.hud-tag { padding: 0 14px; background: var(--hud-c1); color: #00131a; font-weight: 700; clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%); padding-right: 22px; white-space: nowrap; animation: hud-primary 2.4s ease-in-out infinite; }
+.hud-marquee { flex: 1; overflow: hidden; white-space: nowrap; mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+.hud-track { display: inline-flex; animation: hud-marquee 38s linear infinite; }
+.hud-seg { padding-right: 3ch; }
+.hud-seg b { color: #fff; font-weight: 400; text-shadow: 0 0 8px var(--hud-c1); }
+.hud-seg em { color: var(--hud-c2); font-style: normal; }
+@keyframes hud-marquee { to { transform: translateX(-50%); } }
+.hud-ticker button { all: unset; box-sizing: border-box; padding: 0 12px; border-left: 1px solid var(--line-strong); cursor: pointer; color: var(--hud-c1); font: inherit; white-space: nowrap; }
+.hud-ticker button:hover { background: color-mix(in srgb, var(--hud-c1) 22%, transparent); color: #fff; text-shadow: 0 0 8px var(--hud-c1); }
+
+/* Курсор-прицел */
+.hud-ret, .hud-dot { position: fixed; z-index: 9999; left: 0; top: 0; pointer-events: none; }
+.hud-ret { width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1px solid var(--hud-c1); box-shadow: 0 0 12px var(--hud-c1), inset 0 0 8px color-mix(in srgb, var(--hud-c1) 40%, transparent); transition: width 0.18s, height 0.18s, margin 0.18s, border-color 0.18s, transform 0.18s; animation: hud-ret-spin 6s linear infinite; mix-blend-mode: screen; }
+.hud-ret::before, .hud-ret::after { content: ""; position: absolute; background: var(--hud-c2); }
+.hud-ret::before { left: 50%; top: -6px; bottom: -6px; width: 1px; opacity: 0.8; }
+.hud-ret::after { top: 50%; left: -6px; right: -6px; height: 1px; opacity: 0.8; }
+.hud-ret[data-hot] { width: 50px; height: 50px; margin: -25px 0 0 -25px; border-color: var(--hud-c2); border-style: dashed; }
+.hud-dot { width: 4px; height: 4px; margin: -2px 0 0 -2px; background: #fff; box-shadow: 0 0 8px #fff, 0 0 14px var(--hud-c1); }
+@keyframes hud-ret-spin { to { transform: rotate(90deg); } }
+@media (hover: none) { .hud-ret, .hud-dot { display: none; } }
+
+/* Взрыв при клике */
+.hud-burst { position: fixed; z-index: 9998; width: 0; height: 0; pointer-events: none; }
+.hud-burst::before { content: ""; position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border: 2px solid var(--hud-c1); animation: hud-ring 0.65s ease-out forwards; }
+.hud-burst i { position: absolute; left: 0; top: 0; width: 18px; height: 2px; background: var(--hud-c2); box-shadow: 0 0 8px var(--hud-c2); transform: rotate(var(--r)) translateX(4px); transform-origin: 0 50%; animation: hud-shard 0.55s ease-out forwards; }
+@keyframes hud-ring { to { transform: scale(9) rotate(45deg); opacity: 0; border-width: 0.5px; } }
+@keyframes hud-shard { to { transform: rotate(var(--r)) translateX(46px); opacity: 0; width: 4px; } }
+
+/* Загрузочная заставка */
+.hud-boot { position: fixed; inset: 0; z-index: 10000; display: grid; place-content: center; padding: 24px; background: #01040a; color: var(--hud-c1); font: 13px/1.7 var(--hud-font); letter-spacing: 0.1em; }
+.hud-boot::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0, 229, 255, 0.05) 0 1px, transparent 1px 3px); }
+.hud-boot pre { margin: 0; font: inherit; white-space: pre-wrap; text-shadow: 0 0 8px var(--hud-c1); }
+.hud-boot pre b { color: var(--hud-ok); font-weight: 400; }
+.hud-boot-bar { width: min(420px, 80vw); height: 6px; margin-top: 14px; border: 1px solid var(--hud-c1); }
+.hud-boot-bar i { display: block; height: 100%; width: 0; background: var(--hud-c1); box-shadow: 0 0 14px var(--hud-c1); transition: width 0.12s linear; }
+.hud-boot.is-out { animation: hud-boot-out 0.55s steps(8, end) forwards; }
+@keyframes hud-boot-out { 60% { clip-path: inset(48% 0 48% 0); } 100% { clip-path: inset(50% 0 50% 0); opacity: 0; } }
+
+/* Пасхалка */
+html.hud-rave body { animation: hud-rave 0.8s linear infinite !important; }
+@keyframes hud-rave { to { filter: hue-rotate(360deg) saturate(1.6); } }
+
+/* ---------- Режимы интенсивности ---------- */
+:root:root[data-fx="mid"] .hud-scan::after,
+:root:root[data-fx="mid"] .hud-corners span { animation: none; }
+:root:root[data-fx="min"] .hud-scan,
+:root:root[data-fx="min"] .hud-ret,
+:root:root[data-fx="min"] .hud-dot,
+:root:root[data-fx="min"] .hud-corners,
+:root:root[data-fx="min"] .hud-boot { display: none; }
+:root:root[data-fx="min"],
+:root:root[data-fx="min"] body *,
+:root:root[data-fx="min"] body *::before,
+:root:root[data-fx="min"] body *::after { animation: none !important; }
+:root:root[data-fx="min"] .hud-track { animation: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-scan, .hud-ret, .hud-dot, .hud-boot { display: none; }
+  :root:root, html body *, html body *::before, html body *::after { animation: none !important; }
+}
+
+/* ---------- Мобильная версия ---------- */
+@media (max-width: 760px) {
+  :root:root { --hud-ticker: 26px; }
+  .hud-corners, .hud-tag { display: none; }
+  .hud-ticker button { padding: 0 8px; }
+  html body .brand h1 { letter-spacing: 0.2em; }
+}
+
+/* Диалоги и формы внутри них остаются угловатыми, как остальные панели. */
+html body :is(dialog, dialog form, dialog > div, .command-shell, .confirm-dialog) { border-radius: 0; }
+html body dialog form { border: 0; background: transparent; box-shadow: none; }

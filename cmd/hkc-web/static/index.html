@@ -9,8 +9,9 @@
   <link rel="stylesheet" href="/motion.css">
   <link rel="stylesheet" href="/logs.css">
   <link rel="stylesheet" href="/styles/redesign.css">
+  <link rel="stylesheet" href="/hud.css">
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#080d0c">
+  <meta name="theme-color" content="#02050b">
 </head>
 <body>
   <div class="shell">
@@ -57,7 +58,7 @@
         <span>КАТАЛОГ БОТА</span>
         <code id="heroku-dir">—</code>
       </div>
-      <button id="theme-toggle" class="theme-toggle">◐ <span>Сменить тему</span></button>
+      <button id="theme-toggle" class="theme-toggle">◐ <span>Цвет интерфейса</span></button>
     </aside>
 
     <main>
@@ -195,6 +196,7 @@
 
   <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
   <script src="/motion.js" defer></script>
+  <script src="/hud.js" defer></script>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

@@ -107,9 +107,6 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
-:root[data-theme="light"] .resource-card {
-  background: rgba(255, 255, 255, 0.72);
-}
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 900px) {
   .system-kpis {

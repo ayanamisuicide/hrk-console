@@ -1,43 +1,6 @@
 /* Visual system inspired by the reference video: dark observability surfaces,
    fine technical rules, strong hierarchy, and color reserved for live state. */
 @media (min-width: 1251px) {
-:root {
-  color-scheme: dark;
-  --bg: #080c12;
-  --panel: rgba(13, 19, 28, 0.94);
-  --panel-2: #111a25;
-  --panel-raised: #152131;
-  --line: rgba(154, 178, 207, 0.15);
-  --line-strong: rgba(154, 190, 229, 0.25);
-  --text: #edf3f8;
-  --muted: #8998a9;
-  --mint: #6bd7c7;
-  --blue: #8bbcff;
-  --red: #ff7884;
-  --amber: #e9bd6d;
-  --ink: #08121d;
-  --surface-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  --motion-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  font-family: Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #eef2f6;
-  --panel: rgba(250, 252, 254, 0.96);
-  --panel-2: #f4f7fa;
-  --panel-raised: #eaf0f6;
-  --line: rgba(44, 66, 92, 0.14);
-  --line-strong: rgba(42, 92, 151, 0.24);
-  --text: #17283b;
-  --muted: #65778b;
-  --mint: #087c70;
-  --blue: #286bb5;
-  --red: #c94252;
-  --amber: #9a650c;
-  --ink: #f7faff;
-  --surface-shadow: 0 18px 48px rgba(34, 58, 86, 0.09);
-}
 
 html,
 body {
@@ -50,38 +13,6 @@ body {
     radial-gradient(ellipse at 18% 100%, rgba(33, 105, 111, 0.09), transparent 38%),
     var(--bg);
   color: var(--text);
-}
-
-body::before {
-  opacity: 0.18;
-  background-image:
-    linear-gradient(rgba(177, 201, 231, 0.038) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(177, 201, 231, 0.038) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(#000 0%, rgba(0, 0, 0, 0.5) 55%, transparent 100%);
-}
-
-body::after {
-  width: 48vw;
-  right: -24vw;
-  bottom: -34vw;
-  background: #3977b8;
-  opacity: 0.11;
-  filter: blur(150px);
-}
-
-:root[data-theme="light"] body {
-  background:
-    radial-gradient(ellipse at 72% -18%, rgba(117, 169, 222, 0.15), transparent 43%),
-    radial-gradient(ellipse at 15% 100%, rgba(62, 150, 148, 0.08), transparent 38%),
-    var(--bg);
-}
-
-:root[data-theme="light"] body::before {
-  opacity: 0.45;
-  background-image:
-    linear-gradient(rgba(60, 93, 129, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(60, 93, 129, 0.045) 1px, transparent 1px);
 }
 
 button:focus-visible,
@@ -687,19 +618,6 @@ button.compact:hover:not(:disabled),
   color: var(--muted);
 }
 
-.line .level-info {
-  color: var(--blue);
-}
-
-.line .level-warning {
-  color: var(--amber);
-}
-
-.line .level-error,
-.line .level-critical {
-  color: var(--red);
-}
-
 #stream-state,
 .line-count {
   color: var(--muted);
@@ -826,33 +744,6 @@ dialog::backdrop {
 .command-item.selected {
   background: color-mix(in srgb, var(--blue) 12%, var(--panel));
   color: var(--blue);
-}
-
-:root[data-theme="light"] .surface-card,
-:root[data-theme="light"] .resource-card,
-:root[data-theme="light"] .incident-card,
-:root[data-theme="light"] .modules-health,
-:root[data-theme="light"] .module-row {
-  background: linear-gradient(145deg, #fff, var(--panel-2));
-}
-
-:root[data-theme="light"] .log-frame {
-  background: #f8fafc;
-}
-
-:root[data-theme="light"] .line .message {
-  color: #263c54;
-}
-
-:root[data-theme="light"] button.primary,
-:root[data-theme="light"] button.primary:hover:not(:disabled) {
-  border-color: #286bb5;
-  background: linear-gradient(135deg, #347fc9, #2465a8);
-  color: #fff;
-}
-
-:root[data-theme="light"] dialog {
-  background: linear-gradient(145deg, #fff, #f0f4f8);
 }
 
 /* The public status and updater use the same visual language as the console. */

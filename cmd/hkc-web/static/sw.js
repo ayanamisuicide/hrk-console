@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v29-orbital-station";
+const CACHE = "hkc-shell-v31-hud-clean";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -8,6 +8,8 @@ const ASSETS = [
   "/motion.css",
   "/logs.css",
   "/motion.js",
+  "/hud.css",
+  "/hud.js",
   "/history-chart.js",
   "/app.js",
   "/icon.svg",

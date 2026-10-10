@@ -89,15 +89,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const width of [390, 1440])
-  for (const theme of ["dark", "light"]) {
+  for (const theme of ["dark"]) {
     test(`экраны и взаимодействия ${width}px ${theme}`, async ({
       page,
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
-      await page.addInitScript(
-        (selectedTheme) => localStorage.setItem("hkc-theme", selectedTheme),
-        theme,
-      );
       await page.goto("/");
       await expect(page.locator("#version")).toContainText("Панель v2.2.17");
       await expect(

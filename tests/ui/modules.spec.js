@@ -18,17 +18,13 @@ async function fixture(page) {
 }
 
 for (const width of [390, 1440])
-  for (const theme of ["dark", "light"]) {
+  for (const theme of ["dark"]) {
     test(`сетка модулей, страницы и плавное раскрытие ${width}px ${theme}`, async ({
       page,
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "no-preference" });
       await fixture(page);
-      await page.addInitScript(
-        (value) => localStorage.setItem("hkc-theme", value),
-        theme,
-      );
       const modules = Array.from({ length: 48 }, (_, index) => ({
         id: `module-${index}`,
         name:

@@ -1,7 +1,5 @@
 // Отдельная страница установки наблюдает за службой даже при перезапуске самой панели.
 const $ = (selector) => document.querySelector(selector);
-document.documentElement.dataset.theme =
-  localStorage.getItem("hkc-theme") || "dark";
 let token = sessionStorage.getItem("hkc-admin-token") || "";
 let overview;
 // Пока отдельная служба запускается, старый сохранённый результат не считаем новым заданием.

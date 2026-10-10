@@ -82,7 +82,7 @@ async function mockAdmin(page) {
 }
 
 for (const width of [390, 1440])
-  for (const theme of ["dark", "light"]) {
+  for (const theme of ["dark"]) {
     test(`компактные рабочие области админки ${width}px ${theme}`, async ({
       page,
     }, testInfo) => {
@@ -90,10 +90,6 @@ for (const width of [390, 1440])
       page.on("pageerror", (error) => errors.push(error.message));
       await mockAdmin(page);
       await page.setViewportSize({ width, height: 900 });
-      await page.addInitScript(
-        (value) => localStorage.setItem("hkc-theme", value),
-        theme,
-      );
       await page.goto("/admin/");
       await expect(page.locator("#admin-bot-status")).toHaveText(
         "Heroku работает",
@@ -225,7 +221,7 @@ test("история анимирует смену подробностей, н�
     await page
       .locator("#history-tab-audit")
       .evaluate((el) => getComputedStyle(el).borderRadius),
-  ).toBe("10px");
+  ).toBe("0px");
   await page.screenshot({
     path: testInfo.outputPath("audit-selected.png"),
     fullPage: true,

@@ -11,3 +11,6 @@ bin/
 
 # локальные настройки Claude Code, машинозависимые
 .claude/settings.local.json
+
+# настройки IDE
+.idea/

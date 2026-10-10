@@ -62,10 +62,6 @@ main {
   min-height: 0;
   overflow: auto;
 }
-.monitor-view {
-  padding: 26px;
-  scrollbar-color: rgba(97, 242, 202, 0.18) transparent;
-}
 .view-intro {
   display: flex;
   justify-content: space-between;
@@ -82,14 +78,6 @@ main {
 .muted {
   color: var(--muted);
   font-size: 11px;
-}
-.metric-primary {
-  border-color: rgba(97, 242, 202, 0.26);
-  background: linear-gradient(
-    140deg,
-    rgba(34, 83, 69, 0.46),
-    rgba(11, 28, 23, 0.75)
-  );
 }
 .surface-card {
   min-width: 0;
@@ -109,38 +97,6 @@ main {
   gap: 15px;
   margin-bottom: 17px;
 }
-.recent-events {
-  display: grid;
-}
-.recent-row {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--line);
-  font:
-    11px/1.5 "Cascadia Mono",
-    Consolas,
-    monospace;
-}
-.recent-row > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #b6c8bf;
-}
-.recent-level {
-  color: var(--mint);
-  font-size: 9px;
-}
-.recent-level.warning {
-  color: var(--amber);
-}
-.recent-level.error,
-.recent-level.critical {
-  color: var(--red);
-}
 .empty-state {
   padding: 32px 0;
   color: var(--muted);
@@ -158,18 +114,6 @@ main {
   color: var(--muted);
   font-size: 11px;
 }
-.service-details {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 11px;
-  padding: 18px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  font-size: 11px;
-}
-.service-details span {
-  color: var(--muted);
-}
 .service-card button {
   align-self: start;
   margin-top: auto;
@@ -177,48 +121,6 @@ main {
 .logs-view {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-}
-.logs-actions {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  padding: 13px 24px;
-  border-bottom: 1px solid var(--line);
-}
-.logs-actions .search-wrap {
-  flex: 1;
-}
-.logs-actions input {
-  width: 100%;
-}
-.chart-card {
-  margin-top: 12px;
-}
-.chart-card svg {
-  display: block;
-  width: 100%;
-  height: 260px;
-  overflow: visible;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 54px,
-    var(--line) 55px
-  );
-  border-bottom: 1px solid var(--line);
-}
-#memory-line {
-  fill: none;
-  stroke: var(--mint);
-  stroke-width: 3;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 6px rgba(97, 242, 202, 0.45));
-}
-#memory-area {
-  fill: rgba(97, 242, 202, 0.12);
-}
-#chart-empty {
-  padding: 12px 0;
 }
 .command-dialog {
   width: min(560px, calc(100vw - 28px));
@@ -252,36 +154,6 @@ main {
   background: rgba(97, 242, 202, 0.1);
   color: var(--mint);
 }
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #edf4f1;
-  --panel: rgba(255, 255, 255, 0.91);
-  --panel-2: #f4f8f6;
-  --line: rgba(17, 70, 55, 0.14);
-  --text: #153228;
-  --muted: #60776e;
-  --mint: #08795b;
-  --red: #bc3347;
-  --amber: #a46200;
-}
-:root[data-theme="light"] body {
-  background:
-    radial-gradient(circle at 55% -20%, #caeade, transparent 45%), var(--bg);
-}
-:root[data-theme="light"] .surface-card {
-  background: rgba(255, 255, 255, 0.72);
-}
-:root[data-theme="light"] .metric-primary {
-  background: #ddf2e8;
-}
-:root[data-theme="light"] .recent-row > span:last-child,
-:root[data-theme="light"] .line .message {
-  color: #2c473c;
-}
-:root[data-theme="light"] button.primary {
-  color: #fff;
-  background: #08795b;
-}
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 760px) {
   .side-nav {
@@ -299,13 +171,6 @@ main {
   }
   .theme-toggle {
     grid-column: 1/-1;
-  }
-  .logs-actions {
-    flex-wrap: wrap;
-    padding: 10px;
-  }
-  .logs-actions .search-wrap {
-    flex-basis: 100%;
   }
   .workspace-view {
     min-height: 60vh;

@@ -25,12 +25,7 @@ ctx.authDialog = ctx.$("#admin-auth");
 
 ctx.animateValue = window.motionValue;
 
-document.documentElement.dataset.theme =
-  localStorage.getItem("hkc-theme") || "dark";
-
-ctx.bindAdminTheme();
-
-// Токен хранится в рамках вкладки; тема и выбранный раздел — в localStorage.
+// Токен хранится в рамках вкладки; выбранный раздел — в localStorage.
 ctx.adminToken = sessionStorage.getItem("hkc-admin-token") || "";
 
 ctx.refreshTimer = undefined;

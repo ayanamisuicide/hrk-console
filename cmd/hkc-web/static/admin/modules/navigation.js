@@ -120,15 +120,6 @@ export function createNavigation(ctx) {
     window.motionNotice(ctx.$("#admin-notice"), message, kind);
   }
 
-  function bindAdminTheme() {
-    ctx.$("#admin-theme").addEventListener("click", () => {
-      const theme =
-        document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-      window.motionTheme?.();
-      document.documentElement.dataset.theme = theme;
-      localStorage.setItem("hkc-theme", theme);
-    });
-  }
   return {
     setAdminView,
     setHistoryTab,
@@ -136,6 +127,5 @@ export function createNavigation(ctx) {
     confirmAction,
     formatDate,
     showNotice,
-    bindAdminTheme,
   };
 }

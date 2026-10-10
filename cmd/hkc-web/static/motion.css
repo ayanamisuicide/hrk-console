@@ -13,35 +13,6 @@
 html {
   scroll-behavior: smooth;
 }
-.shell-arrival {
-  position: fixed;
-  z-index: 50;
-  pointer-events: none;
-  top: 0;
-  left: 0;
-  width: 35vw;
-  height: 2px;
-  border-radius: 50%;
-  background: linear-gradient(90deg, transparent, var(--mint), transparent);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--mint) 50%, transparent);
-  animation: shell-arrive 1500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes shell-arrive {
-  0% {
-    opacity: 0;
-    transform: translateX(-35vw) scaleX(0.2);
-  }
-  25% {
-    opacity: 1;
-  }
-  75% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(100vw) scaleX(1.6);
-  }
-}
 .sidebar .nav-item {
   animation: shell-nav-enter 700ms var(--motion-enter-ease) both;
 }
@@ -65,9 +36,6 @@ html {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .shell-arrival {
-    display: none;
-  }
   .sidebar .nav-item {
     animation: none;
   }
@@ -112,35 +80,8 @@ input[type="checkbox"],
   transition-duration: var(--motion-fast);
   transition-timing-function: ease;
 }
-html.theme-transition body,
-html.theme-transition .sidebar,
-html.theme-transition main,
-html.theme-transition .status-card,
-html.theme-transition .metric-card,
-html.theme-transition .surface-card,
-html.theme-transition .admin-section,
-html.theme-transition .bot-deck,
-html.theme-transition .summary article,
-html.theme-transition .invite-card,
-html.theme-transition button,
-html.theme-transition input,
-html.theme-transition select {
-  transition-duration: 640ms;
-  transition-timing-function: var(--motion-ease);
-}
 
-.status-card,
-.metric-card,
-.surface-card,
-.summary article,
-.bot-deck,
-.admin-section,
-.invite-card,
-.token-row,
-.backup-row,
-.audit-group,
-.updates-grid article,
-.update-versions article {
+.status-card,.metric-card,.surface-card,.summary article,.bot-deck,.admin-section,.invite-card,.backup-row,.audit-group,.updates-grid article,.update-versions article{
   transition:
     transform 620ms var(--motion-spring),
     border-color 540ms var(--motion-ease),
@@ -153,7 +94,7 @@ html.theme-transition select {
 .surface-card:hover {
   border-color: color-mix(in srgb, var(--mint) 32%, var(--line));
 }
-.token-row:hover,
+
 .backup-row:hover {
   transform: translateX(4px);
 }
@@ -259,15 +200,6 @@ button.is-rippling::after {
 }
 .summary article:nth-child(3) {
   --reveal-delay: 180ms;
-}
-.dashboard-grid .metric-card:nth-child(2) {
-  --reveal-delay: 70ms;
-}
-.dashboard-grid .metric-card:nth-child(3) {
-  --reveal-delay: 140ms;
-}
-.dashboard-grid .metric-card:nth-child(4) {
-  --reveal-delay: 210ms;
 }
 [data-reveal="waiting"] {
   opacity: 0;

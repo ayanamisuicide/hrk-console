@@ -50,15 +50,6 @@ export function createNavigation(ctx) {
     localStorage.setItem("hkc-journal-nav-open", String(open));
   }
 
-  // Применяет тему и сохраняет её; переход анимируется только по явному запросу.
-  function setTheme(theme, animate = false) {
-    if (animate) window.motionTheme?.();
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("hkc-theme", theme);
-    ctx.$("#theme-toggle span").textContent =
-      theme === "light" ? "Тёмная тема" : "Светлая тема";
-  }
-
   // Показывает сообщение через общий помощник анимации и автоматического скрытия.
   function showNotice(message, kind = "ok") {
     window.motionNotice(ctx.notice, message, kind);
@@ -115,18 +106,6 @@ export function createNavigation(ctx) {
       .addEventListener("click", () =>
         ctx.setJournalNavOpen(
           !ctx.$("#journal-nav").classList.contains("open"),
-        ),
-      );
-  }
-
-  // Переключает светлую и тёмную темы с разрешённой анимацией.
-  function bindThemeToggle() {
-    ctx
-      .$("#theme-toggle")
-      .addEventListener("click", () =>
-        ctx.setTheme(
-          document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-          true,
         ),
       );
   }
@@ -211,13 +190,11 @@ export function createNavigation(ctx) {
   return {
     setView,
     setJournalNavOpen,
-    setTheme,
     showNotice,
     renderCommands,
     openCommands,
     bindViewLinks,
     bindJournalNavToggle,
-    bindThemeToggle,
     bindSearch,
     bindCommandOpen,
     bindCommandQuery,

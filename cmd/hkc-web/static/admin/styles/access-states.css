@@ -1,10 +1,4 @@
-/* Форма административного входа и состояния доступа.
- * Положение файла в списке импортов определяет приоритет этих правил. */
-.admin-subtitle {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 11px;
-}
+
 .summary article {
   position: relative;
   overflow: hidden;
@@ -96,16 +90,6 @@
   color: var(--mint);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
-}
-:root[data-theme="light"] .admin-header,
-:root[data-theme="light"] .admin-section {
-  background: rgba(255, 255, 255, 0.88);
-}
-:root[data-theme="light"] .bot-deck {
-  background: #e4f4ec;
-}
-:root[data-theme="light"] .invite-card {
-  background: #f7fbf9;
 }
 /* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
 @media (max-width: 720px) {

@@ -1,14 +1,4 @@
-/* Панель фильтров, поиска и дополнительных настроек журнала.
- * Положение файла в списке импортов определяет приоритет этих правил. */
-.log-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.01);
-}
+
 .level-filters {
   display: flex;
   gap: 6px;
