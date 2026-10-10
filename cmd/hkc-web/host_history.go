@@ -222,6 +222,7 @@ func (s *server) collectHostHistory(ctx context.Context) {
 		if !status.Supported {
 			return
 		}
+		s.observeHostAlerts(time.Now(), status)
 		_ = s.hostHistory.add(hostPoint{At: time.Now(), CPU: status.CPUPercent,
 			Memory: hostPercent(status.MemoryUsed, status.MemoryTotal),
 			Disk:   hostPercent(status.DiskUsed, status.DiskTotal), PID: s.bot.PID()})

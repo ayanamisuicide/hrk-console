@@ -38,11 +38,18 @@ export function createModules(ctx) {
     row.innerHTML =
       '<summary><span class="module-symbol" aria-hidden="true"></span><span class="module-identity"><strong></strong><small></small></span><span class="module-state"><i class="module-dot"></i><span></span></span><span class="module-chevron" aria-hidden="true">+</span></summary><div class="module-detail"><p class="module-explanation"></p><pre class="module-error" hidden></pre><button class="compact module-log" type="button">Открыть журнал ↗</button></div>';
     row.querySelector(".module-log").addEventListener("click", () => {
-      // Поиск по имени не предполагает совпадения имени модуля и logger.name.
-      ctx.filterInput.value = row.querySelector(
-        ".module-identity strong",
-      ).textContent;
-      ctx.$("#module-filter").value = "";
+      const name = row.querySelector(".module-identity strong").textContent;
+      // Если в журнале есть логгер с именем модуля, фильтруем по нему точно;
+      // иначе ищем имя в тексте: имя модуля не обязано совпадать с logger.name.
+      const wanted = name.toLowerCase();
+      const logger = [...ctx.$("#module-filter").options]
+        .map((option) => option.value)
+        .find((value) => {
+          const lower = value.toLowerCase();
+          return value && (lower === wanted || lower.endsWith(`.${wanted}`));
+        });
+      ctx.filterInput.value = logger ? "" : name;
+      ctx.$("#module-filter").value = logger || "";
       ctx.$("#time-from").value = "";
       ctx.$("#time-to").value = "";
       ctx.activeLevel = "ALL";
@@ -55,6 +62,18 @@ export function createModules(ctx) {
         );
       ctx.setView("logs");
       ctx.renderLines();
+      // У модуля с ошибкой сразу показываем последнюю ошибку; уровень не фильтруем,
+      // чтобы строки traceback без уровня остались рядом с ней.
+      if (row.dataset.state !== "error") return;
+      const errors = ctx.logEl.querySelectorAll(
+        '.line[data-level="ERROR"], .line[data-level="CRITICAL"]',
+      );
+      const last = errors[errors.length - 1];
+      if (!last) return;
+      ctx.autoscroll.checked = false;
+      last.scrollIntoView({ block: "center" });
+      last.classList.add("focused");
+      setTimeout(() => last.classList.remove("focused"), 2400);
     });
     window.motionDisclosure(row, row.querySelector(".module-detail"));
     return row;
@@ -128,6 +147,12 @@ export function createModules(ctx) {
         const error = row.querySelector(".module-error");
         setText(error, item.error || "");
         error.hidden = !item.error;
+        setText(
+          row.querySelector(".module-log"),
+          item.state === "error"
+            ? "Найти ошибку в журнале ↗"
+            : "Открыть журнал ↗",
+        );
         if (
           previous &&
           previous !== item.state &&

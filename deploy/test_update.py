@@ -54,6 +54,13 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(data=data[:8]), self.assertRaises(RuntimeError):
                 self.verify(data)
 
+    # Проверяет выбор архива по архитектуре машины.
+    def test_release_arch(self):
+        self.assertEqual(update.release_arch("x86_64"), "amd64")
+        self.assertEqual(update.release_arch("aarch64"), "arm64")
+        with self.assertRaises(RuntimeError):
+            update.release_arch("armv7l")
+
     # Проверяет отказ несовпадающей контрольной суммы.
     def test_reject_tampered_archive(self):
         with self.assertRaises(RuntimeError):

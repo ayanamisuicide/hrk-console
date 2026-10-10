@@ -16,6 +16,9 @@ export function createAudit(ctx) {
     "config.restore": "Восстановление настроек",
     "config.delete": "Удаление настройки",
     "watchdog.update": "Настройка восстановления",
+    "watchdog.resume": "Возобновление наблюдения",
+    "alerts.update": "Настройка уведомлений",
+    "alerts.test": "Проверка уведомлений",
     "backup.create": "Создание копии",
     "backup.restore": "Восстановление доступа",
     "diagnostic.startup-log": "Проверка лога запуска",
@@ -148,7 +151,7 @@ export function createAudit(ctx) {
       icon.className = "audit-icon";
       icon.setAttribute("aria-hidden", "true");
       icon.textContent =
-        { bot: "↻", auth: "↗", config: "⚙", watchdog: "◉", backup: "◇" }[
+        { bot: "↻", auth: "↗", config: "⚙", watchdog: "◉", alerts: "◎", backup: "◇" }[
           category(event)
         ] || "•";
       const main = document.createElement("span");

@@ -106,6 +106,15 @@
                     step="1"
                     value="180"
                     required /></label
+                ><label
+                  >Попыток подряд<input
+                    id="watchdog-max-attempts"
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    value="5"
+                    required /></label
                 ><button class="primary" type="submit">Сохранить</button>
               </form>
               <div class="watchdog-live">
@@ -119,13 +128,110 @@
                 </div>
                 <p id="watchdog-message">Получаем состояние наблюдения…</p>
               </div>
+              <div class="watchdog-suspended" id="watchdog-suspended" hidden>
+                <p>
+                  Бот падает сразу после перезапуска. Чтобы не крутить петлю,
+                  наблюдение остановилось. Разберитесь с причиной в журнале и
+                  возобновите.
+                </p>
+                <button id="watchdog-resume" class="primary" type="button">
+                  Возобновить
+                </button>
+              </div>
               <p id="watchdog-last-result" class="watchdog-result">
                 Восстановление пока не требовалось.
               </p>
               <p class="watchdog-note">
                 Ручная остановка тоже временная. Для длительной остановки
                 выключите автовосстановление. Неудачные попытки повторяются с
-                выбранным интервалом.
+                выбранным интервалом. Если после заданного числа перезапусков
+                бот так и не проработал 5 минут подряд, наблюдение
+                приостанавливается.
+              </p>
+            </section>
+            <section class="card admin-section alerts-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">Оповещения</span>
+                  <h2>Уведомления</h2>
+                </div>
+                <div class="alert-channels" id="alert-channels">
+                  <span class="alert-channel" data-channel="telegram"
+                    >Telegram</span
+                  ><span class="alert-channel" data-channel="webhook"
+                    >Webhook</span
+                  >
+                </div>
+              </div>
+              <p class="watchdog-intro" id="alerts-hint">
+                Получаем состояние каналов…
+              </p>
+              <form id="alerts-form" class="alerts-form">
+                <fieldset class="alert-events">
+                  <legend>События</legend>
+                  <label class="watchdog-switch"
+                    ><input id="alert-bot-state" type="checkbox" /><span
+                      ><strong>Запуск и остановка</strong
+                      ><small>Процесс Heroku появился или пропал</small></span
+                    ></label
+                  ><label class="watchdog-switch"
+                    ><input id="alert-watchdog" type="checkbox" /><span
+                      ><strong>Автовосстановление</strong
+                      ><small>Перезапуски, неудачи и приостановка</small></span
+                    ></label
+                  ><label class="watchdog-switch"
+                    ><input id="alert-modules" type="checkbox" /><span
+                      ><strong>Ошибки модулей</strong
+                      ><small>Модуль не загрузился в текущем запуске</small></span
+                    ></label
+                  >
+                </fieldset>
+                <fieldset class="alert-thresholds">
+                  <legend>Пороги ресурсов</legend>
+                  <label
+                    >CPU, %<input
+                      id="alert-cpu"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      required /></label
+                  ><label
+                    >Память, %<input
+                      id="alert-memory"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      required /></label
+                  ><label
+                    >Диск, %<input
+                      id="alert-disk"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      required /></label
+                  ><label
+                    >Держится, секунд<input
+                      id="alert-sustain"
+                      type="number"
+                      min="30"
+                      max="3600"
+                      step="1"
+                      required
+                  /></label>
+                </fieldset>
+                <div class="alerts-actions">
+                  <button id="alert-test" type="button">
+                    Отправить проверку</button
+                  ><button class="primary" type="submit">Сохранить</button>
+                </div>
+              </form>
+              <p class="watchdog-note">
+                0 выключает порог. Сообщение о норме приходит, когда значение
+                опускается на 5% ниже порога. Токен бота и адрес webhook
+                задаются в окружении службы и в браузер не передаются.
               </p>
             </section>
           </section>

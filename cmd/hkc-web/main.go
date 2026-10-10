@@ -31,6 +31,9 @@ type server struct {
 	metrics      *metricStore
 	hostHistory  *hostHistoryStore
 	notifier     *stateNotifier
+	alerts       *alertDispatcher
+	hostAlerts   hostAlertMonitor
+	moduleAlerts moduleAlertMonitor
 	configMu     sync.Mutex
 	systemMu     sync.RWMutex
 	latestSystem systemStatus
@@ -112,22 +115,25 @@ func main() {
 		log.Print("задайте HKC_ADMIN_TOKEN в окружении для постоянного административного доступа")
 	}
 
-	notifier := configuredWebhook()
-	if notifier != nil {
-		notifier.observe(botproc.New(herokuDir).PID() != 0)
-	}
 	s := &server{bot: botproc.New(herokuDir), auth: auth, sessions: newSessionStore(), adminToken: adminToken,
 		authLimiter: newAuthRateLimiter(20, 5*time.Minute),
-		audit:       newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore(), notifier: notifier}
+		audit:       newAuditStore(filepath.Join(filepath.Dir(authFile), "audit.jsonl")), metrics: newMetricStore()}
 	s.operations, err = openOperationStore(filepath.Join(filepath.Dir(authFile), "operations.json"))
 	if err != nil {
 		log.Fatal(err)
+	}
+	s.alerts = newAlertDispatcher(os.Getenv, s.operations.alertSettings)
+	s.notifier = newStateNotifier(s.alerts)
+	s.notifier.observe(s.bot.PID() != 0)
+	if channels := s.alerts.channels(); s.alerts.active() {
+		log.Printf("уведомления: telegram=%t webhook=%t", channels["telegram"], channels["webhook"])
 	}
 	s.hostHistory = newHostHistoryStore(filepath.Join(filepath.Dir(authFile), "host-history.jsonl"))
 	// Циклы живут до остановки процесса. Их методы поддерживают отмену
 	// контекстом, но здесь общий жизненный цикл задаёт сама служба systemd.
 	go s.collectHostHistory(context.Background())
-	go watchBotState(context.Background(), notifier, s.bot)
+	go watchBotState(context.Background(), s.notifier, s.bot)
+	go s.runModuleAlerts(context.Background())
 	go s.runWatchdog(context.Background())
 	s.updates = &updateChecker{}
 	s.updates.check()

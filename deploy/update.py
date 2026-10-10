@@ -19,6 +19,16 @@ from datetime import datetime, timezone
 REPOSITORY = "https://github.com/ayanamisuicide/hrk-console"
 TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 MAX_ARCHIVE = 64 * 1024 * 1024
+# Имена машин из uname и соответствующие архитектуры релизных архивов.
+ARCHITECTURES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
+
+
+# Возвращает архитектуру релиза для текущей машины или объясняет, что сборки для неё нет.
+def release_arch(machine=None):
+    machine = machine or os.uname().machine
+    if machine not in ARCHITECTURES:
+        raise RuntimeError(f"нет сборки для архитектуры {machine}; поддерживаются Linux amd64 и arm64")
+    return ARCHITECTURES[machine]
 
 
 # Запускает команду с таймаутом без интерактивного Git; при ошибке возвращает ограниченное пояснение.
@@ -161,8 +171,7 @@ def install():
         old_commit = ""
         try:
             save_status(state, "checking", "Запуск установки: проверяем окружение.", progress=3, reset=True)
-            if os.uname().machine != "x86_64":
-                raise RuntimeError("пока доступны только сборки Linux amd64")
+            arch = release_arch()
             if executable.is_symlink():
                 raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
             copies = [source] + ([local] if local and local != source else [])
@@ -192,7 +201,7 @@ def install():
                 return
 
             save_status(state, "downloading", "Загружаем архив релиза и контрольную сумму.", progress=32, version=tag)
-            name = f"hkc-web-{tag}-linux-amd64.tar.gz"
+            name = f"hkc-web-{tag}-linux-{arch}.tar.gz"
             base = f"{REPOSITORY}/releases/download/{tag}/"
             binary = verify_archive(download(base + name, MAX_ARCHIVE),
                                     download(base + name + ".sha256", 1024), name)

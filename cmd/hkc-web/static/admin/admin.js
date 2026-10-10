@@ -69,6 +69,8 @@ ctx.bindCreateBackup();
 
 ctx.bindWatchdogForm();
 
+ctx.bindAlertsForm();
+
 ctx.bindConfigPreview();
 
 ctx.bindConfigForm();

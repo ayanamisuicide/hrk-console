@@ -43,6 +43,7 @@ export function createAuth(ctx) {
         configHistory,
         security,
         watchdog,
+        alerts,
         config,
       ] = await Promise.all([
         ctx.adminRequest("/api/admin/overview"),
@@ -51,6 +52,8 @@ export function createAuth(ctx) {
         ctx.adminRequest("/api/admin/config/history"),
         ctx.adminRequest("/api/admin/security"),
         ctx.adminRequest("/api/admin/watchdog"),
+        // Уведомления необязательны: ошибка этого запроса не должна ломать остальную админку.
+        ctx.adminRequest("/api/admin/alerts").catch(() => null),
         ctx.adminRequest("/api/admin/config"),
       ]);
       ctx.animateValue(ctx.$("#users-count"), data.users.length);
@@ -67,6 +70,7 @@ export function createAuth(ctx) {
       ctx.renderConfigHistory(configHistory.history || []);
       ctx.renderSecurity(security);
       ctx.renderWatchdog(watchdog);
+      ctx.renderAlerts(alerts);
       ctx.renderConfig(config);
       await ctx.refreshUpdates();
     } catch (error) {

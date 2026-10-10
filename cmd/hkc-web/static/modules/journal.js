@@ -21,9 +21,10 @@ export function createJournal(ctx) {
   }
 
   // Проверяет модуль и локальные границы времени; строки без даты не проходят временной фильтр.
-  function matchesAdvanced(raw) {
+  // owner — модуль последней строки с префиксом: продолжения (traceback) принадлежат ему.
+  function matchesAdvanced(raw, owner = "") {
     const module = ctx.$("#module-filter").value;
-    if (module && ctx.lineModule(raw) !== module) return false;
+    if (module && (ctx.lineModule(raw) || owner) !== module) return false;
     const match = raw.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
     const from = ctx.$("#time-from").value;
     const to = ctx.$("#time-to").value;
@@ -76,10 +77,11 @@ export function createJournal(ctx) {
   // Применяет все фильтры к истории и заменяет видимую ленту одним фрагментом DOM.
   function renderLines() {
     const query = ctx.filterInput.value.trim().toLowerCase();
+    let owner = "";
     const visible = ctx.allLines.filter(
       (line) =>
-        ctx.matchesLevel(line) &&
-        ctx.matchesAdvanced(line) &&
+        ((owner = ctx.lineModule(line) || owner), ctx.matchesLevel(line)) &&
+        ctx.matchesAdvanced(line, owner) &&
         (!query || line.toLowerCase().includes(query)) &&
         (!ctx.bookmarksOnly || ctx.bookmarks.has(ctx.lineKey(line))),
     );
@@ -213,9 +215,13 @@ export function createJournal(ctx) {
       return;
     }
     if (trimmed && ctx.logEl.firstChild) ctx.logEl.firstChild.remove();
+    // Владелец продолжения — ближайшая предыдущая строка с префиксом модуля.
+    let owner = ctx.lineModule(raw);
+    for (let i = ctx.allLines.length - 2; !owner && i >= Math.max(0, ctx.allLines.length - 200); i--)
+      owner = ctx.lineModule(ctx.allLines[i]);
     if (
       !ctx.matchesLevel(raw) ||
-      !ctx.matchesAdvanced(raw) ||
+      !ctx.matchesAdvanced(raw, owner) ||
       (query && !raw.toLowerCase().includes(query)) ||
       (ctx.bookmarksOnly && !ctx.bookmarks.has(ctx.lineKey(raw)))
     ) {

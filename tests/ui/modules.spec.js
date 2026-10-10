@@ -378,3 +378,44 @@ test("потеря связи и новый запуск не оставляют
       .evaluate((el) => getComputedStyle(el).animationName),
   ).toBe("none");
 });
+
+test("модуль с ошибкой открывает журнал на своём логгере и последней ошибке", async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/events") return route.abort();
+    const data =
+      path === "/api/auth/me"
+        ? { username: "tester", role: "viewer" }
+        : path === "/api/status"
+          ? { running: true, pid: 42, uptime: "1ч" }
+          : path === "/api/logs"
+            ? {
+                lines: [
+                  "2026-10-10 10:00:00 [INFO] heroku.modules.weather: loading",
+                  "2026-10-10 10:00:01 [ERROR] heroku.modules.weather: init failed",
+                  "Traceback (most recent call last):",
+                  "2026-10-10 10:00:02 [INFO] heroku.core: ready",
+                ],
+              }
+            : path === "/api/modules"
+              ? { status: "live", session: "s", modules: [
+                  { id: "w", name: "Weather", kind: "external", state: "error", error: "ValueError: bad" },
+                  { id: "n", name: "Notes", kind: "external", state: "ready", error: "" },
+                ] }
+              : {};
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
+  });
+  await page.goto("/");
+  await page.locator('[data-view="modules"]').click();
+  const row = page.locator('[data-id="w"]');
+  await row.locator("summary").click();
+  await expect(row.locator(".module-log")).toHaveText("Найти ошибку в журнале ↗");
+  await row.locator(".module-log").click();
+  await expect(page.locator("#logs-view")).toBeVisible();
+  await expect(page.locator("#module-filter")).toHaveValue("heroku.modules.weather");
+  await expect(page.locator("#filter")).toHaveValue("");
+  await expect(page.locator("#log .line")).toHaveCount(3);
+  await expect(page.locator("#log .line.continuation")).toHaveText("Traceback (most recent call last):");
+  await expect(page.locator('#log .line[data-level="ERROR"]')).toHaveClass(/focused/);
+  await expect(page.locator('[data-id="n"] .module-log')).toHaveText("Открыть журнал ↗");
+});

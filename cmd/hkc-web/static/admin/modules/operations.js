@@ -50,12 +50,15 @@ export function createOperations(ctx) {
     if (!formDirty) {
       ctx.$("#watchdog-enabled").checked = Boolean(settings.enabled);
       ctx.$("#watchdog-timeout").value = settings.timeoutSeconds || 180;
+      ctx.$("#watchdog-max-attempts").value = settings.maxAttempts || 5;
     }
+    ctx.$("#watchdog-suspended").hidden = status.state !== "suspended";
     const labels = {
       healthy: "Под защитой",
       waiting: "Ожидание ответа",
       recovering: "Перезапуск",
       failed: "Повторная попытка",
+      suspended: "Приостановлено",
       disabled: "Выключено",
       unsupported: "Нужен Linux / WSL",
       starting: "Подключаемся",
@@ -90,6 +93,7 @@ export function createOperations(ctx) {
           body: JSON.stringify({
             enabled: ctx.$("#watchdog-enabled").checked,
             timeoutSeconds: Number(ctx.$("#watchdog-timeout").value),
+            maxAttempts: Number(ctx.$("#watchdog-max-attempts").value),
           }),
         });
         formDirty = false;
@@ -99,6 +103,103 @@ export function createOperations(ctx) {
         ctx.showNotice(error.message, "error");
       } finally {
         button.disabled = false;
+      }
+    });
+    const resume = ctx.$("#watchdog-resume");
+    resume.addEventListener("click", async () => {
+      resume.disabled = true;
+      try {
+        renderWatchdog(
+          await ctx.adminRequest("/api/admin/watchdog/resume", {
+            method: "POST",
+          }),
+        );
+        ctx.showNotice("Наблюдение возобновлено");
+      } catch (error) {
+        ctx.showNotice(error.message, "error");
+      } finally {
+        resume.disabled = false;
+      }
+    });
+  }
+
+  let alertsDirty = false;
+  let testBusy = false;
+  const alertFields = {
+    botState: ["#alert-bot-state", "checked"],
+    watchdog: ["#alert-watchdog", "checked"],
+    modules: ["#alert-modules", "checked"],
+    cpuPercent: ["#alert-cpu", "value"],
+    memoryPercent: ["#alert-memory", "value"],
+    diskPercent: ["#alert-disk", "value"],
+    sustainSeconds: ["#alert-sustain", "value"],
+  };
+
+  // Старые серверы не знают о /api/admin/alerts: пустой ответ оставляет форму нетронутой.
+  function renderAlerts(data) {
+    const channels = data?.channels || {};
+    document.querySelectorAll("[data-channel]").forEach((chip) => {
+      chip.dataset.active = String(Boolean(channels[chip.dataset.channel]));
+    });
+    const active = Object.values(channels).some(Boolean);
+    ctx.$("#alerts-hint").textContent = active
+      ? "Сообщения уходят в подключённые каналы, даже когда браузер закрыт. Не больше 20 сообщений за 10 минут."
+      : "Каналы не подключены. Создайте бота у @BotFather и задайте HKC_TELEGRAM_BOT_TOKEN и HKC_TELEGRAM_CHAT_ID (или HKC_WEBHOOK_URL) в окружении службы, затем перезапустите панель.";
+    ctx.$("#alert-test").disabled = !active || testBusy;
+    if (alertsDirty || !data?.settings) return;
+    for (const [key, [selector, property]] of Object.entries(alertFields)) {
+      ctx.$(selector)[property] = data.settings[key];
+    }
+  }
+
+  function bindAlertsForm() {
+    const form = ctx.$("#alerts-form");
+    form.addEventListener("input", () => {
+      alertsDirty = true;
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector('[type="submit"]');
+      button.disabled = true;
+      const settings = {};
+      for (const [key, [selector, property]] of Object.entries(alertFields)) {
+        const value = ctx.$(selector)[property];
+        settings[key] = property === "value" ? Number(value) : value;
+      }
+      try {
+        const data = await ctx.adminRequest("/api/admin/alerts", {
+          method: "PUT",
+          body: JSON.stringify(settings),
+        });
+        alertsDirty = false;
+        renderAlerts(data);
+        ctx.showNotice("Настройки уведомлений сохранены");
+      } catch (error) {
+        ctx.showNotice(error.message, "error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    const test = ctx.$("#alert-test");
+    test.addEventListener("click", async () => {
+      testBusy = true;
+      test.disabled = true;
+      try {
+        const result = await ctx.adminRequest("/api/admin/alerts/test", {
+          method: "POST",
+        });
+        const failed = (result.results || []).filter((item) => !item.ok);
+        ctx.showNotice(
+          failed.length
+            ? `${result.message} ${failed.map((item) => `${item.channel}: ${item.error}`).join("; ")}`
+            : result.message,
+          failed.length ? "error" : undefined,
+        );
+      } catch (error) {
+        ctx.showNotice(error.message, "error");
+      } finally {
+        testBusy = false;
+        test.disabled = false;
       }
     });
   }
@@ -127,6 +228,8 @@ export function createOperations(ctx) {
     renderSecurity,
     renderWatchdog,
     bindWatchdogForm,
+    renderAlerts,
+    bindAlertsForm,
     bindBotActions,
   };
 }

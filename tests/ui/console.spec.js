@@ -271,7 +271,7 @@ test("админка настраивает автоматическое вос�
   await page.locator("#watchdog-enabled").uncheck();
   await page.locator('#watchdog-form button[type="submit"]').click();
   await expect(page.locator("#watchdog-state")).toHaveText("Выключено");
-  expect(settings).toEqual({ enabled: false, timeoutSeconds: 240 });
+  expect(settings).toEqual({ enabled: false, timeoutSeconds: 240, maxAttempts: 5 });
   expect(oldRequests).toEqual([]);
 });
 
@@ -396,4 +396,57 @@ test("группа журнала раскрывается, сохраняетс
     "aria-expanded",
     "true",
   );
+});
+
+test("админка показывает приостановку и настраивает уведомления", async ({ page }, testInfo) => {
+  let alerts = { botState: true, watchdog: true, modules: true, cpuPercent: 90, memoryPercent: 90, diskPercent: 90, sustainSeconds: 300 };
+  let resumed = false;
+  let tested = false;
+  await page.addInitScript(() => {
+    sessionStorage.setItem("hkc-admin-token", "test-token");
+    localStorage.setItem("hkc-admin-view", "operations");
+  });
+  await page.route("**/api/admin/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let body = {};
+    if (path === "/api/admin/overview") body = { users: [], invites: [], bot: { running: false } };
+    if (path === "/api/admin/security") body = { rateLimiter: {}, features: {} };
+    if (path === "/api/admin/watchdog/resume") resumed = true;
+    if (path.startsWith("/api/admin/watchdog"))
+      body = {
+        settings: { enabled: true, timeoutSeconds: 60, maxAttempts: 3 },
+        status: resumed
+          ? { state: "waiting", remainingSeconds: 60, attempts: 3, streak: 0, message: "Ожидаем." }
+          : { state: "suspended", attempts: 3, streak: 3, message: "Бот не заработал после 3 перезапусков подряд." },
+      };
+    if (path === "/api/admin/alerts") {
+      if (request.method() === "PUT") alerts = request.postDataJSON();
+      body = { channels: { telegram: true, webhook: false }, settings: alerts };
+    }
+    if (path === "/api/admin/alerts/test") {
+      tested = true;
+      body = { ok: true, message: "Пробное уведомление доставлено.", results: [{ channel: "telegram", ok: true }] };
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/admin/");
+  await expect(page.locator("#watchdog-state")).toHaveText("Приостановлено");
+  await expect(page.locator("#watchdog-max-attempts")).toHaveValue("3");
+  await page.screenshot({ path: testInfo.outputPath("alerts-desktop.png"), fullPage: true });
+  await page.locator("#watchdog-resume").click();
+  await expect(page.locator("#watchdog-suspended")).toBeHidden();
+  await expect(page.locator('[data-channel="telegram"]')).toHaveAttribute("data-active", "true");
+  await expect(page.locator('[data-channel="webhook"]')).toHaveAttribute("data-active", "false");
+  await expect(page.locator("#alert-disk")).toHaveValue("90");
+  await page.locator("#alert-disk").fill("85");
+  await page.locator("#alert-modules").uncheck();
+  await page.locator('#alerts-form button[type="submit"]').click();
+  await expect.poll(() => alerts.diskPercent).toBe(85);
+  expect(alerts).toEqual({ botState: true, watchdog: true, modules: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 85, sustainSeconds: 300 });
+  await page.locator("#alert-test").click();
+  await expect.poll(() => tested).toBe(true);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath("alerts-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
 });

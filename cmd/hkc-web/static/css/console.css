@@ -660,6 +660,12 @@ button[aria-pressed="true"]:not(.segmented button):not(.modules-counters button)
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.line.focused {
+  outline: 2px solid var(--bad);
+  outline-offset: -2px;
+  background: var(--bad-soft);
+  transition: background 400ms var(--ease);
+}
 .line.live {
   animation: line-in 600ms var(--ease);
 }

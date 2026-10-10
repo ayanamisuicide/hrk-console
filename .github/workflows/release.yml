@@ -30,11 +30,15 @@ jobs:
         env:
           CGO_ENABLED: '0'
           GOOS: linux
-          GOARCH: amd64
         run: |
-          make build
-          tar -czf "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" -C bin hkc-web
-          sha256sum "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz" > "hkc-web-${GITHUB_REF_NAME}-linux-amd64.tar.gz.sha256"
+          # Один архив на архитектуру; установщик и Центр обновления выбирают его по uname.
+          for arch in amd64 arm64; do
+            GOARCH="$arch" make build
+            name="hkc-web-${GITHUB_REF_NAME}-linux-${arch}.tar.gz"
+            tar -czf "$name" -C bin hkc-web
+            sha256sum "$name" > "$name.sha256"
+          done
+          cp deploy/install.sh install.sh
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -42,17 +46,13 @@ jobs:
           # Автоматические заголовки GitHub бывают английскими; используем русский текст ниже.
           generate_release_notes: false
           body: |
-            Релиз веб-панели hrk-console v2.3.0.
+            Релиз веб-панели hrk-console ${{ github.ref_name }}.
 
-            ### Что изменилось
-
-            - Десктопный интерфейс получил атмосферу орбитальной станции: холодную палитру, HUD-метки и технические рамки.
-            - Админка и Центр обновления используют общую визуальную систему.
-            - Мобильное оформление не менялось; обновлён ключ кеша PWA.
-
-            - История изменений: [CHANGELOG.md](https://github.com/ayanamisuicide/hrk-console/blob/main/CHANGELOG.md).
-            - В архив входят Linux amd64-сборка hkc-web и контрольная сумма SHA-256.
+            - Что изменилось: [CHANGELOG.md](https://github.com/ayanamisuicide/hrk-console/blob/main/CHANGELOG.md).
+            - Архивы содержат сборки hkc-web для Linux amd64 и arm64, рядом лежат контрольные суммы SHA-256.
+            - Установка одной командой: `curl -fsSL https://github.com/ayanamisuicide/hrk-console/releases/latest/download/install.sh | sudo bash`
 
           files: |
-            hkc-web-*-linux-amd64.tar.gz
-            hkc-web-*-linux-amd64.tar.gz.sha256
+            hkc-web-*-linux-*.tar.gz
+            hkc-web-*-linux-*.tar.gz.sha256
+            install.sh

@@ -74,7 +74,7 @@ func TestWatchdogSettingsPersistAndLegacyFieldsIgnored(t *testing.T) {
 	if got := store.watchdogSettings(); !got.Enabled || got.TimeoutSeconds != 180 {
 		t.Fatalf("defaults: %+v", got)
 	}
-	settings := watchdogSettings{Enabled: false, TimeoutSeconds: 240}
+	settings := watchdogSettings{Enabled: false, TimeoutSeconds: 240, MaxAttempts: 3}
 	if err := store.setWatchdog(settings); err != nil {
 		t.Fatal(err)
 	}
