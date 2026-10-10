@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time migration of the existing WSL panel to supervised updates."""
+"""Переводит существующую WSL-панель на обновления под управлением systemd."""
 import argparse
 import json
 import os
@@ -13,6 +13,7 @@ import urllib.request
 from datetime import datetime, timezone
 import update
 
+# Проверяет существующий процесс и релиз, сохраняет настройки и подключает службы systemd. Ошибка проверки новой службы возвращает старый бинарник.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", required=True, type=Path)
@@ -22,7 +23,7 @@ def main():
                         default=Path(os.environ["HKC_LOCAL_SOURCE_DIR"])
                         if os.environ.get("HKC_LOCAL_SOURCE_DIR") else None)
     parser.add_argument("--service-user", default=os.environ.get("HKC_SERVICE_USER"),
-                        help="account for hkc-web.service (default: owner of --source)")
+                        help="учётная запись hkc-web.service (по умолчанию: владелец --source)")
     parser.add_argument("--check-only", action="store_true")
     args = parser.parse_args()
     source = args.source.expanduser().resolve()
@@ -30,7 +31,7 @@ def main():
     copies = [source] + ([local] if local and local != source else [])
     args.service_user = args.service_user or pwd.getpwuid(source.stat().st_uid).pw_name
     if not args.service_user or any(char.isspace() for char in args.service_user):
-        raise RuntimeError("Invalid service user")
+        raise RuntimeError("некорректное имя пользователя службы")
     executable = source / "bin/hkc-web"
     processes = []
     for item in Path("/proc").iterdir():
@@ -41,31 +42,31 @@ def main():
             except OSError:
                 pass
     if len(processes) != 1:
-        raise RuntimeError(f"Expected one existing WSL panel, found {len(processes)}")
+        raise RuntimeError(f"ожидался один процесс WSL-панели, найдено: {len(processes)}")
     pid = processes[0]
     raw_env = Path(f"/proc/{pid}/environ").read_bytes()
     original = dict(entry.decode().split("=", 1) for entry in raw_env.split(b"\0") if entry)
     token = original.get("HKC_ADMIN_TOKEN") or Path("/root/.config/hkc/admin.token").read_text().strip()
-    # Confirm credentials locally without emitting them into logs.
+    # Проверяем административный доступ локально, не выводя секрет в журнал.
     req = urllib.request.Request("http://127.0.0.1:8080/api/admin/overview",
                                  headers={"Authorization": "Bearer " + token})
     with urllib.request.urlopen(req, timeout=5) as response:
         if response.status != 200:
-            raise RuntimeError("Existing administrative credential did not authenticate")
+            raise RuntimeError("существующий административный токен не прошёл проверку")
     for copy in copies:
         update.require_clean(copy)
     metadata = json.loads(update.run([str(args.binary.resolve()), "--version-json"]))
     if metadata.get("modified") or not update.TAG.fullmatch(metadata.get("version", "")):
-        raise RuntimeError("Bootstrap binary must be a clean release")
+        raise RuntimeError("бинарник начальной установки должен быть чистой релизной сборкой")
     for copy in copies:
         update.git(copy, "fetch", "--no-tags", update.REPOSITORY + ".git",
                    "refs/heads/main:refs/remotes/origin/main",
                    f"refs/tags/{metadata['version']}:refs/tags/{metadata['version']}")
         if update.git(copy, "rev-parse", metadata["version"] + "^{commit}") != metadata["commit"]:
-            raise RuntimeError("Bootstrap release tag mismatch")
+            raise RuntimeError("тег начальной сборки не совпадает с релизом")
         update.git(copy, "merge-base", "--is-ancestor", "HEAD", metadata["commit"])
     if args.check_only:
-        print("Existing credentials and both source copies verified; migration is ready.")
+        print("доступ и настроенные копии исходников проверены; можно подключать службы.")
         return
     state = Path("/root/.config/hkc/updates")
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -117,9 +118,9 @@ def main():
     update.run(["systemctl", "daemon-reload"])
     update.replace_binary(executable, args.binary.read_bytes())
     try:
-        # Validate exact process identity again before stopping the old panel.
+        # Перед остановкой повторно сверяем исполняемый файл именно старой панели.
         if Path(f"/proc/{pid}/exe").resolve().as_posix().removesuffix(" (deleted)") != str(executable):
-            raise RuntimeError("Panel process identity changed")
+            raise RuntimeError("исполняемый файл процесса панели изменился")
         managed_pid = update.run(["systemctl", "show", "hkc-web.service", "--property=MainPID", "--value"])
         if managed_pid == str(pid):
             update.run(["systemctl", "stop", "hkc-web.service"])
@@ -137,11 +138,11 @@ def main():
         update.run(["systemctl", "enable", "hkc-web.service"])
         update.save_status(state, "complete", "Служба обновлений подключена; предыдущая сборка сохранена.",
                            version=metadata["version"], backup=str(backup))
-        print("WSL panel upgraded, health verified, local copies synchronized; previous binary:", backup)
+        print("WSL-панель обновлена и проверена, исходники синхронизированы; предыдущая сборка:", backup)
     except Exception as error:
         update.replace_binary(executable, (backup / "hkc-web").read_bytes())
         update.run(["systemctl", "restart", "hkc-web.service"])
-        # Pre-updater binaries do not expose /api/version; check the old HTTP entry point.
+        # У старых сборок нет /api/version: проверяем их основной HTTP-адрес.
         restored = False
         for _ in range(30):
             try:

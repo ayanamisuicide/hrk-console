@@ -1,0 +1,192 @@
+/* Модальные диалоги входа, команд и подтверждения.
+ * Положение файла в списке импортов определяет приоритет этих правил. */
+dialog {
+  width: min(440px, calc(100vw - 28px));
+  border: 1px solid rgba(97, 242, 202, 0.35);
+  border-radius: 22px;
+  background: linear-gradient(155deg, #14201c, #080d0c);
+  color: var(--text);
+  padding: 0;
+  box-shadow: 0 35px 120px #000;
+}
+dialog::backdrop {
+  background: rgba(1, 4, 3, 0.8);
+  backdrop-filter: blur(10px);
+}
+dialog[open] {
+  animation: modal 0.45s var(--ease);
+}
+dialog form {
+  padding: 30px;
+  display: grid;
+  gap: 15px;
+}
+dialog p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+dialog input {
+  min-width: 0;
+  width: 100%;
+  padding: 11px 12px;
+}
+.auth-error {
+  color: var(--red);
+  min-height: 1.4em;
+}
+/* Кадры ambient: классы состояния запускают и завершают эффект. */
+@keyframes ambient {
+  to {
+    transform: translate(-8vw, -5vh) scale(1.18);
+    opacity: 0.2;
+  }
+}
+/* Кадры left-in: классы состояния запускают и завершают эффект. */
+@keyframes left-in {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+  }
+}
+/* Кадры up-in: классы состояния запускают и завершают эффект. */
+@keyframes up-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+/* Кадры modal: классы состояния запускают и завершают эффект. */
+@keyframes modal {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.96);
+  }
+}
+/* Кадры toast: классы состояния запускают и завершают эффект. */
+@keyframes toast {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+/* Кадры line-in: классы состояния запускают и завершают эффект. */
+@keyframes line-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+    background: rgba(97, 242, 202, 0.1);
+  }
+}
+/* Кадры pulse: классы состояния запускают и завершают эффект. */
+@keyframes pulse {
+  50% {
+    transform: scale(1.1);
+    box-shadow:
+      0 0 0 7px rgba(97, 242, 202, 0.04),
+      0 0 25px var(--mint);
+  }
+}
+/* Кадры blink: классы состояния запускают и завершают эффект. */
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
+@media (max-width: 1050px) {
+  .shell {
+    grid-template-columns: 250px 1fr;
+  }
+  header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .search-wrap {
+    flex: 1;
+  }
+  .search-wrap input {
+    width: 100%;
+  }
+}
+/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
+@media (max-width: 760px) {
+  body {
+    overflow: auto;
+  }
+  .shell {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100dvh;
+    padding: 7px;
+  }
+  .sidebar {
+    padding: 17px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .brand,
+  .controls {
+    grid-column: 1/-1;
+  }
+  .controls {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .controls button {
+    justify-content: center;
+    padding: 8px 4px;
+    font-size: 10px;
+  }
+  .button-icon,
+  .settings,
+  .connection {
+    display: none;
+  }
+  main {
+    overflow: visible;
+    min-height: 70vh;
+  }
+  header {
+    padding: 17px;
+  }
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .search-wrap,
+  #username {
+    grid-column: 1/-1;
+  }
+  .log-frame {
+    height: 58vh;
+  }
+  .log-head {
+    display: none;
+  }
+  .line {
+    grid-template-columns: 58px 58px 1fr;
+    padding: 6px 13px;
+    gap: 8px;
+    font-size: 10px;
+  }
+  .line .module {
+    display: none;
+  }
+  .line.continuation {
+    padding-left: 13px;
+  }
+}

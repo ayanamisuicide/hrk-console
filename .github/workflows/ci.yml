@@ -1,4 +1,4 @@
-name: CI
+name: Проверки
 
 on:
   push:
@@ -15,21 +15,21 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
-      - name: gofmt
+      - name: Форматирование Go
         run: |
           unformatted=$(gofmt -l .)
           test -z "$unformatted" || { echo "$unformatted"; exit 1; }
 
-      - name: go vet
+      - name: Статическая проверка Go
         run: go vet ./...
 
-      - name: go test
+      - name: Тесты Go и проверка гонок
         run: go test -count=1 -race ./...
 
-      - name: build web server
+      - name: Сборка веб-сервера
         run: make build
 
-      - name: updater integrity and rollback tests
+      - name: Проверка целостности обновления и отката
         run: python3 deploy/test_update.py
 
   ui:

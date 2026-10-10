@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// systemStatus — Системный замер; Supported показывает доступность Linux-метрик, объёмы передаются в
+// байтах.
 type systemStatus struct {
 	Supported       bool      `json:"supported"`
 	OS              string    `json:"os"`
@@ -26,6 +28,7 @@ type systemStatus struct {
 	SampledAt       time.Time `json:"sampledAt"`
 }
 
+// systemHealth выдаёт последний фоновый замер; если замеров ещё нет, читает состояние напрямую.
 func (s *server) systemHealth(w http.ResponseWriter, _ *http.Request) {
 	s.systemMu.RLock()
 	status := s.latestSystem

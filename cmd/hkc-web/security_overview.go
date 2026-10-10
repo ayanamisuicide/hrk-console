@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// securityOverviewResponse — Сводные счётчики и включённые возможности без секретов и идентификаторов
+// сессий.
 type securityOverviewResponse struct {
 	Users         int             `json:"users"`
 	ActiveInvites int             `json:"activeInvites"`
@@ -17,6 +19,7 @@ type securityOverviewResponse struct {
 	Features      map[string]bool `json:"features"`
 }
 
+// overview считает действующие записи под блокировкой, удаляя истёкшие элементы.
 func (l *authRateLimiter) overview() map[string]any {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -40,6 +43,7 @@ func (l *authRateLimiter) overview() map[string]any {
 	}
 }
 
+// overview считает действующие записи под блокировкой, удаляя истёкшие элементы.
 func (s *sessionStore) overview() (sessions, users int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -56,6 +60,7 @@ func (s *sessionStore) overview() (sessions, users int) {
 	return sessions, len(unique)
 }
 
+// securityCounts считает пользователей, ещё действующие приглашения и API-токены без раскрытия секретов.
 func (s *authStore) securityCounts() (users, invites, tokens int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,8 +73,10 @@ func (s *authStore) securityCounts() (users, invites, tokens int) {
 	return len(s.data.Users), invites, len(s.data.Tokens)
 }
 
+// enabledEnv распознаёт явное включение возможности значением 1.
 func enabledEnv(name string) bool { return strings.TrimSpace(os.Getenv(name)) == "1" }
 
+// securityOverview возвращает администратору численную сводку доступа и включённых возможностей.
 func (s *server) securityOverview(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})

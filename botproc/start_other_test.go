@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestStartUnsupported проверяет явный отказ запуска на неподдерживаемой платформе.
 func TestStartUnsupported(t *testing.T) {
 	res := New(t.TempDir()).Start()
 	if !errors.Is(res.Err, errUnsupported) || res.PID != 0 {

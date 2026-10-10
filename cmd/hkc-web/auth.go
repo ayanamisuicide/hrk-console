@@ -24,34 +24,40 @@ const sessionCookie = "hkc_session"
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{3,32}$`)
 
-// Comparing against a real bcrypt hash also for unknown users prevents login
-// names from being discovered through response-time differences.
+// Сравниваем хеш bcrypt даже для неизвестного логина: время ответа
+// не должно раскрывать существование аккаунта.
 var dummyPasswordHash = []byte("$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
 
+// userRecord — Запись пользователя на диске: хранится хеш bcrypt, а не открытый пароль.
 type userRecord struct {
 	PasswordHash string    `json:"passwordHash"`
 	CreatedAt    time.Time `json:"createdAt"`
 	Role         string    `json:"role,omitempty"`
 }
 
+// inviteRecord — Одноразовый инвайт с назначаемой ролью и сроком действия.
 type inviteRecord struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	Role      string    `json:"role,omitempty"`
 }
 
+// authData — Сохраняемые данные доступа; сессии в этот файл не входят.
 type authData struct {
 	Users   map[string]userRecord     `json:"users"`
 	Invites map[string]inviteRecord   `json:"invites"`
 	Tokens  map[string]apiTokenRecord `json:"tokens,omitempty"`
 }
 
+// authStore — Владеет базой доступа в памяти и её файлом. Изменения сериализуются мьютексом.
 type authStore struct {
 	mu   sync.Mutex
 	path string
 	data authData
 }
 
+// openAuthStore загружает базу доступа с диска и подготавливает коллекции для пользователей, инвайтов и
+// токенов.
 func openAuthStore(path string) (*authStore, error) {
 	s := &authStore{path: path, data: authData{
 		Users:   make(map[string]userRecord),
@@ -80,10 +86,13 @@ func openAuthStore(path string) (*authStore, error) {
 	return s, nil
 }
 
+// createInvite создаёт приглашение с ролью управления по умолчанию.
 func (s *authStore) createInvite(validFor time.Duration) (string, time.Time, error) {
 	return s.createInviteWithRole(validFor, "operator")
 }
 
+// createInviteWithRole генерирует одноразовый инвайт с ограниченным сроком действия и сохраняет его под
+// блокировкой.
 func (s *authStore) createInviteWithRole(validFor time.Duration, role string) (string, time.Time, error) {
 	if role != "operator" && role != "viewer" {
 		return "", time.Time{}, errors.New("неизвестная роль")
@@ -109,6 +118,8 @@ func (s *authStore) createInviteWithRole(validFor time.Duration, role string) (s
 	return token, expires, nil
 }
 
+// register проверяет инвайт до дорогого bcrypt, затем повторно проверяет его под блокировкой. Пользователь
+// и расходование инвайта сохраняются вместе; ошибка записи откатывает память.
 func (s *authStore) register(invite, username, password string) error {
 	username = strings.TrimSpace(username)
 	if !usernamePattern.MatchString(username) {
@@ -117,9 +128,9 @@ func (s *authStore) register(invite, username, password string) error {
 	if len(password) < 10 {
 		return errors.New("пароль должен содержать минимум 10 символов")
 	}
-	// Reject missing and expired invitations before running the deliberately
-	// expensive password hash. The invitation is checked again under the lock
-	// below before it is consumed.
+	// Отклоняем отсутствующий или истёкший инвайт до дорогого хеширования.
+	// Перед расходованием повторяем проверку под блокировкой: другой запрос
+	// мог использовать тот же инвайт, пока вычислялся хеш.
 	s.mu.Lock()
 	record, exists := s.data.Invites[invite]
 	s.mu.Unlock()
@@ -154,6 +165,8 @@ func (s *authStore) register(invite, username, password string) error {
 	return nil
 }
 
+// authenticate проверяет пароль bcrypt. Для неизвестного логина тоже выполняется сравнение с хешем, чтобы
+// не выдавать существование аккаунта временем ответа.
 func (s *authStore) authenticate(username, password string) bool {
 	s.mu.Lock()
 	record, exists := s.data.Users[strings.TrimSpace(username)]
@@ -166,12 +179,14 @@ func (s *authStore) authenticate(username, password string) bool {
 	return exists && valid
 }
 
+// storedUser — Представление пользователя без хеша пароля для административной сводки.
 type storedUser struct {
 	Username  string
 	CreatedAt time.Time
 	Role      string
 }
 
+// storedInvite — Действующее приглашение с токеном, временем и назначаемой ролью.
 type storedInvite struct {
 	Token     string
 	CreatedAt time.Time
@@ -179,6 +194,7 @@ type storedInvite struct {
 	Role      string
 }
 
+// snapshot возвращает представления пользователей и действующих приглашений без хешей паролей.
 func (s *authStore) snapshot() ([]storedUser, []storedInvite) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -207,6 +223,7 @@ func (s *authStore) snapshot() ([]storedUser, []storedInvite) {
 	return users, invites
 }
 
+// role читает роль аккаунта под блокировкой хранилища.
 func (s *authStore) role(username string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -220,6 +237,7 @@ func (s *authStore) role(username string) string {
 	return record.Role
 }
 
+// setRole проверяет допустимую роль и сохраняет изменение; ошибка записи возвращает прежнюю запись.
 func (s *authStore) setRole(username, role string) (bool, error) {
 	if role != "operator" && role != "viewer" {
 		return false, errors.New("неизвестная роль")
@@ -240,6 +258,7 @@ func (s *authStore) setRole(username, role string) (bool, error) {
 	return true, nil
 }
 
+// revokeInvite удаляет инвайт и восстанавливает его в памяти, если сохранение не удалось.
 func (s *authStore) revokeInvite(token string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -255,6 +274,7 @@ func (s *authStore) revokeInvite(token string) (bool, error) {
 	return true, nil
 }
 
+// deleteUser удаляет аккаунт из базы; ошибка записи возвращает прежнее состояние.
 func (s *authStore) deleteUser(username string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -270,6 +290,8 @@ func (s *authStore) deleteUser(username string) (bool, error) {
 	return true, nil
 }
 
+// saveLocked записывает базу в закрытый временный файл и заменяет основной файл переименованием. Мьютекс
+// authStore уже должен быть захвачен вызывающим кодом.
 func (s *authStore) saveLocked() error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -289,6 +311,7 @@ func (s *authStore) saveLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
+// session — Сессия одного пользователя со сроком действия и временем активности.
 type session struct {
 	Username  string
 	CreatedAt time.Time
@@ -296,6 +319,7 @@ type session struct {
 	ExpiresAt time.Time
 }
 
+// sessionStore — Сессии только в памяти с защитой от параллельных запросов.
 type sessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]session
@@ -306,10 +330,13 @@ const (
 	maxSessionsTotal   = 10000
 )
 
+// newSessionStore создаёт хранилище сессий в памяти; перезапуск сервера завершает все такие сессии.
 func newSessionStore() *sessionStore {
 	return &sessionStore{sessions: make(map[string]session)}
 }
 
+// create создаёт случайную сессию со сроком действия, удаляя истёкшие и лишние записи при достижении
+// лимитов.
 func (s *sessionStore) create(username string) (string, time.Time, error) {
 	token, err := randomToken(32)
 	if err != nil {
@@ -344,6 +371,7 @@ func (s *sessionStore) create(username string) (string, time.Time, error) {
 	return token, expires, nil
 }
 
+// sessionCount считает сессии указанного пользователя в переданном наборе.
 func sessionCount(sessions map[string]session, username string) int {
 	count := 0
 	for _, entry := range sessions {
@@ -354,6 +382,7 @@ func sessionCount(sessions map[string]session, username string) int {
 	return count
 }
 
+// get проверяет наличие и срок сессии, возвращая связанный логин.
 func (s *sessionStore) get(token string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -367,17 +396,20 @@ func (s *sessionStore) get(token string) (string, bool) {
 	return entry.Username, true
 }
 
+// delete удаляет одну сессию при выходе.
 func (s *sessionStore) delete(token string) {
 	s.mu.Lock()
 	delete(s.sessions, token)
 	s.mu.Unlock()
 }
 
+// presence — Число активных сессий и последнее обращение пользователя.
 type presence struct {
 	Sessions int
 	LastSeen time.Time
 }
 
+// presence считает действующие сессии пользователей и последнее время активности.
 func (s *sessionStore) presence() map[string]presence {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -398,6 +430,7 @@ func (s *sessionStore) presence() map[string]presence {
 	return result
 }
 
+// deleteUser завершает все сессии удаляемого пользователя.
 func (s *sessionStore) deleteUser(username string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -408,12 +441,14 @@ func (s *sessionStore) deleteUser(username string) {
 	}
 }
 
+// clear завершает все сессии, например после восстановления базы доступа.
 func (s *sessionStore) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = make(map[string]session)
 }
 
+// randomToken получает криптографически случайные байты и кодирует их для безопасного использования в URL.
 func randomToken(size int) (string, error) {
 	data := make([]byte, size)
 	if _, err := rand.Read(data); err != nil {
@@ -422,6 +457,8 @@ func randomToken(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(data), nil
 }
 
+// secureRequest распознаёт HTTPS. Заголовку прокси доверяет только при явном включении HKC_TRUST_PROXY и
+// локальном адресе отправителя.
 func secureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
@@ -432,6 +469,7 @@ func secureRequest(r *http.Request) bool {
 	return trustedProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
+// setSessionCookie выдаёт cookie с HttpOnly, SameSite и признаком Secure для HTTPS.
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
@@ -445,6 +483,7 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expi
 	})
 }
 
+// clearSessionCookie истекает cookie с тем же именем и областью действия.
 func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
@@ -456,6 +495,7 @@ func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// constantTimeEqual сравнивает равные по длине секреты за время, не зависящее от совпадения их байтов.
 func constantTimeEqual(a, b string) bool {
 	if len(a) != len(b) {
 		return false

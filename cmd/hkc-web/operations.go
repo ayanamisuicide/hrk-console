@@ -17,12 +17,14 @@ import (
 
 const maxSchedules = 50
 
+// maintenanceState — Сохраняемый запрет запуска и перезапуска с сообщением администратора.
 type maintenanceState struct {
 	Enabled   bool      `json:"enabled"`
 	Message   string    `json:"message,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
 
+// scheduledAction — Сохранённое действие с временем и этапом pending/running/завершения.
 type scheduledAction struct {
 	ID          string     `json:"id"`
 	Action      string     `json:"action"`
@@ -33,17 +35,21 @@ type scheduledAction struct {
 	Result      string     `json:"result,omitempty"`
 }
 
+// operationData — Режим обслуживания и очередь задач, сохраняемые вместе.
 type operationData struct {
 	Maintenance maintenanceState  `json:"maintenance"`
 	Schedules   []scheduledAction `json:"schedules"`
 }
 
+// operationStore — Состояние операций в памяти и на диске с одной блокировкой изменений.
 type operationStore struct {
 	mu   sync.Mutex
 	path string
 	data operationData
 }
 
+// openOperationStore восстанавливает обслуживание и расписания с диска; незавершённые running-задачи
+// возвращает в очередь после сбоя.
 func openOperationStore(path string) (*operationStore, error) {
 	store := &operationStore{path: path, data: operationData{Schedules: []scheduledAction{}}}
 	data, err := os.ReadFile(path)
@@ -62,8 +68,9 @@ func openOperationStore(path string) (*operationStore, error) {
 	if store.data.Schedules == nil {
 		store.data.Schedules = []scheduledAction{}
 	}
-	// A process can stop after persisting the claim but before completing it.
-	// Requeue such entries so a restart does not lose the requested action.
+	// Сервер мог остановиться после сохранения running, но до завершения действия.
+	// Возвращаем такие задачи в очередь: действие может выполниться повторно,
+	// поэтому это восстановление после сбоя, а не гарантия ровно одного выполнения.
 	for index := range store.data.Schedules {
 		if store.data.Schedules[index].Status == "running" {
 			store.data.Schedules[index].Status = "pending"
@@ -72,6 +79,7 @@ func openOperationStore(path string) (*operationStore, error) {
 	return store, nil
 }
 
+// saveLocked сохраняет операции через временный файл; мьютекс хранилища уже должен быть захвачен.
 func (s *operationStore) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
@@ -95,12 +103,14 @@ func (s *operationStore) saveLocked() error {
 	return nil
 }
 
+// maintenanceState возвращает копию режима обслуживания под блокировкой.
 func (s *operationStore) maintenanceState() maintenanceState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.data.Maintenance
 }
 
+// setMaintenance сохраняет режим и ограниченное по длине сообщение; ошибка записи откатывает изменение.
 func (s *operationStore) setMaintenance(enabled bool, message string) (maintenanceState, error) {
 	message = strings.TrimSpace(message)
 	if len(message) > 240 {
@@ -117,10 +127,12 @@ func (s *operationStore) setMaintenance(enabled bool, message string) (maintenan
 	return s.data.Maintenance, nil
 }
 
+// validScheduledAction разрешает только известные действия над ботом.
 func validScheduledAction(action string) bool {
 	return action == "start" || action == "stop" || action == "restart"
 }
 
+// createSchedule проверяет время, действие и лимит очереди, затем сохраняет новую pending-задачу.
 func (s *operationStore) createSchedule(action string, runAt time.Time) (scheduledAction, error) {
 	if !validScheduledAction(action) {
 		return scheduledAction{}, errors.New("неизвестное действие")
@@ -154,6 +166,7 @@ func (s *operationStore) createSchedule(action string, runAt time.Time) (schedul
 	return item, nil
 }
 
+// listSchedules возвращает копию расписаний в установленном порядке.
 func (s *operationStore) listSchedules() []scheduledAction {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,6 +175,7 @@ func (s *operationStore) listSchedules() []scheduledAction {
 	return items
 }
 
+// deleteSchedule удаляет доступную для отмены задачу и сохраняет очередь.
 func (s *operationStore) deleteSchedule(id string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -180,6 +194,7 @@ func (s *operationStore) deleteSchedule(id string) (bool, error) {
 	return false, nil
 }
 
+// claimDue под блокировкой отмечает подошедшие задачи running и сохраняет это до выполнения.
 func (s *operationStore) claimDue(now time.Time) []scheduledAction {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -206,6 +221,9 @@ func (s *operationStore) claimDue(now time.Time) []scheduledAction {
 	return due
 }
 
+// complete обновляет итог выполнения задачи и ограничивает размер истории.
+// Ошибка завершающего сохранения не возвращается вызывающей стороне:
+// результат уже изменён в памяти, но при сбое записи может не пережить перезапуск.
 func (s *operationStore) complete(id, result string, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -228,6 +246,7 @@ func (s *operationStore) complete(id, result string, ok bool) {
 	_ = s.saveLocked()
 }
 
+// runSchedules проверяет очередь раз в секунду и выполняет захваченные задачи; завершается по контексту.
 func (s *server) runSchedules(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -253,6 +272,7 @@ func (s *server) runSchedules(ctx context.Context) {
 	}
 }
 
+// requireOperations проверяет административный доступ и наличие хранилища операций.
 func (s *server) requireOperations(w http.ResponseWriter, r *http.Request) bool {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -265,6 +285,7 @@ func (s *server) requireOperations(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
+// getMaintenance возвращает администратору состояние обслуживания.
 func (s *server) getMaintenance(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperations(w, r) {
 		return
@@ -272,6 +293,7 @@ func (s *server) getMaintenance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.operations.maintenanceState())
 }
 
+// setMaintenance проверяет административный запрос, сохраняет обслуживание и записывает событие аудита.
 func (s *server) setMaintenance(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperations(w, r) {
 		return
@@ -299,6 +321,7 @@ func (s *server) setMaintenance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, state)
 }
 
+// listSchedules возвращает администратору текущую очередь и историю задач.
 func (s *server) listSchedules(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperations(w, r) {
 		return
@@ -306,6 +329,7 @@ func (s *server) listSchedules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"schedules": s.operations.listSchedules()})
 }
 
+// createSchedule разбирает административный запрос и сохраняет проверенное отложенное действие.
 func (s *server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperations(w, r) {
 		return
@@ -329,6 +353,7 @@ func (s *server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+// deleteSchedule отменяет выбранное расписание после проверки административного доступа.
 func (s *server) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 	if !s.requireOperations(w, r) {
 		return

@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+// TestManagerOnlyFindsBotInItsDirectory проверяет, что менеджер не принимает процесс другой установки за
+// свой.
 func TestManagerOnlyFindsBotInItsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	other := t.TempDir()
@@ -73,6 +75,7 @@ func TestStartYieldsToHeldLock(t *testing.T) {
 	}
 }
 
+// TestStartFailsOnUnwritableLockPath проверяет явную ошибку при невозможности создать блокировку.
 func TestStartFailsOnUnwritableLockPath(t *testing.T) {
 	// Каталога нет — лок-файл создать негде.
 	m := New(filepath.Join(t.TempDir(), "нет-такого"))

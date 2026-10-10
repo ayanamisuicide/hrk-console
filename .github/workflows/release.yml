@@ -1,4 +1,4 @@
-name: Release
+name: Публикация релиза
 
 on:
   push:
@@ -20,13 +20,13 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
-      - name: verify
+      - name: Проверка перед публикацией
         run: |
           go vet ./...
           go test -count=1 ./...
           python3 deploy/test_update.py
 
-      - name: build web server
+      - name: Сборка веб-сервера
         env:
           CGO_ENABLED: '0'
           GOOS: linux
@@ -39,12 +39,20 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: hrk-console ${{ github.ref_name }}
-          generate_release_notes: true
+          # Автоматические заголовки GitHub бывают английскими; используем русский текст ниже.
+          generate_release_notes: false
           body: |
             Релиз веб-панели hrk-console ${{ github.ref_name }}.
 
+            ### Что изменилось
+
+            - Серверные обработчики и код браузера разделены на тематические модули; адреса API сохранены.
+            - Удалены неиспользуемые шрифты, декоративные ресурсы и устаревший код терминального интерфейса.
+            - Документация, комментарии, подписи интерфейса и служебные пояснения переведены на русский язык.
+            - Пользовательская оболочка сохраняет все зависимости для перезагрузки без сети; обновлены проверки интерфейса.
+
             - Полный список изменений: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md).
-            - В релиз входит один статически собранный Linux-сервер `hkc-web` и его SHA-256 checksum.
+            - В релиз входит один статически собранный Linux-сервер `hkc-web` и его контрольная сумма SHA-256.
           files: |
             hkc-web-*-linux-amd64.tar.gz
             hkc-web-*-linux-amd64.tar.gz.sha256

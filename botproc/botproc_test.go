@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestVirtualEnvFindsSupportedNames проверяет поиск обоих поддерживаемых имён окружения Python.
 func TestVirtualEnvFindsSupportedNames(t *testing.T) {
 	dir := t.TempDir()
 	manager := New(dir)
@@ -46,6 +47,7 @@ func TestFormatUptime(t *testing.T) {
 	}
 }
 
+// TestUptimeFormat проверяет вывод времени работы и неизвестный процесс.
 func TestUptimeFormat(t *testing.T) {
 	if got := Uptime(0); got != "—" {
 		t.Errorf("незапущенный процесс: got %q, want —", got)
@@ -79,6 +81,7 @@ func TestStartTimeDoesNotPanicOnGarbage(t *testing.T) {
 	}
 }
 
+// TestVersionFromLog проверяет извлечение версии из журнала.
 func TestVersionFromLog(t *testing.T) {
 	dir := t.TempDir()
 	m := New(dir)
@@ -117,6 +120,7 @@ func TestAliveAt(t *testing.T) {
 	}
 }
 
+// TestNewPaths проверяет пути файлов менеджера новой установки.
 func TestNewPaths(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "бот")
 	m := New(dir)

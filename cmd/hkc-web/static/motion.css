@@ -1,8 +1,8 @@
-/* A shared, expressive motion system for the console, admin panel and updater. */
+/* Общая система анимаций консоли, админки и страницы обновления. */
 :root {
-  --motion-ease: cubic-bezier(.22, .8, .3, 1);
-  --motion-enter-ease: cubic-bezier(.16, 1, .3, 1);
-  --motion-spring: cubic-bezier(.16, 1, .3, 1);
+  --motion-ease: cubic-bezier(0.22, 0.8, 0.3, 1);
+  --motion-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-fast: 360ms;
   --motion-base: 560ms;
   --motion-enter: 760ms;
@@ -10,73 +10,142 @@
   --motion-medium: 680ms;
 }
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+}
 
 button {
-  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease,
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
     transform var(--motion-fast) var(--motion-ease);
 }
-button:active:not(:disabled) { transform: scale(.975); }
-a, .nav-item {
-  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease, transform var(--motion-fast) var(--motion-ease);
+button:active:not(:disabled) {
+  transform: scale(0.975);
 }
-input, select {
-  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+a,
+.nav-item {
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-ease);
 }
-input[type="search"], dialog input, input[type="checkbox"],
-.settings input::after, .invite-form input, .invite-form select,
-.role-select, .log-advanced-grid input, .log-advanced-grid select {
+input,
+select {
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+input[type="search"],
+dialog input,
+input[type="checkbox"],
+.settings input::after,
+.invite-form input,
+.invite-form select,
+.role-select,
+.log-advanced-grid input,
+.log-advanced-grid select {
   transition-duration: var(--motion-fast);
   transition-timing-function: ease;
 }
-html.theme-transition body, html.theme-transition .sidebar, html.theme-transition main,
-html.theme-transition .status-card, html.theme-transition .metric-card,
-html.theme-transition .surface-card, html.theme-transition .admin-section,
-html.theme-transition .bot-deck, html.theme-transition .summary article,
-html.theme-transition .invite-card, html.theme-transition button,
-html.theme-transition input, html.theme-transition select {
+html.theme-transition body,
+html.theme-transition .sidebar,
+html.theme-transition main,
+html.theme-transition .status-card,
+html.theme-transition .metric-card,
+html.theme-transition .surface-card,
+html.theme-transition .admin-section,
+html.theme-transition .bot-deck,
+html.theme-transition .summary article,
+html.theme-transition .invite-card,
+html.theme-transition button,
+html.theme-transition input,
+html.theme-transition select {
   transition-duration: 640ms;
   transition-timing-function: var(--motion-ease);
 }
 
-.status-card, .metric-card, .surface-card, .summary article, .bot-deck,
-.admin-section, .invite-card, .diagnostic-item, .token-row, .backup-row,
-.audit-group, .updates-grid article, .update-versions article {
-  transition: transform 620ms var(--motion-spring),
-    border-color 540ms var(--motion-ease), background-color 620ms var(--motion-ease),
+.status-card,
+.metric-card,
+.surface-card,
+.summary article,
+.bot-deck,
+.admin-section,
+.invite-card,
+.diagnostic-item,
+.token-row,
+.backup-row,
+.audit-group,
+.updates-grid article,
+.update-versions article {
+  transition:
+    transform 620ms var(--motion-spring),
+    border-color 540ms var(--motion-ease),
+    background-color 620ms var(--motion-ease),
     box-shadow 680ms var(--motion-ease);
 }
-.metric-card:hover { transform: translateY(-5px) scale(1.008); }
-.surface-card:hover { border-color: color-mix(in srgb, var(--mint) 32%, var(--line)); }
-.diagnostic-item:hover, .token-row:hover, .backup-row:hover { transform: translateX(4px); }
+.metric-card:hover {
+  transform: translateY(-5px) scale(1.008);
+}
+.surface-card:hover {
+  border-color: color-mix(in srgb, var(--mint) 32%, var(--line));
+}
+.diagnostic-item:hover,
+.token-row:hover,
+.backup-row:hover {
+  transform: translateX(4px);
+}
 
-/* Ambient, pointer-aware light keeps large surfaces feeling tactile without
-   running a continuous animation loop. */
-.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card {
+/* Мягкая подсветка следует за указателем, выделяя большие поверхности без
+   непрерывного цикла анимации. */
+.metric-card,
+.surface-card,
+.admin-section,
+.summary article,
+.bot-deck,
+.invite-card {
   position: relative;
   isolation: isolate;
   --pointer-x: 50%;
   --pointer-y: 50%;
 }
-.metric-card::before, .surface-card::before, .admin-section::before,
-.summary article::before, .bot-deck::before, .invite-card::before {
+.metric-card::before,
+.surface-card::before,
+.admin-section::before,
+.summary article::before,
+.bot-deck::before,
+.invite-card::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: radial-gradient(280px circle at var(--pointer-x) var(--pointer-y), rgba(97, 242, 202, .105), transparent 74%);
+  background: radial-gradient(
+    280px circle at var(--pointer-x) var(--pointer-y),
+    rgba(97, 242, 202, 0.105),
+    transparent 74%
+  );
   opacity: 0;
   transition: opacity 640ms var(--motion-ease);
   pointer-events: none;
 }
-.metric-card:hover::before, .surface-card:hover::before, .admin-section:hover::before,
-.summary article:hover::before, .bot-deck:hover::before, .invite-card:hover::before { opacity: 1; }
+.metric-card:hover::before,
+.surface-card:hover::before,
+.admin-section:hover::before,
+.summary article:hover::before,
+.bot-deck:hover::before,
+.invite-card:hover::before {
+  opacity: 1;
+}
 
-button { isolation: isolate; }
+button {
+  isolation: isolate;
+}
 button::after {
   content: "";
   position: absolute;
@@ -86,97 +155,311 @@ button::after {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: rgba(97, 242, 202, .28);
+  background: rgba(97, 242, 202, 0.28);
   opacity: 0;
   transform: translate(-50%, -50%) scale(0);
   pointer-events: none;
 }
-button.is-rippling::after { animation: button-ripple 960ms var(--motion-enter-ease); }
+button.is-rippling::after {
+  animation: button-ripple 960ms var(--motion-enter-ease);
+}
 
-/* Short, low-distance arrivals. Reveal targets are shown once, not on every refresh. */
-.workspace-view:not([hidden]) { animation: motion-view-enter 720ms var(--motion-enter-ease) both; }
-.shell > .sidebar { animation: motion-enter 760ms var(--motion-enter-ease) both; }
-.shell > main { animation: motion-enter 840ms 90ms var(--motion-enter-ease) both; }
-.view-intro { animation: motion-enter 740ms 80ms var(--motion-enter-ease) both; }
-.admin-header, .update-header, .public-status-card { animation: motion-enter 760ms var(--motion-enter-ease) both; }
-.update-hero { animation: motion-enter 860ms 90ms var(--motion-enter-ease) both; }
-.public-status-card .status-card.is-ready { animation: motion-enter 640ms var(--motion-enter-ease) both; }
-.motion-reveal-fallback .metric-card, .motion-reveal-fallback .surface-card,
-.motion-reveal-fallback .admin-section, .motion-reveal-fallback .summary article,
-.motion-reveal-fallback .bot-deck, .motion-reveal-fallback .update-versions,
-.motion-reveal-fallback .update-timeline { animation: motion-enter 760ms var(--motion-enter-ease) both; }
-.summary article:nth-child(2) { --reveal-delay: 90ms; }
-.summary article:nth-child(3) { --reveal-delay: 180ms; }
-.dashboard-grid .metric-card:nth-child(2) { --reveal-delay: 70ms; }
-.dashboard-grid .metric-card:nth-child(3) { --reveal-delay: 140ms; }
-.dashboard-grid .metric-card:nth-child(4) { --reveal-delay: 210ms; }
-[data-reveal="waiting"] { opacity: 0; transform: translateY(18px) scale(.99); }
+/* Короткое появление с небольшим смещением: один раз, а не при каждом обновлении. */
+.workspace-view:not([hidden]) {
+  animation: motion-view-enter 720ms var(--motion-enter-ease) both;
+}
+.shell > .sidebar {
+  animation: motion-enter 760ms var(--motion-enter-ease) both;
+}
+.shell > main {
+  animation: motion-enter 840ms 90ms var(--motion-enter-ease) both;
+}
+.view-intro {
+  animation: motion-enter 740ms 80ms var(--motion-enter-ease) both;
+}
+.admin-header,
+.update-header,
+.public-status-card {
+  animation: motion-enter 760ms var(--motion-enter-ease) both;
+}
+.update-hero {
+  animation: motion-enter 860ms 90ms var(--motion-enter-ease) both;
+}
+.public-status-card .status-card.is-ready {
+  animation: motion-enter 640ms var(--motion-enter-ease) both;
+}
+.motion-reveal-fallback .metric-card,
+.motion-reveal-fallback .surface-card,
+.motion-reveal-fallback .admin-section,
+.motion-reveal-fallback .summary article,
+.motion-reveal-fallback .bot-deck,
+.motion-reveal-fallback .update-versions,
+.motion-reveal-fallback .update-timeline {
+  animation: motion-enter 760ms var(--motion-enter-ease) both;
+}
+.summary article:nth-child(2) {
+  --reveal-delay: 90ms;
+}
+.summary article:nth-child(3) {
+  --reveal-delay: 180ms;
+}
+.dashboard-grid .metric-card:nth-child(2) {
+  --reveal-delay: 70ms;
+}
+.dashboard-grid .metric-card:nth-child(3) {
+  --reveal-delay: 140ms;
+}
+.dashboard-grid .metric-card:nth-child(4) {
+  --reveal-delay: 210ms;
+}
+[data-reveal="waiting"] {
+  opacity: 0;
+  transform: translateY(18px) scale(0.99);
+}
 [data-reveal="shown"] {
   opacity: 1;
   transform: translateY(0) scale(1);
-  transition: opacity 760ms var(--motion-enter-ease) var(--reveal-delay, 0ms),
+  transition:
+    opacity 760ms var(--motion-enter-ease) var(--reveal-delay, 0ms),
     transform 880ms var(--motion-spring) var(--reveal-delay, 0ms),
-    border-color var(--motion-base) var(--motion-ease), background-color var(--motion-base) var(--motion-ease),
+    border-color var(--motion-base) var(--motion-ease),
+    background-color var(--motion-base) var(--motion-ease),
     box-shadow var(--motion-base) var(--motion-ease);
 }
 
-.brand-mark::before { animation: brand-orbit 14s linear infinite; }
-.brand-mark::after { animation: brand-core 5.4s ease-in-out infinite; }
-.status-card.online .dot, .bot-orbit span.online { animation: motion-status-breathe 4.2s ease-in-out infinite; }
-.live-badge { animation: live-breathe 5.4s ease-in-out infinite; }
-.live-badge i, #stream-state.online i { animation: motion-signal-breathe 3.4s ease-in-out infinite; }
-.bot-deck::after { animation: deck-glow 14s ease-in-out infinite alternate; }
-.nav-item.active::before { animation: marker-enter 560ms var(--motion-spring) both; }
-.notice { animation: notice-enter 620ms var(--motion-enter-ease) both; }
-.notice.is-leaving { animation: notice-exit 440ms var(--motion-ease) both; pointer-events: none; }
-.value-change { animation: value-change 620ms var(--motion-spring); transform-origin: left center; }
-.timeline-enter { animation: motion-enter 620ms var(--motion-enter-ease) both; }
+.brand-mark::before {
+  animation: brand-orbit 14s linear infinite;
+}
+.brand-mark::after {
+  animation: brand-core 5.4s ease-in-out infinite;
+}
+.status-card.online .dot,
+.bot-orbit span.online {
+  animation: motion-status-breathe 4.2s ease-in-out infinite;
+}
+.live-badge {
+  animation: live-breathe 5.4s ease-in-out infinite;
+}
+.live-badge i,
+#stream-state.online i {
+  animation: motion-signal-breathe 3.4s ease-in-out infinite;
+}
+.bot-deck::after {
+  animation: deck-glow 14s ease-in-out infinite alternate;
+}
+.nav-item.active::before {
+  animation: marker-enter 560ms var(--motion-spring) both;
+}
+.notice {
+  animation: notice-enter 620ms var(--motion-enter-ease) both;
+}
+.notice.is-leaving {
+  animation: notice-exit 440ms var(--motion-ease) both;
+  pointer-events: none;
+}
+.value-change {
+  animation: value-change 620ms var(--motion-spring);
+  transform-origin: left center;
+}
+.timeline-enter {
+  animation: motion-enter 620ms var(--motion-enter-ease) both;
+}
 
 dialog {
   opacity: 0;
-  transform: translateY(14px) scale(.985);
-  transition: opacity var(--motion-exit) var(--motion-ease), transform 620ms var(--motion-spring);
+  transform: translateY(14px) scale(0.985);
+  transition:
+    opacity var(--motion-exit) var(--motion-ease),
+    transform 620ms var(--motion-spring);
 }
-dialog[open] { opacity: 1; transform: translateY(0) scale(1); }
-dialog[open] { animation: none; }
-dialog[open]::backdrop { opacity: 1; transition: opacity 560ms var(--motion-ease); }
-dialog::backdrop { opacity: 0; transition: opacity 560ms var(--motion-ease); }
+dialog[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+dialog[open] {
+  animation: none;
+}
+dialog[open]::backdrop {
+  opacity: 1;
+  transition: opacity 560ms var(--motion-ease);
+}
+dialog::backdrop {
+  opacity: 0;
+  transition: opacity 560ms var(--motion-ease);
+}
 @supports (transition-behavior: allow-discrete) {
-  dialog { transition: opacity var(--motion-exit) var(--motion-ease), transform 620ms var(--motion-spring), overlay 560ms allow-discrete, display 560ms allow-discrete; }
+  dialog {
+    transition:
+      opacity var(--motion-exit) var(--motion-ease),
+      transform 620ms var(--motion-spring),
+      overlay 560ms allow-discrete,
+      display 560ms allow-discrete;
+  }
 }
 @supports not (transition-behavior: allow-discrete) {
-  dialog[open] { animation: motion-enter 760ms var(--motion-enter-ease) both; }
+  dialog[open] {
+    animation: motion-enter 760ms var(--motion-enter-ease) both;
+  }
 }
 @starting-style {
-  dialog[open] { opacity: 0; transform: translateY(14px) scale(.985); }
-  dialog[open]::backdrop { opacity: 0; }
+  dialog[open] {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 
-.log-advanced.is-closing .log-advanced-grid { opacity: 0; transform: translateY(-4px); }
+.log-advanced.is-closing .log-advanced-grid {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 
-@keyframes motion-enter { from { opacity: 0; transform: translate3d(0, 14px, 0) scale(.992); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
-@keyframes motion-view-enter { from { opacity: 0; transform: translate3d(0, 10px, 0) scale(.997); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
-@keyframes notice-enter { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: none; } }
-@keyframes notice-exit { to { opacity: 0; transform: translateY(-8px) scale(.985); } }
-@keyframes marker-enter { from { transform: scaleY(.2); opacity: .3; } to { transform: scaleY(1); opacity: 1; } }
-@keyframes motion-signal-breathe { 50% { opacity: .46; transform: scale(.84); } }
-@keyframes motion-status-breathe { 50% { opacity: .82; box-shadow: 0 0 0 7px rgba(97, 242, 202, .045), 0 0 22px rgba(97, 242, 202, .2); } }
-@keyframes value-change { 0% { transform: translate3d(0, 4px, 0) scale(.985); opacity: .6; } 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; } }
-@keyframes button-ripple { 0% { opacity: .38; transform: translate(-50%, -50%) scale(0); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(23); } }
-@keyframes brand-orbit { to { transform: rotate(360deg); } }
-@keyframes brand-core { 50% { transform: scale(1.24); box-shadow: 0 0 18px var(--mint); } }
-@keyframes live-breathe { 50% { border-color: rgba(97, 242, 202, .32); box-shadow: 0 0 14px rgba(97, 242, 202, .055); } }
-@keyframes deck-glow { to { transform: translate(-26px, 16px) scale(1.12); opacity: .18; } }
-@keyframes orbital-drift { to { transform: rotate(180deg) scale(1.06); opacity: .72; } }
+/* Кадры motion-enter: классы состояния запускают и завершают эффект. */
+@keyframes motion-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+/* Кадры motion-view-enter: классы состояния запускают и завершают эффект. */
+@keyframes motion-view-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.997);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+/* Кадры notice-enter: классы состояния запускают и завершают эффект. */
+@keyframes notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Кадры notice-exit: классы состояния запускают и завершают эффект. */
+@keyframes notice-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+}
+/* Кадры marker-enter: классы состояния запускают и завершают эффект. */
+@keyframes marker-enter {
+  from {
+    transform: scaleY(0.2);
+    opacity: 0.3;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+/* Кадры motion-signal-breathe: классы состояния запускают и завершают эффект. */
+@keyframes motion-signal-breathe {
+  50% {
+    opacity: 0.46;
+    transform: scale(0.84);
+  }
+}
+/* Кадры motion-status-breathe: классы состояния запускают и завершают эффект. */
+@keyframes motion-status-breathe {
+  50% {
+    opacity: 0.82;
+    box-shadow:
+      0 0 0 7px rgba(97, 242, 202, 0.045),
+      0 0 22px rgba(97, 242, 202, 0.2);
+  }
+}
+/* Кадры value-change: классы состояния запускают и завершают эффект. */
+@keyframes value-change {
+  0% {
+    transform: translate3d(0, 4px, 0) scale(0.985);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+/* Кадры button-ripple: классы состояния запускают и завершают эффект. */
+@keyframes button-ripple {
+  0% {
+    opacity: 0.38;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(23);
+  }
+}
+/* Кадры brand-orbit: классы состояния запускают и завершают эффект. */
+@keyframes brand-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Кадры brand-core: классы состояния запускают и завершают эффект. */
+@keyframes brand-core {
+  50% {
+    transform: scale(1.24);
+    box-shadow: 0 0 18px var(--mint);
+  }
+}
+/* Кадры live-breathe: классы состояния запускают и завершают эффект. */
+@keyframes live-breathe {
+  50% {
+    border-color: rgba(97, 242, 202, 0.32);
+    box-shadow: 0 0 14px rgba(97, 242, 202, 0.055);
+  }
+}
+/* Кадры deck-glow: классы состояния запускают и завершают эффект. */
+@keyframes deck-glow {
+  to {
+    transform: translate(-26px, 16px) scale(1.12);
+    opacity: 0.18;
+  }
+}
+/* Кадры orbital-drift: классы состояния запускают и завершают эффект. */
+@keyframes orbital-drift {
+  to {
+    transform: rotate(180deg) scale(1.06);
+    opacity: 0.72;
+  }
+}
 
+/* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     scroll-behavior: auto !important;
-    animation-duration: .01ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
+    transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
   }
-  [data-reveal="waiting"], [data-reveal="shown"] { opacity: 1; transform: none; transition: none !important; }
-  dialog, dialog[open] { opacity: 1; transform: none; }
+  [data-reveal="waiting"],
+  [data-reveal="shown"] {
+    opacity: 1;
+    transform: none;
+    transition: none !important;
+  }
+  dialog,
+  dialog[open] {
+    opacity: 1;
+    transform: none;
+  }
 }

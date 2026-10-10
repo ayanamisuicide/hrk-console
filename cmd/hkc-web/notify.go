@@ -14,6 +14,8 @@ import (
 	"heroku-console/botproc"
 )
 
+// stateNotifier — Последнее наблюдение и HTTPS-клиент. Первое наблюдение устанавливает базу, но не
+// отправляет уведомление.
 type stateNotifier struct {
 	endpoint    string
 	client      *http.Client
@@ -22,6 +24,8 @@ type stateNotifier struct {
 	initialized bool
 }
 
+// observe запоминает состояние под мьютексом и отправляет уведомление только при изменении после первого
+// наблюдения.
 func (n *stateNotifier) observe(running bool) {
 	if n == nil {
 		return
@@ -35,6 +39,7 @@ func (n *stateNotifier) observe(running bool) {
 	}
 }
 
+// newStateNotifier проверяет HTTPS-адрес без учётных данных и создаёт клиент с коротким таймаутом.
 func newStateNotifier(raw string) *stateNotifier {
 	if raw == "" {
 		return nil
@@ -47,6 +52,7 @@ func newStateNotifier(raw string) *stateNotifier {
 	return &stateNotifier{endpoint: raw, client: &http.Client{Timeout: 5 * time.Second}}
 }
 
+// send отправляет JSON-уведомление о состоянии; ошибки уведомления не останавливают управление ботом.
 func (n *stateNotifier) send(ctx context.Context, running bool) {
 	if n == nil {
 		return
@@ -72,6 +78,7 @@ func (n *stateNotifier) send(ctx context.Context, running bool) {
 	}
 }
 
+// watchBotState проверяет состояние каждые 15 секунд до отмены контекста.
 func watchBotState(ctx context.Context, notifier *stateNotifier, bot *botproc.Manager) {
 	if notifier == nil {
 		return
@@ -89,4 +96,5 @@ func watchBotState(ctx context.Context, notifier *stateNotifier, bot *botproc.Ma
 	}
 }
 
+// configuredWebhook создаёт необязательный отправитель из HKC_WEBHOOK_URL.
 func configuredWebhook() *stateNotifier { return newStateNotifier(os.Getenv("HKC_WEBHOOK_URL")) }

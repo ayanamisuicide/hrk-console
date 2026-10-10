@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// testOperationStore создаёт изолированное хранилище операций во временном каталоге.
 func testOperationStore(t *testing.T) *operationStore {
 	t.Helper()
 	store, err := openOperationStore(filepath.Join(t.TempDir(), "operations.json"))
@@ -19,6 +20,8 @@ func testOperationStore(t *testing.T) *operationStore {
 	return store
 }
 
+// TestMaintenanceBlocksStartButAllowsStop проверяет запрет старта при доступной остановке во время
+// обслуживания.
 func TestMaintenanceBlocksStartButAllowsStop(t *testing.T) {
 	s := newTestServer(t)
 	s.operations = testOperationStore(t)
@@ -34,6 +37,8 @@ func TestMaintenanceBlocksStartButAllowsStop(t *testing.T) {
 	}
 }
 
+// TestOperationStorePersistsAndRequeues проверяет сохранение очереди и повторный захват незавершённой
+// задачи после перезапуска.
 func TestOperationStorePersistsAndRequeues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "operations.json")
 	store, err := openOperationStore(path)
@@ -68,6 +73,7 @@ func TestOperationStorePersistsAndRequeues(t *testing.T) {
 	}
 }
 
+// TestMaintenanceAndScheduleHTTP проверяет административный API обслуживания и расписаний.
 func TestMaintenanceAndScheduleHTTP(t *testing.T) {
 	s := newTestServer(t)
 	s.operations = testOperationStore(t)
@@ -99,6 +105,7 @@ func TestMaintenanceAndScheduleHTTP(t *testing.T) {
 	}
 }
 
+// TestOperationsRequireAdmin проверяет отказ в операциях без административного токена.
 func TestOperationsRequireAdmin(t *testing.T) {
 	s := newTestServer(t)
 	s.operations = testOperationStore(t)

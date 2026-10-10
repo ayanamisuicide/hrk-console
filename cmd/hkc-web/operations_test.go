@@ -13,12 +13,14 @@ import (
 	"testing"
 )
 
+// adminRequest готовит запрос с тестовым административным токеном.
 func adminRequest(method, target string, body io.Reader) *http.Request {
 	request := httptest.NewRequest(method, target, body)
 	request.Header.Set("Authorization", "Bearer admin-secret")
 	return request
 }
 
+// TestConfigHistorySnapshotAndRestore проверяет сохранение предыдущей конфигурации и восстановление версии.
 func TestConfigHistorySnapshotAndRestore(t *testing.T) {
 	s := newTestServer(t)
 	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
@@ -62,6 +64,8 @@ func TestConfigHistorySnapshotAndRestore(t *testing.T) {
 	}
 }
 
+// TestConfigValidationAndHistoryDiffHideValues проверяет предварительную валидацию и отсутствие секретных
+// значений в сравнении.
 func TestConfigValidationAndHistoryDiffHideValues(t *testing.T) {
 	s := newTestServer(t)
 	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
@@ -103,6 +107,8 @@ func TestConfigValidationAndHistoryDiffHideValues(t *testing.T) {
 	}
 }
 
+// TestDiagnosticBundleRedactsSecrets проверяет маскирование известных форматов секретов в диагностическом
+// архиве.
 func TestDiagnosticBundleRedactsSecrets(t *testing.T) {
 	s := newTestServer(t)
 	s.audit = newAuditStore(filepath.Join(t.TempDir(), "audit.jsonl"))
@@ -152,6 +158,7 @@ func TestDiagnosticBundleRedactsSecrets(t *testing.T) {
 	}
 }
 
+// TestSecurityOverviewRequiresAdmin проверяет защиту сводки безопасности и её данные.
 func TestSecurityOverviewRequiresAdmin(t *testing.T) {
 	s := newTestServer(t)
 	unauthorized := httptest.NewRecorder()

@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Allow the writer to rotate or remove a log while it is being followed.
+// Разрешаем писателю переименовать или удалить журнал, пока читатель держит файл.
 func openLog(path string) (*os.File, error) {
 	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {

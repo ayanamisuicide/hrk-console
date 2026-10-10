@@ -11,6 +11,7 @@ import (
 
 var incidentLine = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(ERROR|CRITICAL|WARNING)\] ([^:]+):\s*(.*)$`)
 
+// incident — Группа близких событий одного модуля с временными границами и контекстом.
 type incident struct {
 	Start    string `json:"start"`
 	End      string `json:"end"`
@@ -22,7 +23,7 @@ type incident struct {
 	Restarts int    `json:"restarts"`
 }
 
-// Group nearby failures by module. Warnings are only promoted after a burst.
+// Группируем близкие ошибки по модулю; предупреждения учитываем только сериями.
 func detectIncidents(lines []string) []incident {
 	result := []incident{}
 	for index, raw := range lines {
@@ -91,6 +92,7 @@ func detectIncidents(lines []string) []incident {
 	return result
 }
 
+// incidents анализирует ограниченный хвост журнала и возвращает найденные происшествия.
 func (s *server) incidents(w http.ResponseWriter, _ *http.Request) {
 	lines := logfeed.TailLines(s.bot.LogFile, 3000)
 	items := detectIncidents(lines)

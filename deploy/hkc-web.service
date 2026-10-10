@@ -1,18 +1,22 @@
+# Шаблон: установщик заменяет __HKC_SOURCE_DIR__ и __HKC_SERVICE_USER__.
 [Unit]
-Description=Heroku web console
+Description=Веб-панель Heroku
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=__HKC_SERVICE_USER__
+# Закрытый файл окружения задаёт пути и административный секрет.
 EnvironmentFile=/etc/hkc/hkc.env
 WorkingDirectory=__HKC_SOURCE_DIR__
 ExecStart=__HKC_SOURCE_DIR__/bin/hkc-web
 Restart=always
 RestartSec=2
+# Остановка службы завершает всю группу дочерних процессов.
 KillMode=control-group
 UMask=0077
+# Защитные ограничения службы, а не отдельная песочница для команд терминала.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectKernelTunables=true

@@ -1,0 +1,125 @@
+/* Группы событий аудита и их раскрытые подробности.
+ * Положение файла в списке импортов определяет приоритет этих правил. */
+.audit-groups {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+}
+.audit-group {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.audit-group:hover,
+.audit-group.open {
+  border-color: color-mix(in srgb, var(--mint) 38%, var(--line));
+}
+.audit-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+}
+.audit-group-head > div {
+  min-width: 0;
+}
+.audit-group-head strong {
+  display: block;
+  color: var(--mint);
+  font:
+    11px/1.5 "Cascadia Mono",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.audit-group-head p {
+  margin: 5px 0;
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.audit-group-head span {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.audit-toggle {
+  flex: none;
+  white-space: nowrap;
+}
+.audit-expander {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition:
+    grid-template-rows 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.18s ease,
+    transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.audit-group.open .audit-expander {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: none;
+}
+.audit-expander-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.audit-occurrence {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+.audit-occurrence time {
+  color: var(--text);
+}
+.audit-more {
+  margin: 0 18px 18px;
+}
+/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
+@media (max-width: 720px) {
+  .admin-tree-group > summary {
+    grid-template-columns: 1fr 24px;
+    gap: 5px 8px;
+  }
+  .tree-index,
+  .admin-tree-group > summary strong,
+  .admin-tree-group > summary small {
+    grid-column: 1;
+  }
+  .admin-tree-group > summary::after {
+    grid-row: 1/4;
+    grid-column: 2;
+  }
+  .admin-tree-children > .admin-section {
+    margin-right: 8px;
+    margin-left: 8px;
+  }
+  .admin-tree-children > .admin-section:last-child {
+    margin-bottom: 12px;
+  }
+  .audit-group-head {
+    align-items: flex-start;
+  }
+}
+/* При уменьшенном движении эффекты не должны мешать чтению и доступу к содержимому. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-tree-clip,
+  .audit-expander,
+  .admin-tree-group > summary,
+  .admin-tree-group > summary::after,
+  .audit-group {
+    transition: none;
+  }
+}

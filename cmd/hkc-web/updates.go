@@ -22,12 +22,14 @@ var buildVersion = "dev"
 var buildCommit = ""
 var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
+// versionInfo — Версия работающего бинарника, встроенный коммит и признак сборки с локальными правками.
 type versionInfo struct {
 	Version  string `json:"version"`
 	Commit   string `json:"commit"`
 	Modified bool   `json:"modified"`
 }
 
+// currentVersion объединяет встроенную версию сборки с доступными VCS-метаданными Go.
 func currentVersion() versionInfo {
 	v := versionInfo{Version: buildVersion, Commit: buildCommit}
 	if info, ok := debug.ReadBuildInfo(); ok {
@@ -43,6 +45,7 @@ func currentVersion() versionInfo {
 	return v
 }
 
+// sourceInfo — Результат проверки одной копии Git без изменения её файлов.
 type sourceInfo struct {
 	Configured bool   `json:"configured"`
 	Commit     string `json:"commit,omitempty"`
@@ -51,9 +54,10 @@ type sourceInfo struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// gitOutput запускает Git с контекстом, без пользовательских хуков и интерактивных запросов.
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	options := []string{"-c", "core.hooksPath=/dev/null"}
-	// Git for Windows checks out CRLF; use the same conversion when inspecting it from WSL.
+	// Git в Windows использует CRLF; при проверке из WSL сохраняем ту же настройку.
 	if strings.HasPrefix(dir, "/mnt/") {
 		options = append(options, "-c", "core.autocrlf=true")
 	}
@@ -70,6 +74,7 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return strings.TrimSpace(string(data)), nil
 }
 
+// inspectSource проверяет путь, ветку, коммит и локальные изменения копии исходников без её изменения.
 func inspectSource(ctx context.Context, dir string) sourceInfo {
 	if dir == "" {
 		return sourceInfo{}
@@ -94,6 +99,7 @@ func inspectSource(ctx context.Context, dir string) sourceInfo {
 	return v
 }
 
+// remoteVersion — Стабильный тег релиза и подтверждённый коммит удалённого репозитория.
 type remoteVersion struct {
 	Version   string    `json:"version,omitempty"`
 	Commit    string    `json:"commit,omitempty"`
@@ -103,17 +109,20 @@ type remoteVersion struct {
 	Checking  bool      `json:"checking"`
 }
 
+// updateChecker — Последний результат фоновой проверки релиза, защищённый от параллельных обращений.
 type updateChecker struct {
 	mu     sync.Mutex
 	remote remoteVersion
 }
 
+// snapshot возвращает защищённую мьютексом копию результата проверки обновлений.
 func (c *updateChecker) snapshot() remoteVersion {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.remote
 }
 
+// check обновляет сведения о релизе в фоне, не допуская параллельных и слишком частых проверок.
 func (c *updateChecker) check() {
 	c.mu.Lock()
 	if c.remote.Checking || time.Since(c.remote.CheckedAt) < time.Minute {
@@ -136,11 +145,13 @@ func (c *updateChecker) check() {
 	}()
 }
 
+// fetchRemoteVersion получает стабильный тег через HTTPS-переадресацию релиза.
+// Его коммит сверяется по ссылкам Git, а не по тексту названия релиза.
 func fetchRemoteVersion(ctx context.Context) (remoteVersion, error) {
-	// The public release redirect avoids GitHub API rate limits and needs no token.
+	// Публичная переадресация релиза не требует токена и не расходует лимит GitHub API.
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > 5 || req.URL.Scheme != "https" || req.URL.Host != "github.com" {
-			return fmt.Errorf("unexpected release redirect")
+			return fmt.Errorf("неожиданная переадресация релиза")
 		}
 		return nil
 	}}
@@ -185,6 +196,7 @@ func fetchRemoteVersion(ctx context.Context) (remoteVersion, error) {
 	return remote, nil
 }
 
+// updateStatus возвращает сведения об установленной сборке, релизе и копиях исходников.
 func (s *server) updateStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, 401, actionResponse{Message: "требуется административный токен"})
@@ -208,6 +220,7 @@ func (s *server) updateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"installed": currentVersion(), "source": source, "local": local, "github": remote, "enabled": canInstall, "job": job})
 }
 
+// readUpdateJob читает ограниченный по размеру файл состояния отдельной службы обновления.
 func readUpdateJob() map[string]any {
 	var job map[string]any
 	if dir := os.Getenv("HKC_UPDATE_DIR"); dir != "" {
@@ -218,6 +231,7 @@ func readUpdateJob() map[string]any {
 	return job
 }
 
+// updateProgress выдаёт администратору ход установки отдельной службы.
 func (s *server) updateProgress(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "требуется административный токен"})
@@ -226,6 +240,8 @@ func (s *server) updateProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"job": readUpdateJob(), "installed": currentVersion()})
 }
 
+// installUpdate проверяет возможность обновления и запускает отдельную systemd-службу, которая переживёт
+// перезапуск самой панели.
 func (s *server) installUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, 401, actionResponse{Message: "требуется административный токен"})

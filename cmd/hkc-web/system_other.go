@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// readSystemStatus возвращает базовую платформу с Supported=false: Linux-метрики на этой системе не
+// собираются.
 func readSystemStatus(_ string) systemStatus {
 	hostname, _ := os.Hostname()
 	return systemStatus{

@@ -15,6 +15,7 @@ func requireNoBot(t *testing.T) {
 	}
 }
 
+// TestPIDAgreesWithPIDs проверяет согласованность одиночного PID и списка процессов.
 func TestPIDAgreesWithPIDs(t *testing.T) {
 	pids := PIDs()
 	pid := PID()
@@ -55,6 +56,7 @@ func TestVersionReadsOnlyTail(t *testing.T) {
 	}
 }
 
+// TestUptimeUnknownPID проверяет безопасное представление неизвестного процесса.
 func TestUptimeUnknownPID(t *testing.T) {
 	if got := Uptime(1 << 30); got != "—" {
 		t.Errorf("для отсутствующего процесса: got %q, want —", got)

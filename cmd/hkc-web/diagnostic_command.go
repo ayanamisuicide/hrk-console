@@ -13,6 +13,8 @@ import (
 	"heroku-console/botproc"
 )
 
+// adminDiagnosticCommand выполняет только фиксированные диагностические команды, ограничивая время и размер
+// ответа. Это не произвольный терминал.
 func (s *server) adminDiagnosticCommand(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})

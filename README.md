@@ -1,12 +1,12 @@
 # hrk-console
 
 [![CI](https://github.com/ayanamisuicide/hrk-console/actions/workflows/ci.yml/badge.svg)](https://github.com/ayanamisuicide/hrk-console/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/ayanamisuicide/hrk-console?label=release)](https://github.com/ayanamisuicide/hrk-console/releases/latest)
+[![Релиз](https://img.shields.io/github/v/release/ayanamisuicide/hrk-console?label=release)](https://github.com/ayanamisuicide/hrk-console/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/ayanamisuicide/hrk-console)](go.mod)
 
 **hrk-console** — веб-панель управления Telegram-юзерботом [Heroku](https://github.com/ZetGoHack/Heroku). Запуск, остановка, перезапуск и живой просмотр лога доступны из браузера.
 
-Панель включает обзор сервиса, мониторинг памяти процесса, отдельный экран состояния WSL/Linux (CPU, RAM, диск, load average и uptime), поиск и фильтры журнала, экспорт лога, диагностику установки, административную shell-консоль, роли пользователей, историю действий администратора, резервные копии базы доступа, светлую тему, палитру быстрых действий (`Ctrl+K`) и установку как PWA. Состояние бота можно отправлять на HTTPS webhook.
+Панель включает мониторинг памяти процесса, отдельный экран состояния WSL/Linux (процессор, оперативная память, диск, средняя нагрузка и время работы), поиск и фильтры журнала, экспорт лога, диагностику установки, административную консоль команд, роли пользователей, историю действий администратора, резервные копии базы доступа, светлую тему, палитру быстрых действий (`Ctrl+K`) и установку как PWA. Состояние бота можно отправлять на HTTPS-уведомления.
 
 Сервер работает рядом с ботом на Linux/WSL, читает `heroku.log` и управляет процессом напрямую. Пользователи работают только через сайт; TUI, нативных окон Linux/Windows и SSH-клиента в проекте больше нет.
 
@@ -32,9 +32,11 @@ export HKC_ADMIN_TOKEN="$(openssl rand -hex 32)"
 | | |
 | --- | --- |
 | [Веб-интерфейс](docs/web.md) | Сборка, запуск, инвайты, администрирование и публикация через HTTPS |
-| [Changelog](CHANGELOG.md) | История версий |
+| [История изменений](CHANGELOG.md) | История версий |
 
 ## Разработка
+
+Структура модулей и правила изменения стилей описаны в [docs/development.md](docs/development.md).
 
 ```sh
 make test

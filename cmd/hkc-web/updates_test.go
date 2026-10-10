@@ -10,6 +10,7 @@ import (
 	"testing"
 )
 
+// TestUpdateProgressReturnsRecordedSteps проверяет выдачу сохранённых этапов установки.
 func TestUpdateProgressReturnsRecordedSteps(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HKC_UPDATE_DIR", dir)
@@ -26,6 +27,7 @@ func TestUpdateProgressReturnsRecordedSteps(t *testing.T) {
 	}
 }
 
+// TestUpdateEndpointsRequireAdministrator проверяет административную защиту маршрутов обновления.
 func TestUpdateEndpointsRequireAdministrator(t *testing.T) {
 	s := newTestServer(t)
 	for _, handler := range []func(*httptest.ResponseRecorder){
@@ -47,6 +49,7 @@ func TestUpdateEndpointsRequireAdministrator(t *testing.T) {
 	}
 }
 
+// TestInstallUpdateDisabledByDefault проверяет запрет установки без явного включения.
 func TestInstallUpdateDisabledByDefault(t *testing.T) {
 	t.Setenv("HKC_UPDATE_ENABLED", "")
 	s := newTestServer(t)
@@ -59,6 +62,8 @@ func TestInstallUpdateDisabledByDefault(t *testing.T) {
 	}
 }
 
+// TestSourceInspectionFindsUncommittedAndUntrackedChanges проверяет обнаружение изменённых и новых файлов в
+// копии Git.
 func TestSourceInspectionFindsUncommittedAndUntrackedChanges(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git unavailable")
@@ -95,6 +100,7 @@ func TestSourceInspectionFindsUncommittedAndUntrackedChanges(t *testing.T) {
 	}
 }
 
+// TestStableReleaseTagValidation проверяет допустимый формат стабильного тега релиза.
 func TestStableReleaseTagValidation(t *testing.T) {
 	for _, tag := range []string{"v2.2.0-rc1", "../main", "v2.2.0/other", "main", "v2.2"} {
 		if releaseTag.MatchString(tag) {

@@ -34,6 +34,7 @@ type Manager struct {
 	versionInfo os.FileInfo
 }
 
+// New создаёт менеджер с путями управляемой установки Heroku.
 func New(herokuDir string) *Manager {
 	return &Manager{
 		HerokuDir:  herokuDir,
@@ -43,7 +44,7 @@ func New(herokuDir string) *Manager {
 	}
 }
 
-// VirtualEnv finds the Python environment used by supported Heroku installs.
+// VirtualEnv находит окружение Python поддерживаемой установки Heroku.
 func (m *Manager) VirtualEnv() string {
 	for _, name := range []string{".venv", "venv"} {
 		path := filepath.Join(m.HerokuDir, name)
@@ -59,10 +60,11 @@ func PIDs() []int {
 	return pidsInDir("")
 }
 
-// PIDs returns only bot processes whose working directory is this manager's
-// Heroku directory. This prevents one console from controlling another bot.
+// PIDs возвращает только процессы бота с рабочим каталогом этого менеджера.
+// Так одна панель не может управлять ботом другой установки.
 func (m *Manager) PIDs() []int { return pidsInDir(m.HerokuDir) }
 
+// pidsInDir ищет процессы Python-модуля heroku и отбирает их по рабочему каталогу.
 func pidsInDir(herokuDir string) []int {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -89,6 +91,7 @@ func pidsInDir(herokuDir string) []int {
 	return pids
 }
 
+// processInDir сверяет рабочий каталог процесса через /proc, чтобы не управлять другой установкой.
 func processInDir(pid int, herokuDir string) bool {
 	if herokuDir == "" {
 		return true
@@ -113,6 +116,7 @@ func PID() int {
 	return pids[0]
 }
 
+// PID возвращает первый найденный PID или ноль при отсутствии процесса.
 func (m *Manager) PID() int {
 	pids := m.PIDs()
 	if len(pids) == 0 {
@@ -121,7 +125,10 @@ func (m *Manager) PID() int {
 	return pids[0]
 }
 
-func Alive() bool              { return PID() != 0 }
+// Alive проверяет наличие процесса через поиск PID.
+func Alive() bool { return PID() != 0 }
+
+// Alive проверяет наличие процесса через поиск PID.
 func (m *Manager) Alive() bool { return m.PID() != 0 }
 
 // AliveAt проверяет один конкретный pid вместо полного обхода /proc —
@@ -138,6 +145,7 @@ func AliveAt(pid int) bool {
 	return bytes.Contains(bytes.ReplaceAll(data, []byte{0}, []byte{' '}), []byte(needle))
 }
 
+// AliveAt проверяет, работает ли бот в указанном каталоге.
 func (m *Manager) AliveAt(pid int) bool { return AliveAt(pid) && processInDir(pid, m.HerokuDir) }
 
 // Uptime форматирует время жизни процесса: "1ч 12м" / "34м 05с" / "—".

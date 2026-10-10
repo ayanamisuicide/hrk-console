@@ -72,8 +72,8 @@ func TailLines(path string, max int) []string {
 	return lines
 }
 
-// LineCount считает строки файла — нужно, чтобы --from мог начать поток
-// сразу после текущего конца лога, не показывая старую историю повторно.
+// LineCount считает строки файла, включая незавершённую последнюю строку.
+// Читает блоками без построения списка всех строк в памяти.
 func LineCount(path string) int {
 	f, err := os.Open(path)
 	if err != nil {
@@ -199,6 +199,7 @@ func (s *followState) open(path string, from int) error {
 	return nil
 }
 
+// close закрывает текущий файл и сбрасывает читатель; вызывается внутри цикла наблюдения.
 func (s *followState) close() {
 	if s.file != nil {
 		_ = s.file.Close()
@@ -215,6 +216,7 @@ func (f *Follower) Alive() (ok bool, reason string, since time.Time) {
 	return f.alive, f.lastErr, f.since
 }
 
+// setState меняет состояние читателя под мьютексом, доступным и проверяющим Alive.
 func (f *Follower) setState(alive bool, reason string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -224,6 +226,8 @@ func (f *Follower) setState(alive bool, reason string) {
 	f.alive, f.lastErr, f.since = alive, reason, time.Now()
 }
 
+// Stop однократно сигнализирует об отмене и возвращается без ожидания.
+// Фоновый читатель сам закрывает файл и Lines при выходе из цикла.
 func (f *Follower) Stop() {
 	f.stopOnce.Do(func() { close(f.stop) })
 }

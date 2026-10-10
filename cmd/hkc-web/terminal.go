@@ -21,11 +21,13 @@ const (
 	terminalMaxOutput = 64 * 1024
 )
 
+// terminalRequest — Команда и отдельное подтверждение её произвольного выполнения.
 type terminalRequest struct {
 	Command   string `json:"command"`
 	Confirmed bool   `json:"confirmed"`
 }
 
+// terminalResponse — Ограниченный вывод команды, код завершения, таймаут и рабочий каталог.
 type terminalResponse struct {
 	Output     string `json:"output"`
 	Actor      string `json:"actor"`
@@ -35,11 +37,14 @@ type terminalResponse struct {
 	Directory  string `json:"directory"`
 }
 
+// cappedOutput — Ограниченный буфер общего вывода команды; продолжает принимать запись после заполнения.
 type cappedOutput struct {
 	buffer bytes.Buffer
 	cut    bool
 }
 
+// Write сохраняет вывод до лимита, но сообщает принятую длину полностью, чтобы обрезание не ломало
+// выполняемую команду.
 func (c *cappedOutput) Write(p []byte) (int, error) {
 	length := len(p)
 	room := terminalMaxOutput - c.buffer.Len()
@@ -55,6 +60,8 @@ func (c *cappedOutput) Write(p []byte) (int, error) {
 	return length, nil
 }
 
+// adminTerminal требует административный токен, Linux, явное включение и подтверждение. Выполняет оболочку
+// с таймаутом и ограниченным выводом; аудит хранит отпечаток, а не текст команды.
 func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -92,6 +99,8 @@ func (s *server) adminTerminal(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), terminalTimeout)
 	defer cancel()
 	started := time.Now()
+	// Запускается произвольная оболочка с правами службы: ограничения времени
+	// и вывода не являются песочницей и не ограничивают доступ команды к файлам.
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", request.Command)
 	configureCommandProcess(cmd)
 	cmd.Dir = s.bot.HerokuDir

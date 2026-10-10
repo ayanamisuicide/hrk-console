@@ -14,6 +14,7 @@ import (
 	"time"
 )
 
+// apiTokenRecord — Запись токена на диске: секрет заменён SHA-256, право хранится отдельно.
 type apiTokenRecord struct {
 	Hash      string     `json:"hash"`
 	Label     string     `json:"label"`
@@ -22,6 +23,7 @@ type apiTokenRecord struct {
 	LastUsed  *time.Time `json:"lastUsed,omitempty"`
 }
 
+// apiTokenView — Метаданные токена для списка; хеш и полный секрет исключены.
 type apiTokenView struct {
 	ID        string     `json:"id"`
 	Label     string     `json:"label"`
@@ -30,6 +32,8 @@ type apiTokenView struct {
 	LastUsed  *time.Time `json:"lastUsed,omitempty"`
 }
 
+// createAPIToken создаёт токен для чтения или управления. В базу попадает только SHA-256; полный секрет
+// возвращается при создании.
 func (s *authStore) createAPIToken(label, scope string) (apiTokenView, string, error) {
 	label = strings.TrimSpace(label)
 	if label == "" || len(label) > 48 {
@@ -47,6 +51,7 @@ func (s *authStore) createAPIToken(label, scope string) (apiTokenView, string, e
 		return apiTokenView{}, "", err
 	}
 	raw := "hkc." + id + "." + secret
+	// Полный токен не сохраняется: для сверки достаточно криптографического отпечатка.
 	digest := sha256.Sum256([]byte(raw))
 	now := time.Now().UTC()
 	record := apiTokenRecord{Hash: hex.EncodeToString(digest[:]), Label: label, Scope: scope, CreatedAt: now}
@@ -66,6 +71,7 @@ func (s *authStore) createAPIToken(label, scope string) (apiTokenView, string, e
 	return apiTokenView{ID: id, Label: label, Scope: scope, CreatedAt: now}, raw, nil
 }
 
+// listAPITokens возвращает метаданные токенов без секретов и хешей.
 func (s *authStore) listAPITokens() []apiTokenView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -77,11 +83,14 @@ func (s *authStore) listAPITokens() []apiTokenView {
 	return views
 }
 
+// useAPIToken сверяет хеш и требуемое право под блокировкой; время использования сохраняет не чаще раза в
+// минуту.
 func (s *authStore) useAPIToken(raw, required string) (string, bool) {
 	parts := strings.Split(raw, ".")
 	if len(parts) != 3 || parts[0] != "hkc" {
 		return "", false
 	}
+	// Полный токен не сохраняется: для сверки достаточно криптографического отпечатка.
 	digest := sha256.Sum256([]byte(raw))
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -96,6 +105,7 @@ func (s *authStore) useAPIToken(raw, required string) (string, bool) {
 	if required == "control" && record.Scope != "control" {
 		return "", false
 	}
+	// Не переписываем базу на каждом чтении API: метаданные обновляются раз в минуту.
 	if record.LastUsed == nil || time.Since(*record.LastUsed) > time.Minute {
 		now := time.Now().UTC()
 		record.LastUsed = &now
@@ -105,6 +115,7 @@ func (s *authStore) useAPIToken(raw, required string) (string, bool) {
 	return record.Label, true
 }
 
+// revokeAPIToken удаляет токен с откатом памяти при ошибке сохранения.
 func (s *authStore) revokeAPIToken(id string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,8 +131,10 @@ func (s *authStore) revokeAPIToken(id string) (bool, error) {
 	return true, nil
 }
 
+// apiActorKey — Отдельный тип ключа контекста, чтобы метка API-клиента не пересекалась с чужими значениями.
 type apiActorKey struct{}
 
+// apiAuthorize проверяет Bearer-токен нужного уровня и передаёт его метку через контекст для аудита.
 func (s *server) apiAuthorize(scope string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
@@ -139,6 +152,7 @@ func (s *server) apiAuthorize(scope string, next http.HandlerFunc) http.HandlerF
 	}
 }
 
+// listAPITokens выдаёт администратору метаданные токенов без их секретов.
 func (s *server) listAPITokens(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -147,6 +161,7 @@ func (s *server) listAPITokens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tokens": s.auth.listAPITokens()})
 }
 
+// createAPIToken проверяет административный запрос и один раз выдаёт полный секрет созданного токена.
 func (s *server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -169,6 +184,7 @@ func (s *server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"token": raw, "info": view})
 }
 
+// revokeAPIToken отзывает токен по административному запросу и фиксирует действие в аудите.
 func (s *server) revokeAPIToken(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})

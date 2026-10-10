@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+// TestHerokuConfigMasksSecretsAndPreservesOtherKeys проверяет скрытие значений и сохранение неизвестных
+// ключей при изменении разрешённых.
 func TestHerokuConfigMasksSecretsAndPreservesOtherKeys(t *testing.T) {
 	s := newTestServer(t)
 	if err := os.MkdirAll(s.bot.HerokuDir, 0o700); err != nil {
@@ -49,6 +51,7 @@ func TestHerokuConfigMasksSecretsAndPreservesOtherKeys(t *testing.T) {
 	}
 }
 
+// TestDiagnosticCommandRejectsUnknownAction проверяет отказ произвольной диагностической команды.
 func TestDiagnosticCommandRejectsUnknownAction(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/api/admin/diagnostics/arbitrary", nil)
@@ -61,6 +64,7 @@ func TestDiagnosticCommandRejectsUnknownAction(t *testing.T) {
 	}
 }
 
+// TestAdminTerminalRequiresToken проверяет административную защиту терминала.
 func TestAdminTerminalRequiresToken(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/api/admin/terminal", strings.NewReader(`{"command":"pwd"}`))
@@ -71,6 +75,7 @@ func TestAdminTerminalRequiresToken(t *testing.T) {
 	}
 }
 
+// TestAdminTerminalDisabledByDefault проверяет отказ терминала без явного включения.
 func TestAdminTerminalDisabledByDefault(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("terminal is available only on Linux")
@@ -85,6 +90,7 @@ func TestAdminTerminalDisabledByDefault(t *testing.T) {
 	}
 }
 
+// TestAdminTerminalRunsInsideHerokuDirectory проверяет рабочий каталог команды терминала.
 func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("terminal is available only on Linux")
@@ -100,6 +106,7 @@ func TestAdminTerminalRunsInsideHerokuDirectory(t *testing.T) {
 	}
 }
 
+// TestSystemHealthReturnsPlatform проверяет сведения платформы в системной сводке.
 func TestSystemHealthReturnsPlatform(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
@@ -109,6 +116,7 @@ func TestSystemHealthReturnsPlatform(t *testing.T) {
 	}
 }
 
+// TestAPITokenScopeAndRevocation проверяет разные права API-токенов и их отзыв.
 func TestAPITokenScopeAndRevocation(t *testing.T) {
 	s := newTestServer(t)
 	view, raw, err := s.auth.createAPIToken("monitor", "read")
@@ -137,6 +145,7 @@ func TestAPITokenScopeAndRevocation(t *testing.T) {
 	}
 }
 
+// TestViewerCannotControlBot проверяет доступ читателя к данным без права управления.
 func TestViewerCannotControlBot(t *testing.T) {
 	s := newTestServer(t)
 	invite, _, err := s.auth.createInviteWithRole(time.Hour, "viewer")
@@ -169,6 +178,7 @@ func TestViewerCannotControlBot(t *testing.T) {
 	}
 }
 
+// TestAuditPersistsAndInsightsUseLog проверяет сохранение аудита и сводку уровней по журналу.
 func TestAuditPersistsAndInsightsUseLog(t *testing.T) {
 	s := newTestServer(t)
 	s.audit = newAuditStore(filepath.Join(t.TempDir(), "audit.jsonl"))
@@ -189,6 +199,7 @@ func TestAuditPersistsAndInsightsUseLog(t *testing.T) {
 	}
 }
 
+// TestAuditRetentionKeepsNewestEvents проверяет сохранение последних событий при сокращении аудита.
 func TestAuditRetentionKeepsNewestEvents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	audit := newAuditStore(path)
@@ -213,6 +224,8 @@ func TestAuditRetentionKeepsNewestEvents(t *testing.T) {
 	}
 }
 
+// TestMetricHistorySamplesEverySecondAndKeepsTwoMinutes проверяет секундный шаг и ограничение длины истории
+// памяти.
 func TestMetricHistorySamplesEverySecondAndKeepsTwoMinutes(t *testing.T) {
 	store := newMetricStore()
 	start := time.Now().UTC()
@@ -233,6 +246,7 @@ func TestMetricHistorySamplesEverySecondAndKeepsTwoMinutes(t *testing.T) {
 	}
 }
 
+// TestBackupRestorePreservesCurrentState проверяет сохранение текущей базы перед восстановлением копии.
 func TestBackupRestorePreservesCurrentState(t *testing.T) {
 	s := newTestServer(t)
 	invite, _, err := s.auth.createInvite(time.Hour)

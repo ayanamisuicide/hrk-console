@@ -19,6 +19,7 @@ var systemCPUState struct {
 	idle  uint64
 }
 
+// readSystemStatus собирает сведения Linux из /proc и Statfs для файловой системы каталога бота.
 func readSystemStatus(diskPath string) systemStatus {
 	status := systemStatus{Supported: true, OS: runtime.GOOS, Arch: runtime.GOARCH, CPUCores: runtime.NumCPU(), SampledAt: time.Now().UTC()}
 	status.Hostname, _ = os.Hostname()
@@ -33,6 +34,8 @@ func readSystemStatus(diskPath string) systemStatus {
 	return status
 }
 
+// cpuPercent считает загрузку по разнице двух чтений накопленных CPU-счётчиков. Первый замер возвращает
+// ноль; прошлые счётчики защищены мьютексом.
 func cpuPercent() float64 {
 	data, err := os.ReadFile("/proc/stat")
 	if err != nil {
@@ -63,6 +66,7 @@ func cpuPercent() float64 {
 	return float64(deltaTotal-deltaIdle) * 100 / float64(deltaTotal)
 }
 
+// memoryInfo читает MemTotal и MemAvailable из /proc/meminfo и переводит килобайты в байты.
 func memoryInfo() (total, available uint64) {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
@@ -84,6 +88,7 @@ func memoryInfo() (total, available uint64) {
 	return total, available
 }
 
+// loadAverage читает среднюю нагрузку за 1, 5 и 15 минут; это не процент CPU.
 func loadAverage() (one, five, fifteen float64) {
 	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
@@ -98,6 +103,7 @@ func loadAverage() (one, five, fifteen float64) {
 	return
 }
 
+// uptimeSeconds читает время работы ядра в секундах из /proc/uptime.
 func uptimeSeconds() float64 {
 	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
@@ -111,6 +117,7 @@ func uptimeSeconds() float64 {
 	return value
 }
 
+// diskInfo возвращает объём файловой системы и место, доступное непривилегированному процессу.
 func diskInfo(path string) (total, free uint64) {
 	var stat unix.Statfs_t
 	if unix.Statfs(path, &stat) != nil {
@@ -119,6 +126,7 @@ func diskInfo(path string) (total, free uint64) {
 	return stat.Blocks * uint64(stat.Bsize), stat.Bavail * uint64(stat.Bsize)
 }
 
+// kernelRelease преобразует нуль-терминированное поле Uname в строку версии ядра.
 func kernelRelease() string {
 	var info unix.Utsname
 	if unix.Uname(&info) != nil {

@@ -1,0 +1,150 @@
+/* Списки пользователей и приглашений.
+ * Положение файла в списке импортов определяет приоритет этих правил. */
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+th {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-align: left;
+  font-weight: 400;
+}
+th,
+td {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+td:first-child strong,
+td:first-child small {
+  display: block;
+}
+td:first-child small {
+  margin-top: 4px;
+}
+td small {
+  color: var(--muted);
+}
+td:last-child {
+  text-align: right;
+}
+.presence {
+  color: var(--muted);
+}
+.presence.online {
+  color: var(--mint);
+}
+.invite-form {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+}
+.invite-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.invite-form input {
+  width: 110px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  padding: 9px;
+}
+.invite-form button {
+  padding: 9px 12px;
+}
+.invites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+.invite-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, var(--panel-2), #101917);
+  padding: 15px;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+  animation: fade-rise 0.35s ease both;
+}
+.invite-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--mint) 30%, var(--line));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+.invite-card code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mint);
+  font-size: 11px;
+}
+.invite-card p {
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.invite-card div {
+  display: flex;
+  gap: 8px;
+}
+.empty {
+  padding: 16px 20px;
+}
+#admin-notice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 10;
+  max-width: min(420px, calc(100vw - 48px));
+}
+/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
+@media (max-width: 720px) {
+  .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .summary {
+    grid-template-columns: 1fr;
+  }
+  .bot-deck {
+    grid-template-columns: auto 1fr;
+  }
+  .bot-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .bot-actions button {
+    min-width: 0;
+    padding: 9px 6px;
+    font-size: 10px;
+    white-space: normal;
+  }
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .invite-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .invite-form input {
+    width: 100%;
+  }
+  th,
+  td {
+    padding: 11px 13px;
+  }
+}

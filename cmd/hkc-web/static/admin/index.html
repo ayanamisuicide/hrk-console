@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="ru">
 <head>
+  <!-- Общие стили загружаются перед специфичными: порядок сохраняет каскад. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HEROKU · ADMIN</title>
+  <title>HEROKU · АДМИНКА</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/motion.css">
   <link rel="stylesheet" href="/admin/admin.css">
@@ -11,7 +12,7 @@
 <body class="admin-body">
   <header class="admin-header">
     <div>
-      <span class="eyebrow">CONTROL DECK / ADMIN</span>
+      <span class="eyebrow">ПАНЕЛЬ / АДМИНКА</span>
       <h1>Доступ и пользователи</h1>
       <p class="admin-subtitle">Управление доступом, сессиями и процессом Heroku</p>
     </div>
@@ -28,12 +29,13 @@
     <details class="admin-tree-group" data-tree="updates">
       <summary><span class="tree-index">01 / СИСТЕМА</span><strong>Обновления и сверка</strong><small>Версии, исходники, установка</small></summary>
       <div class="admin-tree-clip"><div class="admin-tree-children">
+    <!-- Раздел updates-title: содержимое обновляется соответствующим модулем страницы. -->
     <section class="admin-section updates-section" aria-labelledby="updates-title">
-      <div class="section-heading"><div><span class="eyebrow">RELEASES / SOURCE VERIFICATION</span><h2 id="updates-title">Обновления и сверка</h2></div><button id="updates-check" class="compact">Проверить GitHub</button></div>
+      <div class="section-heading"><div><span class="eyebrow">РЕЛИЗЫ / СВЕРКА ИСХОДНИКОВ</span><h2 id="updates-title">Обновления и сверка</h2></div><button id="updates-check" class="compact">Проверить GitHub</button></div>
       <div class="updates-grid">
-        <article><span class="eyebrow">RUNNING / СБОРКА</span><strong id="update-installed">—</strong><code id="update-installed-commit">—</code></article>
-        <article><span class="eyebrow">SERVER / ИСХОДНИКИ</span><strong id="update-source">—</strong><code id="update-source-commit">—</code></article>
-        <article><span class="eyebrow">LOCAL / WINDOWS</span><strong id="update-local">—</strong><code id="update-local-commit">—</code></article>
+        <article><span class="eyebrow">ЗАПУЩЕННАЯ СБОРКА</span><strong id="update-installed">—</strong><code id="update-installed-commit">—</code></article>
+        <article><span class="eyebrow">СЕРВЕР / ИСХОДНИКИ</span><strong id="update-source">—</strong><code id="update-source-commit">—</code></article>
+        <article><span class="eyebrow">ЛОКАЛЬНО / WINDOWS</span><strong id="update-local">—</strong><code id="update-local-commit">—</code></article>
         <article><span class="eyebrow">GITHUB / РЕЛИЗ</span><strong id="update-release">—</strong><code id="update-release-commit">—</code></article>
       </div>
       <div class="updates-details"><p id="update-summary" role="status">Получаем сведения о версиях…</p><p id="update-job" role="status"></p><p id="update-main" class="muted"></p><p class="muted">Проверка каждые 10 минут. Установка — только по кнопке. Изменённые локальные файлы блокируют обновление; предыдущая сборка сохраняется для отката.</p><div class="update-actions"><button id="updates-install" class="primary" disabled>Открыть окно обновления</button><a id="updates-open" class="compact" href="/admin/update.html" target="hkc-update-progress">Посмотреть ход установки ↗</a></div></div>
@@ -49,7 +51,7 @@
     <section class="bot-deck">
       <div class="bot-orbit"><span id="bot-orbit-dot"></span></div>
       <div class="bot-copy">
-        <span class="eyebrow">BOT RUNTIME</span>
+        <span class="eyebrow">ПРОЦЕСС БОТА</span>
         <h2 id="admin-bot-status">Проверка процесса…</h2>
         <p id="admin-bot-meta">—</p>
       </div>
@@ -64,7 +66,7 @@
       <summary><span class="tree-index">02 / ОПЕРАЦИИ</span><strong>Обслуживание и расписание</strong><small>Блокировка запусков и одноразовые задания</small></summary>
       <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section operations-section">
-      <div class="section-heading"><div><span class="eyebrow">MAINTENANCE MODE</span><h2>Режим обслуживания</h2></div><strong id="maintenance-state" class="operation-state">Выключен</strong></div>
+      <div class="section-heading"><div><span class="eyebrow">РЕЖИМ ОБСЛУЖИВАНИЯ</span><h2>Режим обслуживания</h2></div><strong id="maintenance-state" class="operation-state">Выключен</strong></div>
       <form id="maintenance-form" class="operation-form">
         <label class="operation-check"><input id="maintenance-enabled" type="checkbox"><span>Блокировать запуск и перезапуск бота</span></label>
         <label>Сообщение <input id="maintenance-message" maxlength="240" placeholder="Например: обновление конфигурации"></label>
@@ -74,7 +76,7 @@
     </section>
 
     <section class="admin-section operations-section">
-      <div class="section-heading"><div><span class="eyebrow">SCHEDULER</span><h2>Расписание действий</h2></div><span class="muted">Одноразовые задания · время вашего устройства</span></div>
+      <div class="section-heading"><div><span class="eyebrow">РАСПИСАНИЕ</span><h2>Расписание действий</h2></div><span class="muted">Одноразовые задания · время вашего устройства</span></div>
       <form id="schedule-form" class="schedule-form">
         <label>Действие <select id="schedule-action"><option value="start">Запустить</option><option value="restart">Перезапустить</option><option value="stop">Остановить</option></select></label>
         <label>Дата и время <input id="schedule-run-at" type="datetime-local" required></label>
@@ -90,7 +92,7 @@
       <summary><span class="tree-index">03 / СЛУЖБА</span><strong>Диагностика и консоль</strong><small>Команды внутри WSL / HEROKU_DIR</small></summary>
       <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section console-section">
-      <div class="section-heading"><div><span class="eyebrow">DIAGNOSTIC CONSOLE</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
+      <div class="section-heading"><div><span class="eyebrow">ДИАГНОСТИКА</span><h2>Проверка Heroku</h2></div><span class="muted">Фиксированные команды · только администратор</span></div>
       <div class="console-actions"><button data-diagnostic="process" class="compact">Процесс</button><button data-diagnostic="startup-log" class="compact">Лог запуска</button><button data-diagnostic="git-status" class="compact">Git</button><button data-diagnostic="python-version" class="compact">Python</button></div>
       <pre id="diagnostic-output">Выберите проверку выше.</pre>
       <div class="bundle-actions"><button id="download-diagnostics" class="primary compact" type="button">Скачать диагностический ZIP</button><small>Секреты конфигурации не включаются; типичные токены в логах маскируются.</small></div>
@@ -110,7 +112,7 @@
     <section class="admin-section">
       <div class="section-heading">
         <div>
-          <span class="eyebrow">MEMBERS</span>
+          <span class="eyebrow">ПОЛЬЗОВАТЕЛИ</span>
           <h2>Пользователи</h2>
         </div>
         <span class="muted">Онлайн — активность за последние 30 секунд</span>
@@ -127,7 +129,7 @@
     <section class="admin-section">
       <div class="section-heading">
         <div>
-          <span class="eyebrow">INVITATIONS</span>
+          <span class="eyebrow">ПРИГЛАШЕНИЯ</span>
           <h2>Инвайты</h2>
         </div>
         <form id="invite-form" class="invite-form">
@@ -146,27 +148,27 @@
       <summary><span class="tree-index">05 / СОБЫТИЯ</span><strong>История и восстановление</strong><small>Действия и резервные копии доступа</small></summary>
       <div class="admin-tree-clip"><div class="admin-tree-children">
     <section class="admin-section audit-section">
-      <div class="section-heading"><div><span class="eyebrow">AUDIT TRAIL</span><h2>История действий</h2></div><span class="muted">Повторы среди последних 100 · хранится до 1000 событий</span></div>
+      <div class="section-heading"><div><span class="eyebrow">АУДИТ ДЕЙСТВИЙ</span><h2>История действий</h2></div><span class="muted">Повторы среди последних 100 · хранится до 1000 событий</span></div>
       <div id="audit-groups" class="audit-groups"></div>
       <button id="audit-more" class="compact audit-more" type="button" hidden>Показать ещё</button>
       <p id="audit-empty" class="empty" hidden>Действий пока нет.</p>
     </section>
 
     <section class="admin-section backup-section">
-      <div class="section-heading"><div><span class="eyebrow">RECOVERY</span><h2>Резервные копии доступа</h2></div><button id="create-backup" class="primary">Создать копию</button></div>
+      <div class="section-heading"><div><span class="eyebrow">ВОССТАНОВЛЕНИЕ</span><h2>Резервные копии доступа</h2></div><button id="create-backup" class="primary">Создать копию</button></div>
       <p class="backup-note">Копии сохраняются на сервере рядом с базой авторизации. При восстановлении текущая база сначала сохраняется автоматически.</p>
       <div id="backup-list" class="backup-list"></div>
       <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
     </section>
 
     <section class="admin-section config-section">
-      <div class="section-heading"><div><span class="eyebrow">SAFE CONFIG</span><h2>Конфигурация Heroku</h2></div><span class="muted">Текущие значения никогда не возвращаются в браузер</span></div>
+      <div class="section-heading"><div><span class="eyebrow">БЕЗОПАСНЫЕ НАСТРОЙКИ</span><h2>Конфигурация Heroku</h2></div><span class="muted">Текущие значения никогда не возвращаются в браузер</span></div>
       <form id="config-form" class="config-form" autocomplete="off">
         <label>API ID <input name="api_id" inputmode="numeric" placeholder="Новое значение"></label>
-        <label>API hash <input name="api_hash" type="password" placeholder="Новое значение"></label>
-        <label>Redis URI <input name="redis_uri" type="password" placeholder="Новое значение"></label>
-        <label>Database URI <input name="db_uri" type="password" placeholder="Новое значение"></label>
-        <label>App name <input name="app_name" placeholder="Новое значение"></label>
+        <label>Хеш API <input name="api_hash" type="password" placeholder="Новое значение"></label>
+        <label>Адрес Redis <input name="redis_uri" type="password" placeholder="Новое значение"></label>
+        <label>Адрес базы данных <input name="db_uri" type="password" placeholder="Новое значение"></label>
+        <label>Имя приложения <input name="app_name" placeholder="Новое значение"></label>
         <div class="config-actions"><button id="config-preview" type="button" class="compact">Проверить изменения</button><button type="submit" class="primary">Сохранить</button></div>
       </form>
       <div id="config-status" class="config-status"></div>
@@ -174,13 +176,13 @@
     </section>
 
     <section class="admin-section">
-      <div class="section-heading"><div><span class="eyebrow">CONFIG RECOVERY</span><h2>История конфигурации</h2></div><span class="muted">До 50 автоматических снимков перед изменениями</span></div>
+      <div class="section-heading"><div><span class="eyebrow">ИСТОРИЯ НАСТРОЕК</span><h2>История конфигурации</h2></div><span class="muted">До 50 автоматических снимков перед изменениями</span></div>
       <div id="config-history-list" class="backup-list"></div>
       <p id="config-history-empty" class="empty" hidden>Снимков конфигурации пока нет.</p>
     </section>
 
     <section class="admin-section">
-      <div class="section-heading"><div><span class="eyebrow">SECURITY POSTURE</span><h2>Контур безопасности</h2></div><span class="muted">Только агрегаты — без ключей и токенов</span></div>
+      <div class="section-heading"><div><span class="eyebrow">БЕЗОПАСНОСТЬ</span><h2>Контур безопасности</h2></div><span class="muted">Только агрегаты — без ключей и токенов</span></div>
       <div id="security-overview" class="security-grid" aria-live="polite"></div>
     </section>
       </div></div>
@@ -190,9 +192,10 @@
     <p id="admin-notice" class="notice" hidden></p>
   </main>
 
+  <!-- Модальный диалог admin-auth: взаимодействие управляется модулем страницы. -->
   <dialog id="admin-auth">
     <form id="admin-auth-form">
-      <span class="eyebrow">ADMIN ACCESS</span>
+      <span class="eyebrow">ДОСТУП АДМИНИСТРАТОРА</span>
       <h2>Административный токен</h2>
       <p>Введите значение <code>HKC_ADMIN_TOKEN</code>. Оно останется только в памяти этой вкладки.</p>
       <input id="admin-token" type="password" aria-label="Административный токен" autocomplete="off" required autofocus>
@@ -201,9 +204,10 @@
     </form>
   </dialog>
 
+  <!-- Модальный диалог confirm-dialog: взаимодействие управляется модулем страницы. -->
   <dialog id="confirm-dialog" class="confirm-dialog">
     <form method="dialog">
-      <span class="eyebrow">CONFIRM ACTION</span>
+      <span class="eyebrow">ПОДТВЕРЖДЕНИЕ</span>
       <h2 id="confirm-title">Подтвердите действие</h2>
       <p id="confirm-message"></p>
       <div class="confirm-actions">
@@ -213,7 +217,8 @@
     </form>
   </dialog>
 
+  <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
   <script src="/motion.js" defer></script>
-  <script src="/admin/admin.js" defer></script>
+  <script src="/admin/admin.js" type="module"></script>
 </body>
 </html>

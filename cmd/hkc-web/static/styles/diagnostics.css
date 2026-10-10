@@ -1,0 +1,74 @@
+/* Результаты диагностических проверок.
+ * Положение файла в списке импортов определяет приоритет этих правил. */
+.diagnostics-card {
+  margin-top: 12px;
+}
+.diagnostic-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.diagnostic-item {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+.diagnostic-item > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: rgba(97, 242, 202, 0.12);
+  color: var(--mint);
+}
+.diagnostic-item.missing > span {
+  background: rgba(242, 191, 98, 0.12);
+  color: var(--amber);
+}
+.diagnostic-item div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.diagnostic-item strong {
+  font-size: 11px;
+}
+.diagnostic-item small {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+/* На этой ширине меняем раскладку, не меняя смысл и порядок управления. */
+@media (max-width: 760px) {
+  .diagnostic-checks {
+    grid-template-columns: 1fr;
+  }
+}
+.public-status-body {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  min-height: 100dvh;
+}
+.public-status-card {
+  display: grid;
+  gap: 25px;
+  width: min(480px, calc(100vw - 32px));
+  min-height: 0;
+  padding: 32px;
+}
+.public-status-card h1 {
+  letter-spacing: -0.04em;
+  font-size: 30px;
+}
+.public-status-card .status-card {
+  padding: 24px;
+}
+.public-status-card p {
+  color: var(--muted);
+  font-size: 11px;
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 )
 
+// TestHostHistoryPersistsAndFilters проверяет сохранение истории и фильтрацию по времени.
 func TestHostHistoryPersistsAndFilters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "host-history.jsonl")
 	history := newHostHistoryStore(path)
@@ -31,6 +32,8 @@ func TestHostHistoryPersistsAndFilters(t *testing.T) {
 	}
 }
 
+// TestHostHistoryMigratesLegacyAndPreservesRestartMarkers проверяет чтение старого формата и границ смены
+// PID.
 func TestHostHistoryMigratesLegacyAndPreservesRestartMarkers(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "host-history.jsonl")
@@ -54,6 +57,7 @@ func TestHostHistoryMigratesLegacyAndPreservesRestartMarkers(t *testing.T) {
 	}
 }
 
+// TestHostHistoryDownsamplesWithoutLosingRestart проверяет сокращение графика с сохранением перезапуска.
 func TestHostHistoryDownsamplesWithoutLosingRestart(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour)
 	points := make([]hostPoint, 5000)
@@ -77,6 +81,7 @@ func TestHostHistoryDownsamplesWithoutLosingRestart(t *testing.T) {
 	}
 }
 
+// TestDetectIncidentsGroupsErrorsAndWarningBursts проверяет группировку ошибок и серий предупреждений.
 func TestDetectIncidentsGroupsErrorsAndWarningBursts(t *testing.T) {
 	lines := []string{
 		"2026-10-03 10:00:00 [INFO] Core: starting",
@@ -92,6 +97,7 @@ func TestDetectIncidentsGroupsErrorsAndWarningBursts(t *testing.T) {
 	}
 }
 
+// TestTerminalRequiresExplicitConfirmation проверяет отказ команды без отдельного подтверждения.
 func TestTerminalRequiresExplicitConfirmation(t *testing.T) {
 	t.Setenv("HKC_TERMINAL_ENABLED", "1")
 	s := newTestServer(t)

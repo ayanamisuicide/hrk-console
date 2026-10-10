@@ -1,0 +1,6 @@
+/* Разделы подключаются в этом порядке для сохранения каскада. */
+@import url("./chrome.css");
+@import url("./service-card.css");
+@import url("./users.css");
+@import url("./access-states.css");
+@import url("./terminal.css");

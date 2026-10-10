@@ -1,11 +1,14 @@
+# Шаблон: установщик заменяет __HKC_SOURCE_DIR__; обновление выполняется от root.
 [Unit]
-Description=Verified Heroku console release update
+Description=Проверенное обновление веб-панели Heroku
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Установщик отделён от панели и не погибает при её перезапуске.
 Type=oneshot
 User=root
+# Закрытый файл окружения задаёт пути и административный секрет.
 EnvironmentFile=/etc/hkc/hkc.env
 ExecStart=/usr/bin/python3 __HKC_SOURCE_DIR__/deploy/update.py
 TimeoutStartSec=600

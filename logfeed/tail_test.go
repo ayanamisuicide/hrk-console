@@ -28,6 +28,7 @@ func collect(t *testing.T, f *Follower, n int) []string {
 	return out
 }
 
+// write создаёт или дописывает тестовый журнал и проверяет ошибки записи.
 func write(t *testing.T, path, s string) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
@@ -40,6 +41,7 @@ func write(t *testing.T, path, s string) {
 	_ = f.Close()
 }
 
+// TestFollowerNewLines проверяет получение новых строк после конца файла.
 func TestFollowerNewLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heroku.log")
 	write(t, path, "старая строка\n")
@@ -181,6 +183,7 @@ func TestFollowerReportsMissingFileAndRecovers(t *testing.T) {
 	}
 }
 
+// TestFollowerStopClosesChannel проверяет завершение читателя и закрытие канала после Stop.
 func TestFollowerStopClosesChannel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heroku.log")
 	write(t, path, "")
@@ -202,6 +205,7 @@ func TestFollowerStopClosesChannel(t *testing.T) {
 	}
 }
 
+// TestTailLinesAndCount проверяет хвост журнала и число строк.
 func TestTailLinesAndCount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heroku.log")
 	write(t, path, "1\n2\n3\n4\n5\n")
@@ -218,6 +222,7 @@ func TestTailLinesAndCount(t *testing.T) {
 	}
 }
 
+// TestTailLinesTrailingAndEmptyLines проверяет пустые строки и завершающий перевод строки.
 func TestTailLinesTrailingAndEmptyLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heroku.log")
 	for _, fixture := range []struct {

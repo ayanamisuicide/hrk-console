@@ -20,6 +20,8 @@ var diagnosticSecrets = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(redis|postgres(?:ql)?|mysql)://[^\s/@:]+:[^\s/@]+@`),
 }
 
+// redactDiagnostic скрывает известные форматы токенов и паролей в адресах баз. Это фильтр известных
+// шаблонов, а не гарантия удаления любого возможного секрета.
 func redactDiagnostic(value string) string {
 	value = diagnosticSecrets[0].ReplaceAllString(value, "hkc.[REDACTED]")
 	value = diagnosticSecrets[1].ReplaceAllStringFunc(value, func(match string) string {
@@ -31,6 +33,7 @@ func redactDiagnostic(value string) string {
 	return diagnosticSecrets[2].ReplaceAllString(value, "$1://[REDACTED]@")
 }
 
+// addJSONToBundle кодирует именованный диагностический объект и добавляет его в ZIP.
 func addJSONToBundle(archive *zip.Writer, name string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -44,6 +47,7 @@ func addJSONToBundle(archive *zip.Writer, name string, value any) error {
 	return err
 }
 
+// addTextToBundle маскирует известные секреты в строках перед добавлением текстового файла в ZIP.
 func addTextToBundle(archive *zip.Writer, name string, lines []string) error {
 	entry, err := archive.Create(name)
 	if err != nil {
@@ -56,6 +60,8 @@ func addTextToBundle(archive *zip.Writer, name string, lines []string) error {
 	return err
 }
 
+// diagnosticBundle собирает административный ZIP со сводками и ограниченными хвостами журналов; значения
+// конфигурации в него не включаются.
 func (s *server) diagnosticBundle(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})

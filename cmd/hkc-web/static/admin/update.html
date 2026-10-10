@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head>
+  <!-- Общие стили загружаются перед специфичными: порядок сохраняет каскад. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Обновление · HEROKU</title>
@@ -11,10 +12,11 @@
 <body class="update-body">
   <main class="update-shell">
     <header class="update-header">
-      <div><span class="eyebrow">CONTROL DECK / RELEASE OPERATIONS</span><h1>Центр обновления</h1><p>Живой ход установки без потери окна при перезапуске панели.</p></div>
+      <div><span class="eyebrow">ПАНЕЛЬ / ОБНОВЛЕНИЕ</span><h1>Центр обновления</h1><p>Живой ход установки без потери окна при перезапуске панели.</p></div>
       <a class="compact" href="/admin/">← Админка</a>
     </header>
 
+    <!-- Раздел update-title: содержимое обновляется соответствующим модулем страницы. -->
     <section class="update-hero" aria-labelledby="update-title">
       <div class="update-hero-top"><span id="update-state" class="update-state" data-phase="idle">ОЖИДАНИЕ</span><span id="update-clock">—</span></div>
       <h2 id="update-title">Проверяем состояние</h2>
@@ -36,16 +38,20 @@
     </div>
     <p id="update-readiness" class="update-readiness" role="status">Сверяем возможность установки…</p>
 
+    <!-- Раздел timeline-title: содержимое обновляется соответствующим модулем страницы. -->
     <section class="update-timeline" aria-labelledby="timeline-title">
-      <div class="update-timeline-heading"><div><span class="eyebrow">LIVE INSTALL LOG</span><h2 id="timeline-title">Этапы установки</h2></div><span id="timeline-count">0 событий</span></div>
+      <div class="update-timeline-heading"><div><span class="eyebrow">ЖУРНАЛ УСТАНОВКИ</span><h2 id="timeline-title">Этапы установки</h2></div><span id="timeline-count">0 событий</span></div>
       <ol id="timeline-list"><li class="timeline-empty">Здесь появятся проверка копий, загрузка, контрольная сумма, резервная сборка, перезапуск и итог.</li></ol>
     </section>
     <p class="update-footnote">Секреты и содержимое конфигурации здесь не показываются. Окно можно оставить открытым: после перезапуска сервера оно переподключится само.</p>
     <p id="update-backup" class="update-footnote" hidden></p>
   </main>
 
-  <dialog id="update-auth"><form method="dialog" id="update-auth-form"><span class="eyebrow">ADMIN ACCESS</span><h2>Доступ к обновлениям</h2><p>Введите административный токен. Он останется только в этой вкладке.</p><input id="update-token" type="password" aria-label="Административный токен" autocomplete="off" required><p id="update-auth-error" class="update-error"></p><button class="primary" type="submit">Открыть</button></form></dialog>
-  <dialog id="update-confirm"><form method="dialog" id="update-confirm-form"><span class="eyebrow">INSTALL RELEASE</span><h2>Начать установку?</h2><p>Предыдущая сборка будет сохранена. Панель перезапустится, а это окно продолжит показывать ход и итог установки.</p><div class="confirm-actions"><button value="cancel">Отмена</button><button class="primary" value="confirm">Установить</button></div></form></dialog>
+  <!-- Модальный диалог update-auth-error: взаимодействие управляется модулем страницы. -->
+  <dialog id="update-auth"><form method="dialog" id="update-auth-form"><span class="eyebrow">ДОСТУП АДМИНИСТРАТОРА</span><h2>Доступ к обновлениям</h2><p>Введите административный токен. Он останется только в этой вкладке.</p><input id="update-token" type="password" aria-label="Административный токен" autocomplete="off" required><p id="update-auth-error" class="update-error"></p><button class="primary" type="submit">Открыть</button></form></dialog>
+  <!-- Модальный диалог update-confirm-form: взаимодействие управляется модулем страницы. -->
+  <dialog id="update-confirm"><form method="dialog" id="update-confirm-form"><span class="eyebrow">УСТАНОВКА РЕЛИЗА</span><h2>Начать установку?</h2><p>Предыдущая сборка будет сохранена. Панель перезапустится, а это окно продолжит показывать ход и итог установки.</p><div class="confirm-actions"><button value="cancel">Отмена</button><button class="primary" value="confirm">Установить</button></div></form></dialog>
+  <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
   <script src="/motion.js" defer></script>
   <script src="/admin/update.js" defer></script>
 </body>

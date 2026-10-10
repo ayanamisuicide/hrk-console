@@ -16,6 +16,7 @@ import (
 	"heroku-console/logfeed"
 )
 
+// auditEvent — Кто, когда и с какого адреса выполнил действие; Detail не должен содержать секреты.
 type auditEvent struct {
 	Time   time.Time `json:"time"`
 	Actor  string    `json:"actor"`
@@ -24,6 +25,7 @@ type auditEvent struct {
 	IP     string    `json:"ip"`
 }
 
+// auditStore — JSONL-журнал действий; мьютекс защищает дописывание и сокращение истории.
 type auditStore struct {
 	mu   sync.Mutex
 	path string
@@ -31,8 +33,10 @@ type auditStore struct {
 
 const auditRetention = 1000
 
+// newAuditStore создаёт файловое хранилище административного аудита.
 func newAuditStore(path string) *auditStore { return &auditStore{path: path} }
 
+// add добавляет событие в JSONL под блокировкой и при необходимости оставляет последние записи.
 func (a *auditStore) add(event auditEvent) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -80,6 +84,7 @@ func (a *auditStore) add(event auditEvent) error {
 	return os.Rename(tmp.Name(), a.path)
 }
 
+// recent возвращает последние события аудита под блокировкой.
 func (a *auditStore) recent(limit int) ([]auditEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -87,6 +92,8 @@ func (a *auditStore) recent(limit int) ([]auditEvent, error) {
 	return events, err
 }
 
+// readRecent читает ограниченный хвост валидных событий и считает строки для очистки истории. Вызывается
+// под блокировкой auditStore.
 func (a *auditStore) readRecent(limit int) ([]auditEvent, int, error) {
 	f, err := os.Open(a.path)
 	if os.IsNotExist(err) {
@@ -122,6 +129,7 @@ func (a *auditStore) readRecent(limit int) ([]auditEvent, int, error) {
 	return result, count, nil
 }
 
+// record добавляет автора, действие и адрес запроса в аудит; ошибка записи выводится в журнал сервера.
 func (s *server) record(r *http.Request, actor, action, detail string) {
 	if s.audit == nil {
 		return
@@ -135,6 +143,7 @@ func (s *server) record(r *http.Request, actor, action, detail string) {
 	}
 }
 
+// adminAudit выдаёт администратору последние 100 событий.
 func (s *server) adminAudit(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -152,20 +161,24 @@ func (s *server) adminAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
+// metricPoint — Короткий замер резидентной памяти бота; PID используется внутри и не передаётся в JSON.
 type metricPoint struct {
 	Time time.Time `json:"time"`
 	RSS  uint64    `json:"rssBytes"`
 	PID  int       `json:"-"`
 }
 
+// metricStore — Не более двух минут секундных замеров одного PID под блокировкой.
 type metricStore struct {
 	mu     sync.Mutex
 	points []metricPoint
 	pid    int
 }
 
+// newMetricStore создаёт короткую историю памяти процесса для совместимого API.
 func newMetricStore() *metricStore { return &metricStore{} }
 
+// append накапливает не более 120 секундных замеров; смена PID очищает старую историю процесса.
 func (m *metricStore) append(point metricPoint) []metricPoint {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -182,6 +195,7 @@ func (m *metricStore) append(point metricPoint) []metricPoint {
 	return append([]metricPoint{}, m.points...)
 }
 
+// processRSS читает резидентную память процесса Linux из VmRSS; отсутствие данных даёт ноль.
 func processRSS(pid int) uint64 {
 	if pid == 0 {
 		return 0
@@ -202,6 +216,7 @@ func processRSS(pid int) uint64 {
 	return 0
 }
 
+// sampleMetrics получает PID и память бота и добавляет замер в историю, если она подключена.
 func (s *server) sampleMetrics() (int, uint64, []metricPoint) {
 	pid := s.bot.PID()
 	rss := processRSS(pid)
@@ -212,6 +227,7 @@ func (s *server) sampleMetrics() (int, uint64, []metricPoint) {
 	return pid, rss, points
 }
 
+// liveMetrics выдаёт совместимый API короткой истории памяти бота.
 func (s *server) liveMetrics(w http.ResponseWriter, _ *http.Request) {
 	pid, rss, points := s.sampleMetrics()
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -219,6 +235,7 @@ func (s *server) liveMetrics(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// insights собирает совместимую сводку процесса и количества уровней журнала.
 func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
 	pid, rss, points := s.sampleMetrics()
 	lines := logfeed.TailLines(s.bot.LogFile, 1000)
@@ -239,14 +256,17 @@ func (s *server) insights(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// fileExists проверяет доступность пути через os.Stat.
 func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
 
+// diagnosticCheck — Название, результат и пояснение фиксированной проверки установки.
 type diagnosticCheck struct {
 	Name   string `json:"name"`
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
 }
 
+// diagnostics возвращает простые проверки каталога, окружения Python и журнала.
 func (s *server) diagnostics(w http.ResponseWriter, _ *http.Request) {
 	logExists := fileExists(s.bot.LogFile)
 	logDetail := "Появится после первого запуска бота"
@@ -261,6 +281,7 @@ func (s *server) diagnostics(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"checks": checks})
 }
 
+// publicStatus выдаёт минимальный статус без авторизации только при HKC_PUBLIC_STATUS=1.
 func (s *server) publicStatus(w http.ResponseWriter, _ *http.Request) {
 	if os.Getenv("HKC_PUBLIC_STATUS") != "1" {
 		writeJSON(w, http.StatusNotFound, actionResponse{Message: "публичный статус выключен"})

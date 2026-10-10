@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestLoginRateLimit проверяет HTTP-ограничение попыток входа.
 func TestLoginRateLimit(t *testing.T) {
 	s := newTestServer(t)
 	s.authLimiter = newAuthRateLimiter(2, time.Minute)
@@ -41,6 +42,7 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 }
 
+// TestInvalidInviteRejectedBeforePasswordHash проверяет ранний отказ неизвестного инвайта до bcrypt.
 func TestInvalidInviteRejectedBeforePasswordHash(t *testing.T) {
 	s := newTestServer(t)
 	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(
@@ -52,6 +54,7 @@ func TestInvalidInviteRejectedBeforePasswordHash(t *testing.T) {
 	}
 }
 
+// TestAuthRateLimiterBoundsAndCleansKeys проверяет лимит записей клиентов и очистку истёкших окон.
 func TestAuthRateLimiterBoundsAndCleansKeys(t *testing.T) {
 	limiter := newAuthRateLimiter(2, time.Minute)
 	limiter.maxKeys = 3
@@ -74,6 +77,7 @@ func TestAuthRateLimiterBoundsAndCleansKeys(t *testing.T) {
 	}
 }
 
+// TestSessionStoreLimitsSessionsPerUser проверяет ограничение числа сессий пользователя.
 func TestSessionStoreLimitsSessionsPerUser(t *testing.T) {
 	store := newSessionStore()
 	for i := 0; i < maxSessionsPerUser+5; i++ {

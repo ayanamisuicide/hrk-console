@@ -12,6 +12,7 @@ import (
 	"heroku-console/botproc"
 )
 
+// newTestServer создаёт сервер с отдельными временными файлами, не затрагивая настоящую установку.
 func newTestServer(t *testing.T) *server {
 	t.Helper()
 	auth, err := openAuthStore(filepath.Join(t.TempDir(), "auth.json"))
@@ -27,6 +28,7 @@ func newTestServer(t *testing.T) *server {
 	}
 }
 
+// TestHTTPInviteRegisterLogin проверяет весь HTTP-путь приглашения, регистрации, входа и выхода.
 func TestHTTPInviteRegisterLogin(t *testing.T) {
 	s := newTestServer(t)
 
@@ -101,6 +103,7 @@ func TestHTTPInviteRegisterLogin(t *testing.T) {
 	}
 }
 
+// TestLiveMetricsRequireSession проверяет защиту метрик сессионной авторизацией.
 func TestLiveMetricsRequireSession(t *testing.T) {
 	s := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)

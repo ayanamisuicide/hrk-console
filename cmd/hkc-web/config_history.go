@@ -16,16 +16,20 @@ const configHistoryLimit = 50
 
 var configHistoryName = regexp.MustCompile(`^config-\d{8}T\d{6}\.\d{9}Z-[a-zA-Z0-9_-]+\.json$`)
 
+// configHistoryView — Метаданные сохранённой версии настроек без её содержимого.
 type configHistoryView struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"createdAt"`
 	Size      int64     `json:"size"`
 }
 
+// configHistoryDir возвращает закрытый каталог версий конфигурации в каталоге бота.
 func (s *server) configHistoryDir() string {
 	return filepath.Join(s.bot.HerokuDir, ".hkc-config-history")
 }
 
+// snapshotConfigLocked проверяет текущий JSON и сохраняет его до изменения, оставляя последние версии.
+// Вызывается под configMu.
 func (s *server) snapshotConfigLocked() error {
 	data, err := os.ReadFile(s.configPath())
 	if errors.Is(err, os.ErrNotExist) {
@@ -65,6 +69,8 @@ func (s *server) snapshotConfigLocked() error {
 	return nil
 }
 
+// configHistoryLocked читает метаданные файлов с допустимыми именами и сортирует новые первыми. Вызывается
+// под configMu.
 func (s *server) configHistoryLocked() ([]configHistoryView, error) {
 	entries, err := os.ReadDir(s.configHistoryDir())
 	if errors.Is(err, os.ErrNotExist) {
@@ -87,6 +93,7 @@ func (s *server) configHistoryLocked() ([]configHistoryView, error) {
 	return result, nil
 }
 
+// listConfigHistory возвращает администратору список сохранённых версий.
 func (s *server) listConfigHistory(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -102,6 +109,8 @@ func (s *server) listConfigHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"history": history})
 }
 
+// restoreConfigHistory отклоняет ссылки и посторонние имена, сохраняет текущую версию и восстанавливает
+// проверенный JSON.
 func (s *server) restoreConfigHistory(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -117,7 +126,7 @@ func (s *server) restoreConfigHistory(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(s.configHistoryDir(), name)
 	info, err := os.Lstat(path)
 	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
-		err = errors.New("config history entry is not a regular file")
+		err = errors.New("версия конфигурации должна быть обычным файлом")
 	}
 	var data []byte
 	if err == nil {
@@ -142,6 +151,8 @@ func (s *server) restoreConfigHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "конфигурация восстановлена; перезапустите бот для применения"})
 }
 
+// diffConfigHistory сравнивает выбранную версию с текущей и выдаёт изменения ключей без их секретных
+// значений.
 func (s *server) diffConfigHistory(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -157,7 +168,7 @@ func (s *server) diffConfigHistory(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(s.configHistoryDir(), name)
 	info, err := os.Lstat(path)
 	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
-		err = errors.New("config history entry is not a regular file")
+		err = errors.New("версия конфигурации должна быть обычным файлом")
 	}
 	var historical map[string]json.RawMessage
 	if err == nil {

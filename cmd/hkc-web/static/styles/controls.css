@@ -1,0 +1,246 @@
+/* Общие кнопки, поля и состояния элементов управления.
+ * Положение файла в списке импортов определяет приоритет этих правил. */
+.controls {
+  display: grid;
+  gap: 9px;
+}
+button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--text);
+  min-height: 42px;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 12px;
+  transition: 0.28s var(--ease);
+}
+button:hover:not(:disabled) {
+  border-color: rgba(97, 242, 202, 0.4);
+  color: var(--mint);
+  transform: translateY(-2px);
+  background: rgba(97, 242, 202, 0.05);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2);
+}
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+button:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.button-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+}
+button.primary {
+  background: linear-gradient(120deg, var(--mint), #40d7b2);
+  border-color: transparent;
+  color: #04100d;
+  box-shadow: 0 10px 30px rgba(42, 199, 165, 0.16);
+}
+button.primary:hover:not(:disabled) {
+  color: #04100d;
+  box-shadow: 0 14px 34px rgba(42, 199, 165, 0.24);
+}
+button.danger {
+  border-color: rgba(255, 107, 117, 0.22);
+  color: var(--red);
+}
+button.compact {
+  min-height: 36px;
+  padding: 7px 11px;
+  font-size: 10px;
+}
+.settings {
+  display: grid;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.settings label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 30px;
+  height: 17px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #090d0c;
+  transition: 0.25s;
+}
+.settings input:after {
+  content: "";
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: 0.25s;
+}
+.settings input:checked {
+  background: rgba(97, 242, 202, 0.12);
+}
+.settings input:checked:after {
+  transform: translateX(13px);
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint);
+}
+.connection {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.connection span {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+.connection code {
+  overflow-wrap: anywhere;
+  font:
+    10px/1.5 "Cascadia Mono",
+    monospace;
+  color: var(--mint);
+}
+main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  animation: up-in 0.7s 0.08s var(--ease) both;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  padding: 21px 24px;
+  border-bottom: 1px solid var(--line);
+}
+header h2 {
+  font-size: 19px;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+}
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(97, 242, 202, 0.16);
+  border-radius: 99px;
+  color: var(--mint);
+  background: rgba(97, 242, 202, 0.06);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.live-badge i,
+#stream-state i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: blink 2s infinite;
+}
+.header-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+#username {
+  color: var(--mint);
+  font-size: 10px;
+  font-weight: 700;
+}
+.admin-link {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  padding: 9px 11px;
+  text-decoration: none;
+  font-size: 10px;
+}
+.admin-link:hover {
+  color: var(--mint);
+  border-color: rgba(97, 242, 202, 0.4);
+}
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-wrap > span {
+  position: absolute;
+  left: 11px;
+  color: var(--muted);
+}
+.search-wrap kbd {
+  position: absolute;
+  right: 9px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+input[type="search"],
+dialog input {
+  min-width: 245px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  padding: 9px 35px 9px 32px;
+  outline: none;
+  font-size: 11px;
+  transition: 0.25s;
+}
+input:focus {
+  border-color: rgba(97, 242, 202, 0.5);
+  box-shadow: 0 0 0 4px rgba(97, 242, 202, 0.06);
+}
+.notice {
+  margin: 12px 20px 0;
+  border: 1px solid rgba(97, 242, 202, 0.2);
+  border-left: 3px solid var(--mint);
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: rgba(16, 43, 35, 0.8);
+  font-size: 11px;
+  animation: toast 0.4s var(--ease);
+}
+.notice.error {
+  border-color: rgba(255, 107, 117, 0.2);
+  border-left-color: var(--red);
+  background: rgba(47, 20, 23, 0.8);
+  color: #ffb8bd;
+}

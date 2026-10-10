@@ -1,8 +1,19 @@
+// Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
 (() => {
-  const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  // Уведомление использует безопасный текст и общий таймер скрытия.
+  window.motionNotice = (element, message, kind = "ok") => {
+    if (!element) return;
+    element.textContent = message;
+    element.className = `notice ${kind}`;
+    window.motionShow(element, 5000);
+  };
+  // Системная настройка уменьшенного движения имеет приоритет над декоративными эффектами.
+  const motionPreference = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  );
   const reducedMotion = () => !!motionPreference?.matches;
   const revealTargets = document.querySelectorAll(
-    '.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .update-versions, .update-timeline',
+    ".metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .update-versions, .update-timeline",
   );
   const lastValueMotion = new WeakMap();
 
@@ -11,133 +22,189 @@
     if (reducedMotion()) return;
     const root = document.documentElement;
     clearTimeout(root.motionThemeTimer);
-    root.classList.add('theme-transition');
-    root.motionThemeTimer = setTimeout(() => root.classList.remove('theme-transition'), 700);
+    root.classList.add("theme-transition");
+    root.motionThemeTimer = setTimeout(
+      () => root.classList.remove("theme-transition"),
+      700,
+    );
   };
+  // Выделяем только реальное изменение текста; частые замеры ограничены по частоте анимации.
   window.motionValue = (element, value) => {
     const next = String(value);
     if (!element || element.textContent === next) return;
     const previous = element.textContent.trim();
     element.textContent = next;
-    if (reducedMotion() || document.hidden || ['—', '-', '', '0'].includes(previous)) return;
+    if (
+      reducedMotion() ||
+      document.hidden ||
+      ["—", "-", "", "0"].includes(previous)
+    )
+      return;
 
     const now = performance.now();
-    if (lastValueMotion.has(element) && now - lastValueMotion.get(element) < 640) return;
+    if (
+      lastValueMotion.has(element) &&
+      now - lastValueMotion.get(element) < 640
+    )
+      return;
     lastValueMotion.set(element, now);
-    element.classList.remove('value-change');
+    element.classList.remove("value-change");
+    // Чтение геометрии отделяет снятие класса от повторного добавления и перезапускает CSS-анимацию.
     void element.offsetWidth;
-    element.classList.add('value-change');
-    element.addEventListener('animationend', () => element.classList.remove('value-change'), {once: true});
+    element.classList.add("value-change");
+    element.addEventListener(
+      "animationend",
+      () => element.classList.remove("value-change"),
+      { once: true },
+    );
   };
 
+  // Повторное сообщение отменяет прежние таймеры, чтобы старый таймер не спрятал новое.
   window.motionShow = (element, duration = 5000) => {
     if (!element) return;
     clearTimeout(element.motionDismissTimer);
     clearTimeout(element.motionHideTimer);
-    element.classList.remove('is-leaving');
+    element.classList.remove("is-leaving");
     element.hidden = false;
     if (duration < 0) return;
-    element.motionDismissTimer = setTimeout(() => {
-      if (reducedMotion()) { element.hidden = true; return; }
-      element.classList.add('is-leaving');
-      element.motionHideTimer = setTimeout(() => {
-        element.hidden = true;
-        element.classList.remove('is-leaving');
-      }, 480);
-    }, duration);
+    element.motionDismissTimer =
+      setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+      (() => {
+        if (reducedMotion()) {
+          element.hidden = true;
+          return;
+        }
+        element.classList.add("is-leaving");
+        element.motionHideTimer =
+          setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+          (() => {
+            element.hidden = true;
+            element.classList.remove("is-leaving");
+          }, 480);
+      }, duration);
   };
 
-  document.querySelectorAll('.log-advanced').forEach((disclosure) => {
-    const summary = disclosure.querySelector(':scope > summary');
-    const panel = disclosure.querySelector(':scope > .log-advanced-grid');
+  // Нативный details закрывается после анимации; inert сразу исключает скрываемые поля из фокуса.
+  document.querySelectorAll(".log-advanced").forEach((disclosure) => {
+    const summary = disclosure.querySelector(":scope > summary");
+    const panel = disclosure.querySelector(":scope > .log-advanced-grid");
     if (!summary || !panel) return;
-    summary.setAttribute('aria-expanded', String(disclosure.open));
-    summary.addEventListener('click', (event) => {
+    summary.setAttribute("aria-expanded", String(disclosure.open));
+    summary.addEventListener("click", (event) => {
       event.preventDefault();
-      const wasOpen = disclosure.open && !disclosure.classList.contains('is-closing');
+      const wasOpen =
+        disclosure.open && !disclosure.classList.contains("is-closing");
       const open = !wasOpen;
       clearTimeout(disclosure.motionCloseTimer);
-      summary.setAttribute('aria-expanded', String(open));
+      summary.setAttribute("aria-expanded", String(open));
       if (reducedMotion()) {
         disclosure.open = open;
         panel.inert = !open;
-        disclosure.classList.toggle('is-expanded', open);
-        disclosure.classList.remove('is-closing');
+        disclosure.classList.toggle("is-expanded", open);
+        disclosure.classList.remove("is-closing");
         return;
       }
       if (open) {
         panel.inert = false;
         if (disclosure.open) {
-          disclosure.classList.remove('is-closing');
-          disclosure.classList.add('is-expanded');
+          disclosure.classList.remove("is-closing");
+          disclosure.classList.add("is-expanded");
         } else {
           disclosure.open = true;
-          requestAnimationFrame(() => disclosure.classList.add('is-expanded'));
+          requestAnimationFrame(() => disclosure.classList.add("is-expanded"));
         }
         return;
       }
       panel.inert = true;
-      disclosure.classList.remove('is-expanded');
-      disclosure.classList.add('is-closing');
-      disclosure.motionCloseTimer = setTimeout(() => {
-        if (!disclosure.classList.contains('is-closing')) return;
-        disclosure.open = false;
-        disclosure.classList.remove('is-closing');
-      }, 600);
+      disclosure.classList.remove("is-expanded");
+      disclosure.classList.add("is-closing");
+      disclosure.motionCloseTimer =
+        setTimeout // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+        (() => {
+          if (!disclosure.classList.contains("is-closing")) return;
+          disclosure.open = false;
+          disclosure.classList.remove("is-closing");
+        }, 600);
     });
   });
 
-  if (!reducedMotion() && typeof window.IntersectionObserver === 'function') {
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.dataset.reveal = 'shown';
-        observer.unobserve(entry.target);
-      }
-    }, {threshold: 0.08, rootMargin: '0px 0px -20px 0px'});
+  if (!reducedMotion() && typeof window.IntersectionObserver === "function") {
+    // Каждый блок появляется один раз: после показа перестаём наблюдать за ним.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.dataset.reveal = "shown";
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -20px 0px" },
+    );
     revealTargets.forEach((element) => {
-      element.dataset.reveal = 'waiting';
+      element.dataset.reveal = "waiting";
       observer.observe(element);
     });
 
+    // Частые pointermove объединяются в один расчёт на кадр, без очереди устаревших координат.
     let pointerFrame = 0;
     let pointerEvent;
-    document.addEventListener('pointermove', (event) => {
-      pointerEvent = event;
-      if (pointerFrame) return;
-      pointerFrame = requestAnimationFrame(() => {
-        pointerFrame = 0;
-        const current = pointerEvent;
-        const card = current?.target.closest?.('.metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card');
-        if (!card) return;
-        const rect = card.getBoundingClientRect();
-        card.style.setProperty('--pointer-x', `${current.clientX - rect.left}px`);
-        card.style.setProperty('--pointer-y', `${current.clientY - rect.top}px`);
-      });
-    }, {passive: true});
+    document.addEventListener(
+      "pointermove",
+      (event) => {
+        pointerEvent = event;
+        if (pointerFrame) return;
+        pointerFrame =
+          requestAnimationFrame // Общие анимации подключаются до модулей страниц и публикуют только помощники window.motion*.
+          (() => {
+            pointerFrame = 0;
+            const current = pointerEvent;
+            const card = current?.target.closest?.(
+              ".metric-card, .surface-card, .admin-section, .summary article, .bot-deck, .invite-card",
+            );
+            if (!card) return;
+            const rect = card.getBoundingClientRect();
+            card.style.setProperty(
+              "--pointer-x",
+              `${current.clientX - rect.left}px`,
+            );
+            card.style.setProperty(
+              "--pointer-y",
+              `${current.clientY - rect.top}px`,
+            );
+          });
+      },
+      { passive: true },
+    );
 
-    document.addEventListener('pointerdown', (event) => {
-      const button = event.target.closest?.('button:not(:disabled)');
+    document.addEventListener("pointerdown", (event) => {
+      const button = event.target.closest?.("button:not(:disabled)");
       if (!button) return;
       const rect = button.getBoundingClientRect();
-      button.style.setProperty('--ripple-x', `${event.clientX - rect.left}px`);
-      button.style.setProperty('--ripple-y', `${event.clientY - rect.top}px`);
-      button.classList.remove('is-rippling');
+      button.style.setProperty("--ripple-x", `${event.clientX - rect.left}px`);
+      button.style.setProperty("--ripple-y", `${event.clientY - rect.top}px`);
+      button.classList.remove("is-rippling");
       void button.offsetWidth;
-      button.classList.add('is-rippling');
-      button.addEventListener('animationend', () => button.classList.remove('is-rippling'), {once: true});
+      button.classList.add("is-rippling");
+      button.addEventListener(
+        "animationend",
+        () => button.classList.remove("is-rippling"),
+        { once: true },
+      );
     });
 
+    // Изменение системной настройки не должно оставить блоки в невидимом состоянии waiting.
     const handleMotionPreference = (event) => {
       if (!event.matches) return;
       observer.disconnect();
       revealTargets.forEach((element) => {
-        if (element.dataset.reveal === 'waiting') element.dataset.reveal = 'shown';
+        if (element.dataset.reveal === "waiting")
+          element.dataset.reveal = "shown";
       });
     };
-    if (motionPreference?.addEventListener) motionPreference.addEventListener('change', handleMotionPreference);
+    if (motionPreference?.addEventListener)
+      motionPreference.addEventListener("change", handleMotionPreference);
     else motionPreference?.addListener?.(handleMotionPreference);
   } else if (!reducedMotion()) {
-    document.documentElement.classList.add('motion-reveal-fallback');
+    document.documentElement.classList.add("motion-reveal-fallback");
   }
 })();

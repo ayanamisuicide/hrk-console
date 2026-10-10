@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// TestSecureRequestOnlyTrustsConfiguredLocalProxy проверяет, что HTTPS-заголовку доверяют только явно
+// настроенного локального прокси.
 func TestSecureRequestOnlyTrustsConfiguredLocalProxy(t *testing.T) {
 	request := httptest.NewRequest("GET", "http://console.example/", nil)
 	request.Header.Set("X-Forwarded-Proto", "https")
@@ -24,6 +26,7 @@ func TestSecureRequestOnlyTrustsConfiguredLocalProxy(t *testing.T) {
 	}
 }
 
+// TestInviteRegistrationAndLogin проверяет регистрацию, расходование инвайта и пароль.
 func TestInviteRegistrationAndLogin(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	store, err := openAuthStore(path)
@@ -56,6 +59,7 @@ func TestInviteRegistrationAndLogin(t *testing.T) {
 	}
 }
 
+// TestExpiredInvite проверяет отказ регистрации по истёкшему приглашению.
 func TestExpiredInvite(t *testing.T) {
 	store, err := openAuthStore(filepath.Join(t.TempDir(), "auth.json"))
 	if err != nil {

@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
+// authAttempt — Число зарезервированных попыток и время сброса окна клиента.
 type authAttempt struct {
 	failures int
 	resetAt  time.Time
 }
 
+// authRateLimiter — Ограниченный по размеру набор клиентов; мьютекс объединяет проверку лимита и
+// резервирование попытки.
 type authRateLimiter struct {
 	mu      sync.Mutex
 	entries map[string]authAttempt
@@ -22,10 +25,13 @@ type authRateLimiter struct {
 	maxKeys int
 }
 
+// newAuthRateLimiter создаёт ограничитель попыток с временным окном и ограниченным числом клиентов.
 func newAuthRateLimiter(limit int, window time.Duration) *authRateLimiter {
 	return &authRateLimiter{entries: make(map[string]authAttempt), limit: limit, window: window, maxKeys: 4096}
 }
 
+// allow резервирует попытку до проверки пароля под мьютексом. Параллельный всплеск не может одновременно
+// пройти один и тот же лимит.
 func (l *authRateLimiter) allow(key string) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -52,19 +58,21 @@ func (l *authRateLimiter) allow(key string) (bool, time.Duration) {
 	if !ok {
 		entry.resetAt = now.Add(l.window)
 	}
-	// Reserve the attempt before the password hash starts so a burst of
-	// concurrent requests cannot all pass the limit at once.
+	// Резервируем попытку до вычисления хеша, чтобы параллельные запросы
+	// не прошли один и тот же лимит одновременно.
 	entry.failures++
 	l.entries[key] = entry
 	return true, 0
 }
 
+// success сбрасывает накопленные попытки клиента после успешного входа.
 func (l *authRateLimiter) success(key string) {
 	l.mu.Lock()
 	delete(l.entries, key)
 	l.mu.Unlock()
 }
 
+// clientAddress выделяет адрес клиента из RemoteAddr, не доверяя произвольному заголовку прокси.
 func clientAddress(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
@@ -73,6 +81,7 @@ func clientAddress(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+// allowAuthAttempt применяет лимит входа и возвращает HTTP 429 с Retry-After при блокировке.
 func (s *server) allowAuthAttempt(w http.ResponseWriter, key string) bool {
 	allowed, retryAfter := s.authLimiter.allow(key)
 	if allowed {

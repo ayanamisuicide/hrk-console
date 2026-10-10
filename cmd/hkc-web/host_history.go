@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	hostHistoryLimit  = 24 * 60 * 60 // one-second samples for 24 hours
+	hostHistoryLimit  = 24 * 60 * 60 // секундные замеры за 24 часа
 	historyGraphLimit = 1200
 )
 
+// hostPoint — Секундный замер процентов ресурсов и PID для определения смены процесса.
 type hostPoint struct {
 	At     time.Time `json:"at"`
 	CPU    float64   `json:"cpu"`
@@ -28,6 +29,8 @@ type hostPoint struct {
 	PID    int       `json:"pid"`
 }
 
+// hostHistoryStore — История в хронологическом порядке и путь JSONL; читателям возвращаются копии, запись
+// защищена мьютексом.
 type hostHistoryStore struct {
 	mu          sync.RWMutex
 	path        string
@@ -35,20 +38,22 @@ type hostHistoryStore struct {
 	lastCompact time.Time
 }
 
+// newHostHistoryStore восстанавливает историю JSONL и поддерживает старый JSON-массив. Повреждённые записи
+// не препятствуют чтению остальных.
 func newHostHistoryStore(path string) *hostHistoryStore {
 	store := &hostHistoryStore{path: path}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) && strings.HasSuffix(path, ".jsonl") {
-		// Keep the history recorded by older releases.
+		// Подхватываем историю старого формата, записанную предыдущими версиями.
 		data, err = os.ReadFile(strings.TrimSuffix(path, "l"))
 	}
 	if err == nil {
 		if len(bytes.TrimSpace(data)) > 0 && bytes.TrimSpace(data)[0] == '[' {
 			if decodeErr := json.Unmarshal(data, &store.points); decodeErr != nil {
-				log.Printf("host history: preserving unreadable legacy file %s: %v", path, decodeErr)
+				log.Printf("история хоста: нечитаемый старый файл %s сохранён без изменений: %v", path, decodeErr)
 				store.points = nil
 			} else if compactErr := store.compact(); compactErr != nil {
-				log.Printf("host history: migration failed: %v", compactErr)
+				log.Printf("история хоста: ошибка преобразования формата: %v", compactErr)
 			}
 		} else {
 			invalid := 0
@@ -64,7 +69,7 @@ func newHostHistoryStore(path string) *hostHistoryStore {
 				}
 			}
 			if invalid > 0 {
-				log.Printf("host history: ignored %d unreadable records in %s; original file preserved", invalid, path)
+				log.Printf("история хоста: пропущено нечитаемых записей: %d, файл: %s; исходный файл сохранён", invalid, path)
 			}
 		}
 		store.trim(time.Now())
@@ -73,6 +78,8 @@ func newHostHistoryStore(path string) *hostHistoryStore {
 	return store
 }
 
+// trim оставляет последние сутки и отсекает слишком далёкие будущие точки. Точки должны идти по времени;
+// блокировка принадлежит вызывающему коду.
 func (h *hostHistoryStore) trim(now time.Time) {
 	cutoff := now.Add(-24 * time.Hour)
 	start := sort.Search(len(h.points), func(i int) bool { return !h.points[i].At.Before(cutoff) })
@@ -84,6 +91,7 @@ func (h *hostHistoryStore) trim(now time.Time) {
 	}
 }
 
+// add добавляет секундный замер под блокировкой и дописывает JSONL; раз в час уплотняет файл.
 func (h *hostHistoryStore) add(point hostPoint) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -115,6 +123,8 @@ func (h *hostHistoryStore) add(point hostPoint) error {
 	return err
 }
 
+// compact переписывает только сохраняемые точки через временный файл. Вызывается до публикации хранилища
+// или под его блокировкой.
 func (h *hostHistoryStore) compact() error {
 	if err := os.MkdirAll(filepath.Dir(h.path), 0700); err != nil {
 		return err
@@ -146,7 +156,8 @@ func (h *hostHistoryStore) compact() error {
 		return err
 	}
 	if err = os.Rename(tmp.Name(), h.path); err != nil && runtime.GOOS == "windows" {
-		// Windows cannot atomically rename over an existing destination.
+		// Если Windows отклонила замену переименованием, используем прямую запись.
+		// Этот запасной путь не обладает атомарностью основного пути.
 		var output bytes.Buffer
 		for _, point := range h.points {
 			data, marshalErr := json.Marshal(point)
@@ -161,6 +172,7 @@ func (h *hostHistoryStore) compact() error {
 	return err
 }
 
+// since возвращает копию точек после границы времени, не отдавая наружу внутренний срез.
 func (h *hostHistoryStore) since(cutoff time.Time) []hostPoint {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -168,6 +180,7 @@ func (h *hostHistoryStore) since(cutoff time.Time) []hostPoint {
 	return append([]hostPoint(nil), h.points[index:]...)
 }
 
+// sampledSince возвращает сокращённые точки графика и исходное число замеров под одной блокировкой чтения.
 func (h *hostHistoryStore) sampledSince(cutoff time.Time, limit int) ([]hostPoint, int) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -176,6 +189,7 @@ func (h *hostHistoryStore) sampledSince(cutoff time.Time, limit int) ([]hostPoin
 	return downsampleHostPoints(points, limit), len(points)
 }
 
+// restartTimes находит времена смены PID, включая границу выбранного интервала.
 func (h *hostHistoryStore) restartTimes(cutoff time.Time) []time.Time {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -189,6 +203,7 @@ func (h *hostHistoryStore) restartTimes(cutoff time.Time) []time.Time {
 	return result
 }
 
+// hostPercent переводит объём в проценты, избегая деления на ноль.
 func hostPercent(used, total uint64) float64 {
 	if total == 0 {
 		return 0
@@ -196,6 +211,8 @@ func hostPercent(used, total uint64) float64 {
 	return float64(used) / float64(total) * 100
 }
 
+// collectHostHistory раз в секунду обновляет системную сводку и сохраняет замер с PID. Контекст
+// останавливает фоновый цикл.
 func (s *server) collectHostHistory(ctx context.Context) {
 	collect := func() {
 		status := readSystemStatus(s.bot.HerokuDir)
@@ -222,6 +239,7 @@ func (s *server) collectHostHistory(ctx context.Context) {
 	}
 }
 
+// systemHistory выбирает временной диапазон и возвращает ограниченную по плотности историю для графика.
 func (s *server) systemHistory(w http.ResponseWriter, r *http.Request) {
 	duration := time.Hour
 	switch r.URL.Query().Get("range") {
@@ -238,11 +256,15 @@ func (s *server) systemHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"range": duration.String(), "sampleCount": count, "intervalSeconds": 1, "points": points})
 }
 
+// downsampleHostPoints выбирает равномерные точки, дополнительно сохраняя соседей смены PID. Поэтому число
+// точек может немного превышать лимит графика.
 func downsampleHostPoints(points []hostPoint, limit int) []hostPoint {
 	if len(points) <= limit {
 		return append([]hostPoint(nil), points...)
 	}
 	result := make([]hostPoint, 0, limit+16)
+	// Оставляем начало и конец и равномерно выбираем промежуточные индексы.
+	// Границы смены процесса добавим отдельно, чтобы сокращение их не потеряло.
 	step := float64(len(points)-1) / float64(limit-1)
 	last := -1
 	for i := 0; i < limit; i++ {
@@ -253,13 +275,13 @@ func downsampleHostPoints(points []hostPoint, limit int) []hostPoint {
 		result = append(result, points[index])
 		last = index
 	}
-	// Preserve process-change markers even if they fall between plotted samples.
+	// Сохраняем границы смены PID, даже если они оказались между выбранными точками.
 	for i := 1; i < len(points); i++ {
 		if points[i].PID != points[i-1].PID {
 			result = append(result, points[i-1], points[i])
 		}
 	}
-	// The extra markers are rare; sort by timestamp for the chart.
+	// Добавленные маркеры возвращаем в хронологический порядок графика.
 	sort.Slice(result, func(i, j int) bool { return result[i].At.Before(result[j].At) })
 	return result
 }

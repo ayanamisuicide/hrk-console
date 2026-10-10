@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="ru">
 <head>
+  <!-- Общие стили загружаются перед специфичными: порядок сохраняет каскад. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HEROKU · WEB CONSOLE</title>
+  <title>HEROKU · ВЕБ-ПАНЕЛЬ</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/motion.css">
   <link rel="stylesheet" href="/logs.css">
@@ -16,7 +17,7 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><span></span></div>
         <div>
-          <span class="eyebrow">CONTROL DECK</span>
+          <span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</span>
           <h1>HEROKU</h1>
           <p id="version">Панель — · бот —</p>
         </div>
@@ -60,8 +61,8 @@
     <main>
       <header>
         <div>
-          <span class="eyebrow">HEROKU / CONTROL CENTER</span>
-          <div class="title-row"><h2 id="view-title">Обзор системы</h2><span class="live-badge"><i></i> LIVE</span></div>
+          <span class="eyebrow">HEROKU / УПРАВЛЕНИЕ</span>
+          <div class="title-row"><h2 id="view-title">Обзор системы</h2><span class="live-badge"><i></i> В ЭФИРЕ</span></div>
         </div>
         <div class="header-actions">
           <span id="username"></span>
@@ -71,21 +72,25 @@
         </div>
       </header>
 
+      <!-- Раздел notice: содержимое обновляется соответствующим модулем страницы. -->
       <section id="notice" class="notice" hidden></section>
+      <!-- Раздел system-view: содержимое обновляется соответствующим модулем страницы. -->
       <section id="system-view" class="workspace-view system-view" hidden>
-        <div class="view-intro"><div><span class="eyebrow">HOST HEALTH</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>
+        <div class="view-intro"><div><span class="eyebrow">СОСТОЯНИЕ ХОСТА</span><h3>Состояние системы</h3><p>Ресурсы WSL/Linux-среды, в которой работает Heroku.</p></div><button id="system-refresh" class="compact">↻ Обновить</button></div>
         <div class="system-kpis">
           <article class="resource-card"><div class="resource-heading"><span>CPU</span><strong id="system-cpu">—</strong></div><div class="resource-track"><i id="system-cpu-bar"></i></div><small id="system-cpu-meta">Получаем нагрузку…</small></article>
           <article class="resource-card"><div class="resource-heading"><span>ОПЕРАТИВНАЯ ПАМЯТЬ</span><strong id="system-ram">—</strong></div><div class="resource-track"><i id="system-ram-bar"></i></div><small id="system-ram-meta">Получаем объём…</small></article>
           <article class="resource-card"><div class="resource-heading"><span>ДИСК HEROKU</span><strong id="system-disk">—</strong></div><div class="resource-track"><i id="system-disk-bar"></i></div><small id="system-disk-meta">Получаем свободное место…</small></article>
         </div>
-        <article class="surface-card history-card"><div class="card-heading"><div><span class="eyebrow">RESOURCE HISTORY</span><h3>История нагрузки</h3><p class="muted">CPU, RAM и диск обновляются каждую секунду; вертикальные метки — смена процесса бота.</p></div><div class="history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">Сейчас · 5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div></div><div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div><div class="history-legend"><span>● CPU</span><span>● RAM</span><span>● Диск</span><span id="history-count">Ожидание данных…</span></div></article>
+        <article class="surface-card history-card"><div class="card-heading"><div><span class="eyebrow">ИСТОРИЯ РЕСУРСОВ</span><h3>История нагрузки</h3><p class="muted">CPU, RAM и диск обновляются каждую секунду; вертикальные метки — смена процесса бота.</p></div><div class="history-ranges" role="group" aria-label="Период истории"><button class="compact active" data-history-range="live">Сейчас · 5 мин</button><button class="compact" data-history-range="1h">1 час</button><button class="compact" data-history-range="24h">24 часа</button></div></div><div id="history-chart" class="history-chart" role="img" aria-label="История загрузки CPU, памяти и диска"></div><div class="history-legend"><span>● CPU</span><span>● RAM</span><span>● Диск</span><span id="history-count">Ожидание данных…</span></div></article>
         <div class="system-columns">
-          <article class="surface-card load-card"><div class="card-heading"><div><span class="eyebrow">LOAD AVERAGE</span><h3>Средняя нагрузка</h3></div><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
-          <article class="surface-card host-card"><div class="card-heading"><div><span class="eyebrow">ENVIRONMENT</span><h3>Среда выполнения</h3></div></div><div class="host-details"><span>Узел</span><strong id="system-host">—</strong><span>Платформа</span><strong id="system-platform">—</strong><span>Ядро</span><strong id="system-kernel">—</strong><span>Uptime</span><strong id="system-uptime">—</strong></div></article>
+          <article class="surface-card load-card"><div class="card-heading"><div><span class="eyebrow">СРЕДНЯЯ НАГРУЗКА</span><h3>Средняя нагрузка</h3></div><span id="system-sampled" class="muted">Обновление…</span></div><div class="load-values"><div><strong id="system-load-1">—</strong><span>1 минута</span></div><div><strong id="system-load-5">—</strong><span>5 минут</span></div><div><strong id="system-load-15">—</strong><span>15 минут</span></div></div></article>
+          <article class="surface-card host-card"><div class="card-heading"><div><span class="eyebrow">ОКРУЖЕНИЕ</span><h3>Среда выполнения</h3></div></div><div class="host-details"><span>Узел</span><strong id="system-host">—</strong><span>Платформа</span><strong id="system-platform">—</strong><span>Ядро</span><strong id="system-kernel">—</strong><span>Время работы</span><strong id="system-uptime">—</strong></div></article>
         </div>
       </section>
-      <section id="incidents-view" class="workspace-view incidents-view" hidden><div class="view-intro"><div><span class="eyebrow">INCIDENT CENTER</span><h3>Происшествия</h3><p>Ошибки и частые предупреждения, сгруппированные по модулю и времени. Источник — последние 3000 строк журнала.</p></div><button id="incidents-refresh" class="compact">↻ Обновить</button></div><div id="incident-list" class="incident-list"><p class="empty-state">Загружаем события…</p></div></section>
+      <!-- Раздел incident-list: содержимое обновляется соответствующим модулем страницы. -->
+      <section id="incidents-view" class="workspace-view incidents-view" hidden><div class="view-intro"><div><span class="eyebrow">ПРОИСШЕСТВИЯ</span><h3>Происшествия</h3><p>Ошибки и частые предупреждения, сгруппированные по модулю и времени. Источник — последние 3000 строк журнала.</p></div><button id="incidents-refresh" class="compact">↻ Обновить</button></div><div id="incident-list" class="incident-list"><p class="empty-state">Загружаем события…</p></div></section>
+      <!-- Раздел logs-view: содержимое обновляется соответствующим модулем страницы. -->
       <section id="logs-view" class="workspace-view logs-view" hidden>
         <div class="logs-controls">
           <div class="log-console-bar">
@@ -102,9 +107,9 @@
             <div class="search-wrap"><span>⌕</span><input id="filter" type="search" placeholder="Найти в журнале…"><kbd>/</kbd></div>
             <div class="level-filters" role="group" aria-label="Уровень событий">
           <button class="filter-chip active" data-level="ALL">Все</button>
-          <button class="filter-chip" data-level="INFO">Info</button>
-          <button class="filter-chip warning" data-level="WARNING">Warning</button>
-          <button class="filter-chip error" data-level="ERROR">Error</button>
+          <button class="filter-chip" data-level="INFO">Информация</button>
+          <button class="filter-chip warning" data-level="WARNING">Предупреждения</button>
+          <button class="filter-chip error" data-level="ERROR">Ошибки</button>
             </div>
             <details class="log-advanced">
               <summary>Ещё фильтры <i>⌄</i></summary>
@@ -121,17 +126,20 @@
         </div>
         <section class="log-frame">
         <div class="log-head" aria-hidden="true"><span>ВРЕМЯ</span><span>УРОВЕНЬ</span><span>МОДУЛЬ</span><span>СООБЩЕНИЕ</span></div>
+        <!-- Раздел log: содержимое обновляется соответствующим модулем страницы. -->
         <section id="log" class="log" aria-live="polite"></section>
       </section>
       </section>
     </main>
   </div>
 
+  <!-- Модальный диалог command-results: взаимодействие управляется модулем страницы. -->
   <dialog id="command-dialog" class="command-dialog"><div class="command-shell"><input id="command-query" type="search" placeholder="Перейти или выполнить действие…" autocomplete="off" aria-label="Быстрые действия"><div id="command-results"></div><p>↑ ↓ выбор · Enter открыть · Esc закрыть</p></div></dialog>
 
+  <!-- Модальный диалог auth-dialog: взаимодействие управляется модулем страницы. -->
   <dialog id="auth-dialog">
     <form id="auth-form">
-      <span class="eyebrow">PRIVATE ACCESS</span>
+      <span class="eyebrow">ЛИЧНЫЙ ДОСТУП</span>
       <h2 id="auth-title">Вход</h2>
       <p id="auth-note">Войдите в аккаунт, созданный по инвайту.</p>
       <input id="invite" name="invite" placeholder="инвайт" aria-label="Инвайт" autocomplete="off" hidden>
@@ -144,7 +152,8 @@
     </form>
   </dialog>
 
+  <!-- Общие помощники анимации должны загрузиться до точки входа страницы. -->
   <script src="/motion.js" defer></script>
-  <script src="/app.js" defer></script>
+  <script src="/app.js" type="module"></script>
 </body>
 </html>
