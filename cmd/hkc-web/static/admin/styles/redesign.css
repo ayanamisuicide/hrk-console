@@ -1,0 +1,855 @@
+/* Administrative workspaces share the console's observability visual system. */
+@media (min-width: 1101px) {
+.admin-body {
+  min-height: 100vh;
+  height: auto;
+  overflow-x: hidden;
+  background:
+    radial-gradient(ellipse at 78% -20%, rgba(48, 95, 149, 0.15), transparent 42%),
+    var(--bg);
+}
+
+.admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  min-height: 78px;
+  padding: 13px clamp(18px, 3vw, 44px);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(22px) saturate(120%);
+}
+
+.admin-brand-icon {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel-2));
+  color: var(--blue);
+}
+
+.admin-brand .eyebrow {
+  color: var(--muted);
+}
+
+.admin-header h1 {
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.035em;
+}
+
+.admin-header nav {
+  gap: 7px;
+}
+
+.admin-header nav > * {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.admin-header nav > a {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.admin-main {
+  max-width: 1510px;
+  padding: 24px clamp(18px, 3vw, 42px) 50px;
+}
+
+.admin-overview {
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.admin-overview .bot-deck {
+  min-height: 88px;
+  padding: 16px 19px;
+  gap: 15px;
+  border: 1px solid color-mix(in srgb, var(--mint) 23%, var(--line));
+  border-radius: 13px;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--mint) 7%, var(--panel-2)), var(--panel) 74%);
+}
+
+.admin-overview .bot-orbit {
+  width: 39px;
+  height: 39px;
+  border-color: color-mix(in srgb, var(--mint) 37%, var(--line));
+  background: color-mix(in srgb, var(--mint) 6%, transparent);
+}
+
+.admin-overview .bot-orbit::before {
+  border-color: color-mix(in srgb, var(--mint) 28%, transparent);
+}
+
+.admin-overview .bot-orbit span {
+  background: var(--mint);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--mint) 55%, transparent);
+}
+
+.admin-overview .bot-copy .eyebrow {
+  color: var(--muted);
+}
+
+.admin-overview .bot-copy h2 {
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.admin-overview .bot-copy p {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-overview .summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  min-width: min(380px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.admin-overview .summary article {
+  display: grid;
+  gap: 5px;
+  padding: 13px 17px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+}
+
+.admin-overview .summary article:last-child {
+  border-right: 0;
+}
+
+.admin-overview .summary strong {
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 560;
+  letter-spacing: -0.06em;
+}
+
+.admin-overview .summary span {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+.admin-layout {
+  grid-template-columns: 214px minmax(0, 1fr);
+  gap: 27px;
+}
+
+.admin-nav {
+  top: 98px;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+
+.admin-nav-label {
+  padding: 10px 11px 8px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.admin-nav button {
+  min-height: 51px;
+  padding: 8px 10px;
+  gap: 10px;
+  border-radius: 9px;
+  color: var(--muted);
+}
+
+.admin-nav button > span:first-child {
+  width: 19px;
+  color: var(--blue);
+  font-size: 17px;
+}
+
+.admin-nav button > span:last-child {
+  gap: 3px;
+}
+
+.admin-nav strong {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 590;
+}
+
+.admin-nav small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.admin-nav button:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--blue) 5%, var(--panel));
+  color: var(--text);
+}
+
+.admin-nav button.active {
+  position: relative;
+  border-color: color-mix(in srgb, var(--blue) 26%, var(--line));
+  background: linear-gradient(100deg, color-mix(in srgb, var(--blue) 11%, var(--panel)), color-mix(in srgb, var(--mint) 3%, var(--panel)));
+  color: var(--blue);
+}
+
+.admin-nav button.active::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--blue) 48%, transparent);
+}
+
+.admin-content {
+  min-width: 0;
+}
+
+.admin-page-heading {
+  margin: 7px 0 20px;
+}
+
+.admin-page-heading .eyebrow {
+  color: var(--blue);
+}
+
+.admin-page-heading h2 {
+  margin: 8px 0 6px;
+  font-size: clamp(27px, 3vw, 36px);
+  font-weight: 620;
+  letter-spacing: -0.055em;
+}
+
+.admin-page-heading p {
+  max-width: 720px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.admin-sync {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 78%, transparent);
+  font-size: 10px;
+}
+
+.admin-sync i {
+  width: 6px;
+  height: 6px;
+  background: var(--mint);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--mint) 42%, transparent);
+}
+
+.admin-page {
+  gap: 13px;
+}
+
+.admin-page .admin-section {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--blue) 2.5%, var(--panel-2)), var(--panel));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.018);
+}
+
+.admin-page .section-heading {
+  min-height: 67px;
+  padding: 15px 18px;
+  border-bottom-color: var(--line);
+}
+
+.admin-page .section-heading .eyebrow {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.admin-page .section-heading h2 {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.admin-page .section-heading .muted {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-page .config-status,
+.security-grid,
+.updates-grid {
+  gap: 9px;
+}
+
+.admin-page .config-status > *,
+.security-grid article,
+.updates-grid article {
+  border-color: var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-raised) 58%, transparent);
+}
+
+.admin-page .config-form,
+.admin-page .watchdog-form,
+.admin-page .invite-form {
+  gap: 13px;
+}
+
+.admin-page label,
+.admin-page .config-form label,
+.admin-page .invite-form label {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-page input:not([type="checkbox"]),
+.admin-page select,
+.admin-page textarea {
+  min-height: 39px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 64%, var(--panel));
+  color: var(--text);
+  font-size: 12px;
+}
+
+.admin-page input:focus,
+.admin-page select:focus,
+.admin-page textarea:focus {
+  border-color: color-mix(in srgb, var(--blue) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 11%, transparent);
+}
+
+.admin-page .watchdog-intro,
+.admin-page .watchdog-live,
+.admin-page .watchdog-result,
+.admin-page .watchdog-note,
+.admin-page .backup-note,
+.admin-page .config-preview-output,
+.admin-page .updates-details {
+  color: var(--muted);
+}
+
+.admin-page .watchdog-live {
+  border-color: var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-raised) 60%, transparent);
+}
+
+.admin-page .watchdog-live strong,
+.security-grid strong,
+.updates-grid strong {
+  color: var(--text);
+}
+
+.watchdog-state,
+.config-status strong,
+.update-readiness {
+  color: var(--mint);
+}
+
+.table-wrap {
+  border-color: var(--line);
+  border-radius: 10px;
+}
+
+.admin-page table th {
+  background: color-mix(in srgb, var(--panel-2) 82%, var(--bg));
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.admin-page table td {
+  border-top-color: var(--line);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.admin-page table tr:hover td {
+  background: color-mix(in srgb, var(--blue) 4%, transparent);
+}
+
+.invite-card,
+.token-row,
+.backup-row,
+.audit-group,
+.updates-grid article {
+  border-color: var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-raised) 58%, transparent);
+}
+
+.invite-card:hover,
+.token-row:hover,
+.backup-row:hover {
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--line));
+  background: color-mix(in srgb, var(--blue) 5%, var(--panel-2));
+}
+
+.invite-card code,
+.backup-row code,
+.updates-grid code {
+  color: var(--blue);
+}
+
+.admin-page .audit-tools input {
+  min-height: 37px;
+}
+
+.audit-workspace {
+  gap: 12px;
+}
+
+.audit-group {
+  transition: border-color 280ms ease, background 320ms ease, transform 380ms var(--motion-enter-ease);
+}
+
+.audit-group:hover,
+.audit-group[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--blue) 36%, var(--line));
+  background: color-mix(in srgb, var(--blue) 6%, var(--panel-2));
+}
+
+.audit-icon {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
+  color: var(--blue);
+}
+
+.audit-inspector {
+  border-color: var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel-raised) 70%, var(--panel));
+}
+
+.updates-grid article > span,
+.updates-grid code,
+.update-versions article > span {
+  color: var(--muted);
+}
+
+.update-actions a,
+.admin-page .update-actions a {
+  color: var(--blue);
+}
+
+.notice {
+  border-radius: 9px;
+}
+
+#admin-auth,
+#confirm-dialog,
+.audit-dialog {
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  background: linear-gradient(145deg, var(--panel-raised), var(--panel));
+  color: var(--text);
+  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.44);
+}
+
+#admin-auth::backdrop,
+#confirm-dialog::backdrop,
+.audit-dialog::backdrop {
+  background: rgba(2, 6, 11, 0.72);
+  backdrop-filter: blur(7px);
+}
+
+:root[data-theme="light"] .admin-header {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+}
+
+:root[data-theme="light"] .admin-overview .bot-deck {
+  background: linear-gradient(110deg, #e6f3f0, #f9fcfd 74%);
+}
+
+:root[data-theme="light"] .admin-page .admin-section {
+  background: linear-gradient(145deg, #fff, var(--panel-2));
+}
+
+:root[data-theme="light"] .admin-page .config-status > *,
+:root[data-theme="light"] .security-grid article,
+:root[data-theme="light"] .updates-grid article,
+:root[data-theme="light"] .invite-card,
+:root[data-theme="light"] .token-row,
+:root[data-theme="light"] .backup-row,
+:root[data-theme="light"] .audit-group,
+:root[data-theme="light"] .audit-inspector {
+  background: #f5f8fb;
+}
+
+:root[data-theme="light"] #admin-auth,
+:root[data-theme="light"] #confirm-dialog,
+:root[data-theme="light"] .audit-dialog {
+  background: linear-gradient(145deg, #fff, #f0f4f8);
+}
+
+@media (max-width: 1100px) {
+  .admin-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .admin-overview .summary {
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-header {
+    position: relative;
+    align-items: start;
+    flex-direction: column;
+    gap: 13px;
+    padding: 15px 17px;
+  }
+
+  .admin-header nav {
+    width: 100%;
+  }
+
+  .admin-header nav > * {
+    flex: 1;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .admin-main {
+    padding: 15px 13px 30px;
+  }
+
+  .admin-overview {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    margin-bottom: 15px;
+  }
+
+  .admin-overview .bot-deck {
+    grid-template-columns: 38px minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .admin-overview .bot-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .admin-overview .bot-actions button {
+    flex: 1;
+    min-height: 38px;
+    padding: 8px 5px;
+    font-size: 10px;
+  }
+
+  .admin-overview .summary {
+    min-width: 0;
+  }
+
+  .admin-overview .summary article {
+    align-items: start;
+    padding: 12px;
+  }
+
+  .admin-layout {
+    display: block;
+  }
+
+  .admin-nav {
+    position: static;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+    margin-bottom: 17px;
+    padding: 5px;
+  }
+
+  .admin-nav-label {
+    display: none;
+  }
+
+  .admin-nav button {
+    min-height: 52px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 5px 3px;
+    text-align: center;
+  }
+
+  .admin-nav button > span:first-child {
+    width: auto;
+    font-size: 15px;
+  }
+
+  .admin-nav button > span:last-child {
+    gap: 0;
+  }
+
+  .admin-nav strong {
+    font-size: 9px;
+  }
+
+  .admin-nav small {
+    display: none;
+  }
+
+  .admin-page-heading {
+    align-items: start;
+    gap: 8px;
+    margin: 0 0 15px;
+  }
+
+  .admin-page-heading h2 {
+    font-size: 28px;
+  }
+
+  .admin-page-heading p {
+    font-size: 11px;
+  }
+
+  .admin-sync {
+    display: none;
+  }
+
+  .admin-page .section-heading {
+    padding: 13px;
+  }
+
+  .admin-page .config-form,
+  .admin-page .watchdog-form,
+  .admin-page .invite-form {
+    padding: 13px;
+  }
+
+  .admin-page .config-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-page .watchdog-live {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .audit-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-header nav {
+    flex-wrap: wrap;
+  }
+
+  .admin-header nav > * {
+    min-width: calc(50% - 5px);
+  }
+
+  .admin-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-overview .summary strong {
+    font-size: 20px;
+  }
+
+  .admin-page .config-status,
+  .security-grid,
+  .updates-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-page .watchdog-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-nav button,
+  .audit-group {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Orbital station HUD shared by the desktop admin and update workspaces. */
+@media (min-width: 1101px) {
+  .admin-body, .update-body {
+    background:
+      radial-gradient(ellipse at 80% 7%, rgba(78, 157, 207, .12), transparent 31%),
+      radial-gradient(ellipse at 8% 83%, rgba(41, 119, 154, .07), transparent 36%),
+      var(--bg);
+  }
+
+  .admin-header, .update-header {
+    background-image: linear-gradient(100deg, rgba(39, 94, 128, .1), transparent 62%);
+    box-shadow: inset 0 1px rgba(177, 222, 255, .045), 0 12px 38px rgba(0, 0, 0, .12);
+  }
+
+  .admin-brand-icon { box-shadow: 0 0 22px rgba(119, 191, 231, .12), inset 0 0 12px rgba(119, 191, 231, .08); }
+  .admin-overview .bot-deck, .admin-content, .update-shell > section {
+    box-shadow: inset 0 1px rgba(177, 222, 255, .045), 0 16px 48px rgba(0, 0, 0, .17);
+  }
+
+  .admin-content, .update-shell > section { position: relative; }
+  .admin-content::before, .update-shell > section::before {
+    content: "";
+    position: absolute;
+    z-index: 2;
+    inset: 7px;
+    background:
+      linear-gradient(var(--blue), var(--blue)) left top / 15px 1px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) left top / 1px 15px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) right top / 15px 1px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) right top / 1px 15px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) left bottom / 15px 1px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) left bottom / 1px 15px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) right bottom / 15px 1px no-repeat,
+      linear-gradient(var(--blue), var(--blue)) right bottom / 1px 15px no-repeat;
+    opacity: .2;
+    pointer-events: none;
+  }
+
+  .update-shell { position: relative; }
+  .update-shell::after {
+    content: "ORBITAL ARRAY  /  MAINTENANCE LINK";
+    position: fixed;
+    right: 30px;
+    bottom: 18px;
+    color: color-mix(in srgb, var(--blue) 55%, transparent);
+    font: 600 8px/1.2 ui-monospace, "Cascadia Code", monospace;
+    letter-spacing: .17em;
+    pointer-events: none;
+  }
+}
+
+/* Administration is a broad workspace with a persistent horizontal section rail. */
+.admin-main { max-width: 1640px; }
+
+.admin-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.58fr);
+  align-items: stretch;
+  gap: 14px;
+}
+
+.admin-overview .bot-deck { min-width: 0; }
+.admin-overview .summary { min-width: 0; }
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 17px;
+}
+
+.admin-nav {
+  position: relative;
+  top: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+  padding: 9px 10px 10px;
+  border-color: var(--line-strong);
+  background: linear-gradient(105deg, color-mix(in srgb, var(--blue) 4%, var(--panel)), var(--panel) 55%);
+}
+
+.admin-nav-label { grid-column: 1 / -1; padding: 1px 5px 3px; }
+
+.admin-nav button {
+  position: relative;
+  min-width: 0;
+  min-height: 57px;
+  padding: 8px 12px;
+  gap: 9px;
+  border-color: transparent;
+  border-radius: 8px;
+  transition: color 240ms ease, background-color 320ms ease, border-color 320ms ease, transform 420ms var(--motion-enter-ease);
+}
+
+.admin-nav button > span:first-child { width: 23px; flex: 0 0 23px; font-size: 18px; }
+.admin-nav button > span:last-child { min-width: 0; }
+.admin-nav strong { font-size: 11px; white-space: nowrap; }
+.admin-nav small { font-size: 9px; }
+
+.admin-nav button.active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--blue) 7%, transparent);
+}
+
+.admin-nav button.active::before {
+  top: auto;
+  right: 11px;
+  bottom: 0;
+  left: 11px;
+  width: auto;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  transform-origin: left center;
+  animation: admin-tab-arrive 460ms var(--motion-enter-ease) both;
+}
+
+.admin-page-heading { margin-top: 4px; }
+
+.admin-overview .bot-orbit span.online {
+  isolation: isolate;
+}
+
+.admin-overview .bot-orbit span.online::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -7px;
+  border: 1px solid color-mix(in srgb, var(--mint) 34%, transparent);
+  border-radius: 50%;
+  animation: admin-health-ring 3.4s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes admin-tab-arrive {
+  from { transform: scaleX(0.12); opacity: 0.25; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+@keyframes admin-health-ring {
+  0% { transform: scale(0.74); opacity: 0.65; }
+  68%, 100% { transform: scale(1.48); opacity: 0; }
+}
+
+@media (max-width: 900px) {
+  .admin-overview { grid-template-columns: minmax(0, 1fr); }
+  .admin-overview .summary { min-width: 0; }
+}
+
+@media (max-width: 760px) {
+  .admin-overview { display: grid; grid-template-columns: 1fr; }
+  .admin-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 0; }
+  .admin-nav-label { display: block; }
+  .admin-nav button { min-height: 61px; }
+}
+
+@media (max-width: 520px) {
+  .admin-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-nav-label { grid-column: 1 / -1; }
+  .admin-nav button { min-height: 55px; }
+  .admin-overview .bot-actions { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-overview .bot-orbit span.online::after,
+  .admin-nav button.active::before {
+    animation: none;
+  }
+}
+}

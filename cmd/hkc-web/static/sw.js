@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v27-module-status-design";
+const CACHE = "hkc-shell-v29-orbital-station";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -26,6 +26,7 @@ const ASSETS = [
   "/styles/shell.css",
   "/styles/system.css",
   "/styles/workspace.css",
+  "/styles/redesign.css",
   "/modules/auth.js",
   "/modules/incidents.js",
   "/modules/journal.js",
