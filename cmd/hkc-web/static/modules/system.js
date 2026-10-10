@@ -190,15 +190,19 @@ export function createSystem(ctx) {
       const cpu = data.cpuPercent || 0;
       const ram = ctx.percent(data.memoryUsedBytes, data.memoryTotalBytes);
       const disk = ctx.percent(data.diskUsedBytes, data.diskTotalBytes);
-      if (data.supported)
-        ctx.animateNumber(ctx.$("#system-cpu"), cpu, { decimals: 1, suffix: "%" });
-      else ctx.animateValue(ctx.$("#system-cpu"), "—");
-      if (data.memoryTotalBytes)
-        ctx.animateNumber(ctx.$("#system-ram"), ram, { decimals: 1, suffix: "%" });
-      else ctx.animateValue(ctx.$("#system-ram"), "—");
-      if (data.diskTotalBytes)
-        ctx.animateNumber(ctx.$("#system-disk"), disk, { decimals: 1, suffix: "%" });
-      else ctx.animateValue(ctx.$("#system-disk"), "—");
+      // Пока спарклайны идут, цифры плавно ведут они; до первых данных — прямой замер.
+      if (!ctx.liveNumbers?.cpu) {
+        if (data.supported) ctx.animateNumber(ctx.$("#system-cpu"), cpu, { decimals: 1, suffix: "%" });
+        else ctx.animateValue(ctx.$("#system-cpu"), "—");
+      }
+      if (!ctx.liveNumbers?.memory) {
+        if (data.memoryTotalBytes) ctx.animateNumber(ctx.$("#system-ram"), ram, { decimals: 1, suffix: "%" });
+        else ctx.animateValue(ctx.$("#system-ram"), "—");
+      }
+      if (!ctx.liveNumbers?.disk) {
+        if (data.diskTotalBytes) ctx.animateNumber(ctx.$("#system-disk"), disk, { decimals: 1, suffix: "%" });
+        else ctx.animateValue(ctx.$("#system-disk"), "—");
+      }
       setMeter("#system-cpu-bar", cpu);
       setMeter("#system-ram-bar", ram);
       setMeter("#system-disk-bar", disk);
@@ -357,8 +361,11 @@ export function createSystem(ctx) {
     set("#bot-threads", bot.running ? String(bot.threads) : "—");
     set("#bot-children", bot.running ? String(bot.children) : "—");
     set("#bot-files", bot.running ? (bot.openFiles >= 0 ? String(bot.openFiles) : "нет доступа") : "—");
-    if (bot.running) ctx.animateNumber(ctx.$("#system-bot-rss"), (bot.rssBytes || 0) / 1048576, { formatter: (v) => `${v.toFixed(0)} МБ` });
-    else ctx.animateValue(ctx.$("#system-bot-rss"), "—");
+    if (!bot.running) {
+      ctx.liveNumbers && (ctx.liveNumbers.botRss = false);
+      ctx.animateValue(ctx.$("#system-bot-rss"), "—");
+    } else if (!ctx.liveNumbers?.botRss)
+      ctx.animateNumber(ctx.$("#system-bot-rss"), (bot.rssBytes || 0) / 1048576, { formatter: (v) => `${v.toFixed(0)} МБ` });
     const total = ctx.lastSystem?.memoryTotalBytes || 0;
     setMeter("#system-bot-bar", total && bot.running ? ctx.percent(bot.rssBytes, total) : 0);
     ctx.pulseText(
@@ -566,7 +573,18 @@ export function createSystem(ctx) {
       const key = canvas.dataset.spark;
       if (!ctx.sparks.has(canvas)) {
         const color = { cpu: "--chart-1", memory: "--chart-2", disk: "--chart-3", botRss: "--accent" }[key];
-        ctx.sparks.set(canvas, ctx.createSparkline(canvas, color));
+        const target = { cpu: "#system-cpu", memory: "#system-ram", disk: "#system-disk", botRss: "#system-bot-rss" }[key];
+        const format = key === "botRss" ? (v) => `${Math.round(v / 1048576)} МБ` : (v) => `${v.toFixed(1)}%`;
+        ctx.liveNumbers ||= {};
+        // Цифра в карточке — значение спарклайна в момент воспроизведения, каждый кадр.
+        const onValue = (value) => {
+          if (key === "botRss" && !(value > 0)) return;
+          ctx.liveNumbers[key] = true;
+          const element = ctx.$(target);
+          const textValue = format(value);
+          if (element.textContent !== textValue) element.textContent = textValue;
+        };
+        ctx.sparks.set(canvas, ctx.createSparkline(canvas, color, { onValue }));
       }
       ctx.sparks.get(canvas).setData(points, key, serverNow);
     });

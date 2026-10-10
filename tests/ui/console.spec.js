@@ -608,3 +608,33 @@ test("спарклайны прокручиваются плавно, как б�
   // Между опросами сервера кадр меняется: время непрерывно сдвигает кривую.
   expect(frames[0]).not.toBe(frames[1]);
 });
+
+test("цифры в карточках идут непрерывно между замерами (задержка воспроизведения)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  // История «живая»: последний замер — секунду назад, значения меняются каждую секунду.
+  await page.route("**/api/system/history*", (route) => {
+    const now = Date.now();
+    const points = Array.from({ length: 120 }, (_, index) => ({
+      at: new Date(now - (119 - index) * 1000).toISOString(),
+      cpu: index % 2 ? 80 : 10,
+      memory: 40,
+      disk: 30,
+      botRss: 200 * 1048576,
+    }));
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...systemHistory, points, now: new Date(now).toISOString() }) });
+  });
+  await page.goto("/");
+  await page.locator('[data-view="system"]').click();
+  const cpu = page.locator("#system-cpu");
+  await expect.poll(() => cpu.textContent()).toMatch(/^\d+\.\d%$/);
+  const samples = await cpu.evaluate(async (element) => {
+    const values = new Set();
+    for (let index = 0; index < 10; index++) {
+      values.add(element.textContent);
+      await new Promise((resolve) => setTimeout(resolve, 90));
+    }
+    return [...values];
+  });
+  // За секунду между опросами цифра проходит промежуточные значения, а не скачет один раз.
+  expect(samples.length).toBeGreaterThan(4);
+});

@@ -13,6 +13,31 @@ const timeSteps = [
   10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600,
 ].map((seconds) => seconds * 1000);
 
+// Задержка воспроизведения: график показывает состояние на секунду назад. Тогда следующий
+// замер уже получен, и между замерами можно двигаться плавно, без ожидания и скачков.
+export const PLAYBACK_DELAY = 1000;
+
+// Момент, который сейчас показывается: серверное «сейчас», продолженное часами браузера,
+// минус задержка; не дальше последнего замера.
+function playhead(times, serverNow, receivedAt, now) {
+  const latest = times.at(-1);
+  if (latest === undefined) return Date.now();
+  if (reducedMotion()) return latest;
+  const projected = (serverNow || latest) + (now - receivedAt) - PLAYBACK_DELAY;
+  return Math.max(times[0], Math.min(projected, latest));
+}
+
+// Значение серии в момент t: линейно между соседними замерами.
+function valueAt(times, column, t) {
+  const index = lowerBound(times, t);
+  if (index <= 0) return column[0];
+  if (index >= times.length) return column[times.length - 1];
+  const left = times[index - 1];
+  const right = times[index];
+  const mix = right > left ? (t - left) / (right - left) : 1;
+  return column[index - 1] + (column[index] - column[index - 1]) * mix;
+}
+
 const reducedMotion = () =>
   window.prefersReducedMotion?.() ??
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -192,11 +217,8 @@ export function createLiveChart(root, { onZoomChange } = {}) {
 
   // «Сейчас» на стороне сервера, продолженное часами браузера между опросами.
   function liveEnd(now) {
-    if (!state.serverNow) return state.times.at(-1) || Date.now();
-    if (reducedMotion()) return state.serverNow;
-    const projected = state.serverNow + (now - state.receivedAt);
-    const latest = state.times.at(-1) || state.serverNow;
-    return Math.min(projected, Math.max(latest, state.serverNow) + 2500);
+    if (!state.times.length) return state.serverNow || Date.now();
+    return playhead(state.times, state.serverNow, state.receivedAt, now);
   }
 
   function targetWindow(now) {
@@ -434,6 +456,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
       }
     if (toIndex >= fromIndex) segments.push([segmentStart, toIndex]);
 
+    const cut = state.zoom ? Infinity : liveEnd(now);
     for (const series of state.view.series) {
       const column = state.columns[series.key];
       const alpha = state.alpha[series.key] ?? 1;
@@ -460,20 +483,30 @@ export function createLiveChart(root, { onZoomChange } = {}) {
         const xs = [];
         const ys = [];
         for (let i = start; i <= end; i++) {
+          if (times[i] > cut) {
+            // Замер ещё «в будущем»: линия доходит до момента воспроизведения и плавно растёт.
+            if (i > start) {
+              xs.push(x(cut));
+              ys.push(y(valueAt(times, column, cut), series.axis));
+            }
+            break;
+          }
           xs.push(x(times[i]));
           ys.push(y(column[i], series.axis));
         }
+        if (xs.length < 2) continue;
         // Пик CPU внутри сжатого интервала — полупрозрачная полоса над средним.
         const envelope = series.envelope && state.columns[series.envelope];
         if (envelope) {
           context.beginPath();
-          for (let i = start; i <= end; i++) {
+          const last = Math.min(end, Math.max(start, lowerBound(times, cut) - 1));
+          for (let i = start; i <= last; i++) {
             const peak = Math.max(envelope[i] || 0, column[i]);
             const px = x(times[i]);
             if (i === start) context.moveTo(px, y(peak, series.axis));
             else context.lineTo(px, y(peak, series.axis));
           }
-          for (let i = end; i >= start; i--)
+          for (let i = last; i >= start; i--)
             context.lineTo(x(times[i]), y(column[i], series.axis));
           context.closePath();
           context.fillStyle = withAlpha(color, 0.13 * alpha);
@@ -516,16 +549,17 @@ export function createLiveChart(root, { onZoomChange } = {}) {
     // Живая «голова»: точка с расходящимся кольцом на последнем значении.
     let pulsing = false;
     if (!state.zoom && times.length && reveal >= 1) {
-      const last = times.length - 1;
-      if (times[last] >= state.from && times[last] <= state.to + 1000)
+      const headTime = liveEnd(now);
+      if (headTime >= state.from && headTime <= state.to + 1000)
         for (const series of state.view.series) {
           const column = state.columns[series.key];
           const alpha = state.alpha[series.key] ?? 1;
           if (!column || alpha < 0.05) continue;
-          if (series.skipZero && !(column[last] > 0)) continue;
+          const headValue = valueAt(times, column, headTime);
+          if (series.skipZero && !(headValue > 0)) continue;
           const color = colors[series.color];
-          const headX = x(times[last]);
-          const headY = y(column[last], series.axis);
+          const headX = x(headTime);
+          const headY = y(headValue, series.axis);
           if (!reducedMotion()) {
             const phase = (now % 1800) / 1800;
             context.beginPath();
@@ -935,7 +969,7 @@ export function createLiveChart(root, { onZoomChange } = {}) {
 // Живой спарклайн для карточек: то же непрерывное время, что у большого графика, — окно
 // в две минуты прокручивается каждый кадр, новые точки въезжают справа, шкала меняется
 // плавно. Рисует, только пока карточка видна; при уменьшенном движении — статичный кадр.
-export function createSparkline(canvas, color, windowMs = 120000) {
+export function createSparkline(canvas, color, { windowMs = 120000, onValue } = {}) {
   const context = canvas.getContext("2d");
   const state = { times: [], values: [], serverNow: 0, receivedAt: 0, low: 0, high: 0, frame: 0, last: 0, resolved: "" };
 
@@ -954,10 +988,7 @@ export function createSparkline(canvas, color, windowMs = 120000) {
     }
     const dt = state.last ? Math.min(100, now - state.last) : 16;
     state.last = now;
-    const latest = state.times.at(-1);
-    const end = reducedMotion()
-      ? latest
-      : Math.min(state.serverNow + (now - state.receivedAt), Math.max(latest, state.serverNow) + 2500);
+    const end = playhead(state.times, state.serverNow, state.receivedAt, now);
     const start = end - windowMs;
     const from = Math.max(0, lowerBound(state.times, start) - 1);
     let maximum = -Infinity;
@@ -977,10 +1008,15 @@ export function createSparkline(canvas, color, windowMs = 120000) {
     const y = (value) => height - 3 - ((value - state.low) / (state.high - state.low || 1)) * (height - 8);
     const xs = [];
     const ys = [];
-    for (let i = from; i < state.times.length; i++) {
+    for (let i = from; i < state.times.length && state.times[i] <= end; i++) {
       xs.push(x(state.times[i]));
       ys.push(y(state.values[i]));
     }
+    const headValue = valueAt(state.times, state.values, end);
+    xs.push(x(end));
+    ys.push(y(headValue));
+    onValue?.(headValue);
+    if (xs.length < 2) return true;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
     context.save();
