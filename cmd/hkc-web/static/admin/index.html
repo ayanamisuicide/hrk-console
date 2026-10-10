@@ -550,13 +550,16 @@
             <section class="card upd-progress" id="upd-progress" hidden>
               <div class="upd-progress-head">
                 <div><span class="eyebrow" id="upd-progress-eyebrow">Установка</span><h3 id="upd-step-title">Готовимся…</h3></div>
-                <span id="upd-elapsed" class="muted">0:00</span>
+                <div class="upd-progress-tools"><span id="upd-elapsed" class="muted">0:00</span><button id="upd-cancel" class="compact upd-cancel" type="button" hidden>Отменить</button></div>
               </div>
               <ol class="upd-steps" id="upd-steps"></ol>
               <div class="upd-bar" role="progressbar" aria-label="Ход установки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="upd-bar-fill"></i></div>
               <p class="upd-step-message" id="upd-step-message">—</p>
               <ul class="upd-warnings" id="upd-warnings" hidden></ul>
-              <details class="upd-log"><summary>Подробный журнал</summary><ol id="upd-log"></ol></details>
+              <div class="upd-console" aria-label="Что делает служба обновления">
+                <div class="upd-console-bar" aria-hidden="true"><i></i><i></i><i></i><span>hkc-update</span></div>
+                <ol id="upd-console" class="upd-console-lines"></ol>
+              </div>
             </section>
 
             <div class="upd-reconnect" id="upd-reconnect" hidden>

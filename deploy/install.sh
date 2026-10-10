@@ -140,7 +140,8 @@ spinner_loop() {
     detail=$(printf '%s%d.%ds%s' "$D" $(( elapsed / 1000 )) $(( elapsed % 1000 / 100 )) "$R")
     if [ -s "$work/progress" ]; then
       read -r total path < "$work/progress" || true
-      size=$(stat -c %s "$path" 2>/dev/null || echo 0)
+      # При параллельной загрузке файл собирается из частей: считаем их вместе.
+      size=$(stat -c %s "$path" "$path".part* 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')
       speed=$(( elapsed > 0 ? size * 1000 / elapsed : 0 ))
       if [ "${total:-0}" -gt 0 ]; then
         percent=$(( size * 100 / total ))
@@ -302,11 +303,37 @@ ok "$VERSION"
 # ---------- 3. Загрузка ----------
 archive="hkc-web-$VERSION-linux-$ARCH.tar.gz"
 base="$REPOSITORY/releases/download/$VERSION"
+# Качает файл параллельно частями (HTTP Range). CDN релизов GitHub у части провайдеров
+# режет скорость каждого соединения, и восемь соединений дают восьмикратный выигрыш.
+# Если части не поддерживаются или что-то не вышло — обычная загрузка одним потоком.
+download_parallel() {
+  local url=$1 out=$2 size=$3 final streams=8 part index first last pids=()
+  final="$(curl -fsSIL -o /dev/null -w '%{url_effective}' --proto '=https' "$url" 2>>"$LOG")" || return 1
+  case "$final" in https://*) ;; *) return 1 ;; esac
+  [ "$size" -ge 2097152 ] 2>/dev/null || return 1
+  part=$(( (size + streams - 1) / streams ))
+  for index in $(seq 0 $(( streams - 1 ))); do
+    first=$(( index * part ))
+    [ "$first" -lt "$size" ] || break
+    last=$(( first + part - 1 ))
+    [ "$last" -lt "$size" ] || last=$(( size - 1 ))
+    curl -fsS --proto '=https' -r "$first-$last" -o "$out.part$index" "$final" 2>>"$LOG" &
+    pids+=($!)
+  done
+  for index in "${pids[@]}"; do wait "$index" || return 1; done
+  cat $(for index in $(seq 0 $(( ${#pids[@]} - 1 ))); do printf '%s.part%s ' "$out" "$index"; done) > "$out" || return 1
+  rm -f "$out".part*
+  [ "$(stat -c %s "$out")" = "$size" ]
+}
+
 step "Загрузка панели"
 size=$(curl -fsIL "$base/$archive" 2>>"$LOG" | tr -d '\r' | awk 'tolower($1) == "content-length:" { value = $2 } END { print value + 0 }') || size=0
 printf '%s %s\n' "$size" "$work/$archive" > "$work/progress"
-curl -fsSL --proto '=https' -o "$work/$archive" "$base/$archive" 2>>"$LOG" ||
-  die "в релизе $VERSION нет сборки для linux-$ARCH" "проверьте список файлов: $REPOSITORY/releases/tag/$VERSION"
+if ! download_parallel "$base/$archive" "$work/$archive" "$size"; then
+  rm -f "$work/$archive" "$work/$archive".part*
+  curl -fsSL --proto '=https' -o "$work/$archive" "$base/$archive" 2>>"$LOG" ||
+    die "в релизе $VERSION нет сборки для linux-$ARCH" "проверьте список файлов: $REPOSITORY/releases/tag/$VERSION"
+fi
 curl -fsSL --proto '=https' -o "$work/$archive.sha256" "$base/$archive.sha256" 2>>"$LOG" ||
   die "не удалось скачать контрольную сумму"
 ok "$(human "$(stat -c %s "$work/$archive")")"

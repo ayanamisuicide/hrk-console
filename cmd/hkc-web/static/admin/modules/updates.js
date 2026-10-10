@@ -21,7 +21,7 @@ export function createUpdates(ctx) {
     ["health", "Запуск"],
     ["done", "Готово"],
   ];
-  const finished = ["complete", "rolled_back", "failed"];
+  const finished = ["complete", "rolled_back", "failed", "cancelled"];
   const state = {
     overview: null,
     job: null,
@@ -34,7 +34,11 @@ export function createUpdates(ctx) {
     releasesSignature: "",
     backupsSignature: "",
     versionsSignature: "",
-    logSignature: "",
+    consoleKey: "",
+    consoleCount: 0,
+    cancellable: false,
+    cancelling: false,
+    lastBytes: null,
     celebrated: "",
     showAllReleases: false,
   };
@@ -145,7 +149,13 @@ export function createUpdates(ctx) {
       return;
     }
     if (job && finished.includes(job.phase) && job.updatedAt && Date.now() - Date.parse(job.updatedAt) < 10 * 60000) {
-      if (job.phase === "complete") {
+      if (job.phase === "cancelled") {
+        heroState("cancelled");
+        setText("#upd-eyebrow", "Отменено");
+        setText("#upd-title", job.action === "rollback" ? "Откат отменён" : "Обновление отменено");
+        setText("#upd-subtitle", job.message || "Ничего не изменено.");
+        setPercent(0);
+      } else if (job.phase === "complete") {
         heroState("done");
         setText("#upd-eyebrow", "Готово");
         setText("#upd-title", job.action === "rollback" ? `Откат выполнен: ${job.version || installed.version}` : `Установлена ${job.version || installed.version}`);
@@ -160,7 +170,7 @@ export function createUpdates(ctx) {
         setText("#upd-title", job.phase === "rolled_back" ? "Новая версия не запустилась" : "Установка остановлена");
         setText("#upd-subtitle", job.message || "Подробности — в журнале ниже.");
       }
-      setPercent(100);
+      if (job.phase !== "cancelled") setPercent(100);
     } else if (overview.updateAvailable) {
       heroState("available");
       setText("#upd-eyebrow", "Доступно обновление");
@@ -241,12 +251,14 @@ export function createUpdates(ctx) {
     if (current < 0) current = 0;
     const failed = job.phase === "failed" || job.phase === "rolled_back";
     const done = job.phase === "complete";
+    const cancelled = job.phase === "cancelled";
     const stamps = {};
     for (const event of job.events || []) if (event.step && !stamps[event.step]) stamps[event.step] = event.at;
     [...list.children].forEach((item, index) => {
       let status = index < current ? "done" : index === current ? "active" : "pending";
       if (done) status = "done";
       if (failed && index === current) status = "error";
+      if (cancelled && index >= current) status = index === current ? "cancelled" : "pending";
       if (item.dataset.status !== status) item.dataset.status = status;
       const stamp = stamps[keys[index]];
       const next = stamps[keys[index + 1]];
@@ -261,7 +273,8 @@ export function createUpdates(ctx) {
     list.style.setProperty("--filled-ratio", String(done ? 1 : current / Math.max(1, keys.length - 1)));
     const label = steps[current]?.[1] || "";
     setText("#upd-progress-eyebrow", job.action === "rollback" ? "Откат" : "Установка");
-    setText("#upd-step-title", done ? "Готово" : failed ? "Остановлено" : `${label}…`);
+    setText("#upd-step-title", done ? "Готово" : cancelled ? "Отменено" : failed ? "Остановлено" : `${label}…`);
+    renderCancel(job);
     setText("#upd-step-message", job.message || "—");
     const started = Date.parse(job.startedAt || job.updatedAt || "");
     const ended = finished.includes(job.phase) ? Date.parse(job.updatedAt) : Date.now();
@@ -274,23 +287,89 @@ export function createUpdates(ctx) {
       warnings.dataset.signature = JSON.stringify(items);
       warnings.replaceChildren(...items.map((text) => Object.assign(document.createElement("li"), { textContent: text })));
     }
-    const events = job.events || [];
-    const signature = JSON.stringify(events.map((event) => event.at + event.message));
-    if (signature !== state.logSignature) {
-      state.logSignature = signature;
-      ctx.$("#upd-log").replaceChildren(
-        ...events.map((event) => {
-          const item = document.createElement("li");
-          item.dataset.phase = event.phase;
-          const time = document.createElement("time");
-          time.textContent = new Date(event.at).toLocaleTimeString("ru-RU");
-          const text = document.createElement("span");
-          text.textContent = event.message;
-          item.append(time, text);
-          return item;
-        }),
-      );
+    renderConsole(job);
+  }
+
+  // Кнопка отмены: доступна до замены сборки, потом объясняет, почему нельзя.
+  function renderCancel(job) {
+    const button = ctx.$("#upd-cancel");
+    const running = job && !finished.includes(job.phase);
+    button.hidden = !running;
+    if (!running) {
+      state.cancelling = false;
+      return;
     }
+    button.disabled = state.cancelling || !state.cancellable;
+    setText("#upd-cancel", state.cancelling ? "Отменяем…" : "Отменить");
+    button.title = state.cancellable || state.cancelling
+      ? "Служба остановится на ближайшем шаге, ничего не меняя"
+      : "Сборка уже заменяется — прервать нельзя. Если новая версия не запустится, вернётся прежняя.";
+  }
+
+  // Мини-консоль: настоящие действия службы. Новые строки «печатаются», строка загрузки
+  // обновляется на месте, мигающий курсор — пока задание идёт.
+  function consoleLine(event, live) {
+    const item = document.createElement("li");
+    item.dataset.kind = event.kind === "cmd" ? "cmd" : event.phase;
+    const time = document.createElement("time");
+    time.textContent = event.at ? new Date(event.at).toLocaleTimeString("ru-RU") : "";
+    const text = document.createElement("span");
+    text.textContent = event.message;
+    item.append(time, text);
+    if (live && !reduced()) {
+      item.classList.add("typing");
+      item.style.setProperty("--chars", String(Math.min(80, event.message.length)));
+    }
+    return item;
+  }
+
+  function renderConsole(job) {
+    const list = ctx.$("#upd-console");
+    const events = job.events || [];
+    const key = `${job.startedAt}|${job.action}`;
+    if (key !== state.consoleKey || events.length < state.consoleCount) {
+      state.consoleKey = key;
+      state.consoleCount = 0;
+      state.lastBytes = null;
+      list.replaceChildren();
+    }
+    list.querySelector(".upd-console-live")?.remove();
+    list.querySelector(".upd-console-cursor")?.remove();
+    const fresh = events.slice(state.consoleCount);
+    fresh.forEach((event, index) => {
+      const line = consoleLine(event, state.consoleCount > 0);
+      line.style.setProperty("--delay", `${index * 140}ms`);
+      list.append(line);
+    });
+    state.consoleCount = events.length;
+    const running = !finished.includes(job.phase);
+    if (running && job.step === "download" && job.total) {
+      const now = performance.now();
+      let speed = "";
+      if (state.lastBytes && now > state.lastBytes.at && job.downloaded >= state.lastBytes.bytes) {
+        const rate = ((job.downloaded - state.lastBytes.bytes) * 1000) / (now - state.lastBytes.at);
+        if (rate > 0) speed = ` · ${formatSize(rate)}/с`;
+        if (now - state.lastBytes.at > 3000) state.lastBytes = { at: now, bytes: job.downloaded };
+      } else state.lastBytes = { at: now, bytes: job.downloaded || 0 };
+      const percent = Math.round(((job.downloaded || 0) / job.total) * 100);
+      const filled = Math.round(percent / 5);
+      const live = document.createElement("li");
+      live.className = "upd-console-live";
+      live.dataset.kind = "cmd";
+      const label = document.createElement("time");
+      label.textContent = "↓";
+      const text = document.createElement("span");
+      text.textContent = `${"█".repeat(filled)}${"░".repeat(20 - filled)} ${percent}%  ${formatSize(job.downloaded)} из ${formatSize(job.total)}${speed}`;
+      live.append(label, text);
+      list.append(live);
+    }
+    if (running) {
+      const cursor = document.createElement("li");
+      cursor.className = "upd-console-cursor";
+      cursor.innerHTML = "<time></time><span>$ <i></i></span>";
+      list.append(cursor);
+    }
+    list.scrollTop = list.scrollHeight;
   }
 
   // «Что нового»: версии новее установленной раскрыты и отмечены, прошлые — по кнопке.
@@ -465,6 +544,7 @@ export function createUpdates(ctx) {
         state.failures = 0;
         ctx.$("#upd-reconnect").hidden = true;
         state.job = progress.job;
+        state.cancellable = Boolean(progress.cancellable);
         if (state.overview) state.overview.running = progress.running;
         if (!progress.running && finished.includes(progress.job?.phase)) {
           state.watching = false;
@@ -476,6 +556,7 @@ export function createUpdates(ctx) {
         state.overview = await ctx.adminRequest("/api/admin/updates");
         state.lastOverview = Date.now();
         state.job = state.overview.job;
+        state.cancellable = Boolean(state.overview.cancellable);
         if (state.overview.running && !state.watching) {
           state.watching = true;
           ctx.updateRunning = true;
@@ -499,6 +580,7 @@ export function createUpdates(ctx) {
       ctx.showNotice(result.message);
       state.watching = true;
       ctx.updateRunning = true;
+      state.cancellable = true;
       state.job = { phase: "checking", step: "prepare", progress: 1, action: body.backup ? "rollback" : "install", version: body.version || "", message: "Служба обновления запускается…", startedAt: new Date().toISOString(), events: [] };
       if (state.overview) state.overview.running = true;
       render();
@@ -560,6 +642,25 @@ export function createUpdates(ctx) {
       if (version) install(version);
     });
     ctx.$("#upd-version").addEventListener("change", render);
+    const cancel = ctx.$("#upd-cancel");
+    cancel.addEventListener("click", async () => {
+      const rollback = state.job?.action === "rollback";
+      if (!(await ctx.confirmAction(
+        rollback ? "Отменить откат?" : "Отменить обновление?",
+        "Служба остановится на ближайшем шаге. Ничего не изменится — продолжит работать текущая версия.",
+        { accept: rollback ? "Отменить откат" : "Отменить обновление", tone: "danger" },
+      ))) return;
+      state.cancelling = true;
+      render();
+      try {
+        const result = await ctx.adminRequest("/api/admin/updates/cancel", { method: "POST" });
+        ctx.showNotice(result.message);
+      } catch (error) {
+        state.cancelling = false;
+        ctx.showNotice(error.message, "error");
+        render();
+      }
+    });
     ctx.$("#upd-releases-more").addEventListener("click", () => {
       state.showAllReleases = true;
       render();

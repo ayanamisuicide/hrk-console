@@ -10,6 +10,7 @@ HKC_AUTH_FILE): {"action": "install", "version": "vX.Y.Z"} или {"action": "ro
 HKC_UPDATE_DIR/backups.json. Оба файла читаемы панелью (0644) и не содержат секретов;
 сами резервные сборки лежат в закрытом каталоге backups/.
 """
+import concurrent.futures
 import contextlib
 import fcntl
 import hashlib
@@ -23,6 +24,7 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -81,25 +83,88 @@ def stable_release():
     return tag
 
 
-# Скачивает ограниченный по размеру ресурс по HTTPS частями; progress(получено, всего) вызывается по ходу.
-def download(url, limit, progress=None):
+class UpdateCancelled(Exception):
+    """Администратор отменил задание до замены сборки."""
+
+
+PARALLEL_STREAMS = 8
+PARALLEL_MIN_SIZE = 2 * 1024 * 1024
+
+
+def _read_stream(response, limit, on_chunk):
+    chunks = []
+    received = 0
+    while True:
+        chunk = response.read(256 * 1024)
+        if not chunk:
+            break
+        received += len(chunk)
+        if received > limit:
+            raise RuntimeError("файл релиза превышает ограничение размера")
+        chunks.append(chunk)
+        on_chunk(len(chunk))
+    return b"".join(chunks)
+
+
+# Скачивает ресурс по HTTPS с ограничением размера; progress(получено, всего) вызывается по ходу.
+# Большие файлы качаются параллельно частями (HTTP Range): CDN релизов GitHub у части
+# провайдеров ограничивает скорость каждого соединения, и восемь соединений дают восьмикратный
+# выигрыш. Если сервер не поддерживает части или что-то пошло не так — обычная загрузка.
+def download(url, limit, progress=None, streams=PARALLEL_STREAMS):
+    lock = threading.Lock()
+    received = [0]
+    total = [0]
+
+    def on_chunk(size):
+        with lock:
+            received[0] += size
+            current = received[0]
+        if progress:
+            progress(current, total[0])
+
+    if streams > 1:
+        try:
+            head = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(head, timeout=30) as response:
+                final = response.url
+                length = int(response.headers.get("Content-Length") or 0)
+                ranges = response.headers.get("Accept-Ranges", "").lower() == "bytes"
+            if not final.startswith("https://"):
+                raise RuntimeError("небезопасный протокол загрузки релиза")
+            if length > limit:
+                raise RuntimeError("файл релиза превышает ограничение размера")
+            if ranges and length >= PARALLEL_MIN_SIZE:
+                total[0] = length
+                part = -(-length // streams)
+                bounds = [(offset, min(length, offset + part) - 1) for offset in range(0, length, part)]
+
+                def fetch(bound):
+                    first, last = bound
+                    request = urllib.request.Request(final, headers={"Range": f"bytes={first}-{last}"})
+                    with urllib.request.urlopen(request, timeout=60) as response:
+                        if response.status != 206:
+                            raise RuntimeError("сервер не отдал часть файла")
+                        data = _read_stream(response, last - first + 1, on_chunk)
+                    if len(data) != last - first + 1:
+                        raise RuntimeError("часть файла получена не полностью")
+                    return data
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(bounds)) as pool:
+                    parts = list(pool.map(fetch, bounds))
+                return b"".join(parts)
+        except RuntimeError as error:
+            if "ограничение размера" in str(error) or "небезопасный" in str(error):
+                raise
+        except UpdateCancelled:
+            raise
+        except Exception:
+            pass
+        received[0] = 0
     with urllib.request.urlopen(url, timeout=60) as response:
         if not response.url.startswith("https://"):
             raise RuntimeError("небезопасный протокол загрузки релиза")
-        total = int(response.headers.get("Content-Length") or 0)
-        chunks = []
-        received = 0
-        while True:
-            chunk = response.read(256 * 1024)
-            if not chunk:
-                break
-            received += len(chunk)
-            if received > limit:
-                raise RuntimeError("файл релиза превышает ограничение размера")
-            chunks.append(chunk)
-            if progress:
-                progress(received, total)
-    return b"".join(chunks)
+        total[0] = int(response.headers.get("Content-Length") or 0)
+        return _read_stream(response, limit, on_chunk)
 
 
 # Сверяет имя и SHA-256, допускает один обычный файл hkc-web и сигнатуру ELF. Ничего не распаковывает в произвольные пути.
@@ -184,6 +249,25 @@ def save_status(directory, phase, message, **extra):
                "events": events[-80:], **{key: value for key, value in previous.items()
                                          if key in ("version", "backup", "action", "fromVersion", "warnings")}, **extra}
     write_public_json(directory / "status.json", content)
+
+
+# Строка мини-консоли на странице обновлений: настоящее действие службы (команда, файл,
+# хеш), без смены фазы и сообщения. Хранится в тех же событиях, с kind="cmd".
+def console_line(directory, text):
+    now = datetime.now(timezone.utc).isoformat()
+    status = {}
+    with contextlib.suppress(OSError, ValueError):
+        status = json.loads((directory / "status.json").read_text(encoding="utf-8"))
+    events = status.get("events", [])
+    events.append({"at": now, "phase": status.get("phase", "checking"), "step": status.get("step", ""),
+                   "message": text, "kind": "cmd"})
+    status["events"] = events[-80:]
+    status["updatedAt"] = now
+    write_public_json(directory / "status.json", status)
+
+
+def short_path(path):
+    return str(path).replace(str(Path.home()), "~")
 
 
 # Каталог состояния открыт на чтение (статус для панели), резервные сборки — только root.
@@ -277,6 +361,28 @@ def source_dir():
     return configured
 
 
+# Флаг отмены лежит рядом с файлом задания. Служба его не читает — достаточно, что он есть;
+# поэтому подменённая ссылка вместо файла ничего не даёт.
+def cancel_path():
+    request = request_path()
+    return Path(request).with_name("update-cancel.json") if request else None
+
+
+def clear_cancel():
+    path = cancel_path()
+    if path:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+
+# Точка проверки: вызывается перед каждым этапом до замены сборки и во время загрузки.
+def check_cancel():
+    path = cancel_path()
+    if path and os.path.lexists(path):
+        clear_cancel()
+        raise UpdateCancelled()
+
+
 def request_path():
     if os.environ.get("HKC_UPDATE_REQUEST_FILE"):
         return os.environ["HKC_UPDATE_REQUEST_FILE"]
@@ -345,13 +451,19 @@ def install(version=""):
             raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
         # Из основной копии запускается сама служба обновления: её правки сохраняем и не трогаем.
         require_clean(source)
+        check_cancel()
+        if not version:
+            console_line(state, f"HEAD {REPOSITORY}/releases/latest")
         tag = version or stable_release()
+        console_line(state, f"{short_path(executable)} --version-json")
         current = json.loads(run([str(executable), "--version-json"], timeout=10))
         old_commit = current.get("commit", "")
         save_status(state, "checking", f"Выбран релиз {tag}; установлена {current.get('version', '?')}.",
                     progress=8, version=tag, fromVersion=current.get("version", ""))
+        console_line(state, f"git fetch {REPOSITORY}.git refs/tags/{tag}")
         fetch_refs([source], tag)
         commit = git(source, "rev-parse", f"{tag}^{{commit}}")
+        console_line(state, f"{tag} → коммит {commit[:12]}")
         if current.get("modified"):
             raise RuntimeError("установленный бинарник собран с локальными изменениями")
         if old_commit == commit:
@@ -366,6 +478,7 @@ def install(version=""):
         last = [0.0]
 
         def report(received, total):
+            check_cancel()
             if time.monotonic() - last[0] < 0.4 and received != total:
                 return
             last[0] = time.monotonic()
@@ -373,34 +486,52 @@ def install(version=""):
             save_status(state, "downloading", "Скачиваем архив релиза.", progress=12 + int(share * 36),
                         downloaded=received, total=total, quiet=True)
 
+        console_line(state, f"GET {base}{name}")
         data = download(base + name, MAX_ARCHIVE, report)
+        console_line(state, f"получено {len(data) / 1048576:.1f} МБ · GET {name}.sha256")
         checksum = download(base + name + ".sha256", 1024)
+        check_cancel()
         save_status(state, "checking", "Проверяем подлинность: SHA-256, состав архива и версию.", progress=50, step="verify")
         binary = verify_archive(data, checksum, name)
+        console_line(state, f"sha256 {hashlib.sha256(data).hexdigest()[:32]}… совпадает")
+        console_line(state, f"tar: hkc-web · {len(binary) / 1048576:.1f} МБ · ELF")
         # Проверяем встроенную ревизию до замены установленного бинарника.
         with tempfile.TemporaryDirectory(prefix="hkc-verify-") as temporary:
             staged = Path(temporary) / "hkc-web"
             staged.write_bytes(binary)
             staged.chmod(0o755)
             metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
+            console_line(state, f"hkc-web --version-json → {metadata.get('version')} ({str(metadata.get('commit', ''))[:12]})")
             if metadata.get("commit") != commit or metadata.get("version") != tag or metadata.get("modified"):
                 raise RuntimeError("метаданные бинарника не совпадают с опубликованным тегом Git")
         save_status(state, "checking", "Сборка подлинная: контрольная сумма и версия совпадают с тегом.", progress=58)
 
+        check_cancel()
         save_status(state, "restarting", "Сохраняем текущую сборку для отката.", progress=64, step="backup")
         backup = make_backup(state, executable, current)
+        console_line(state, f"cp {short_path(executable)} {short_path(backup)}/hkc-web")
         index_backups(state)
+        # Последняя точка отмены: дальше сборка заменяется, и прерывать нельзя.
+        check_cancel()
         save_status(state, "restarting", "Устанавливаем новую сборку и перезапускаем панель.", progress=72,
                     step="switch", backup=str(backup))
+        console_line(state, f"install -m 0755 hkc-web {short_path(executable)}")
         replace_binary(executable, binary)
         switched = True
+        console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа новой сборки.", progress=82, step="health")
+        console_line(state, f"GET {health_url}/api/version")
         await_health(health_url, commit)
+        console_line(state, f"200 OK · commit {commit[:12]}")
         save_status(state, "restarting", "Новая сборка работает; обновляем исходники.", progress=92, step="sources")
+        console_line(state, f"git merge --ff-only {commit[:12]}")
         warnings = sync_sources(state, source, local, commit, tag)
         save_status(state, "complete", f"Готово: установлена {tag}.", progress=100, step="done",
                     version=tag, backup=str(backup), warnings=warnings)
+    except UpdateCancelled:
+        save_status(state, "cancelled", "Обновление отменено. Ничего не изменено, работает прежняя версия.",
+                    progress=100)
     except Exception as error:
         if switched and backup:
             try:
@@ -408,12 +539,12 @@ def install(version=""):
                 run(["systemctl", "restart", "hkc-web.service"], timeout=40)
                 await_health(health_url, old_commit)
                 save_status(state, "rolled_back", f"Новая сборка не запустилась, вернули предыдущую: {error}",
-                            progress=100, step="done", backup=str(backup))
+                            progress=100, backup=str(backup))
             except Exception as rollback_error:
                 save_status(state, "failed", f"Обновление: {error}; откат: {rollback_error}", progress=100,
-                            step="done", backup=str(backup))
+                            backup=str(backup))
         else:
-            save_status(state, "failed", str(error), progress=100, step="done")
+            save_status(state, "failed", str(error), progress=100)
         raise
     finally:
         with contextlib.suppress(Exception):
@@ -437,6 +568,7 @@ def rollback(name):
     try:
         if executable.is_symlink():
             raise RuntimeError("замена исполняемого файла по символической ссылке запрещена")
+        console_line(state, f"read {short_path(target)}/hkc-web")
         binary = (target / "hkc-web").read_bytes()
         if not binary.startswith(b"\x7fELF"):
             raise RuntimeError("резервная сборка повреждена")
@@ -445,24 +577,34 @@ def rollback(name):
             staged.write_bytes(binary)
             staged.chmod(0o755)
             metadata = json.loads(run([str(staged), "--version-json"], timeout=10))
+        console_line(state, f"hkc-web --version-json → {metadata.get('version')} ({str(metadata.get('commit', ''))[:12]})")
         current = json.loads(run([str(executable), "--version-json"], timeout=10))
         save_status(state, "checking", f"Резервная сборка {metadata.get('version') or name} проверена.", progress=30,
                     step="verify", version=metadata.get("version", ""), fromVersion=current.get("version", ""))
+        check_cancel()
         save_status(state, "restarting", "Сохраняем текущую сборку, чтобы откат можно было отменить.", progress=45, step="backup")
         current_backup = make_backup(state, executable, current)
+        console_line(state, f"cp {short_path(executable)} {short_path(current_backup)}/hkc-web")
         index_backups(state)
+        check_cancel()
         save_status(state, "restarting", "Возвращаем резервную сборку и перезапускаем панель.", progress=65,
                     step="switch", backup=str(current_backup))
+        console_line(state, f"install -m 0755 {name}/hkc-web {short_path(executable)}")
         replace_binary(executable, binary)
         switched = True
+        console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа панели.", progress=85, step="health")
+        console_line(state, f"GET {health_url}/api/version")
         await_health(health_url, metadata.get("commit", ""))
+        console_line(state, f"200 OK · commit {str(metadata.get('commit', ''))[:12]}")
         warnings = []
         if metadata.get("commit") and git(source, "rev-parse", "HEAD") != metadata.get("commit"):
             warnings.append("Исходники остались на более новой версии: следующая установка выровняет их.")
         save_status(state, "complete", f"Откат выполнен: работает {metadata.get('version') or name}.", progress=100,
                     step="done", warnings=warnings)
+    except UpdateCancelled:
+        save_status(state, "cancelled", "Откат отменён. Ничего не изменено.", progress=100)
     except Exception as error:
         if switched and current_backup:
             with contextlib.suppress(Exception):
@@ -470,9 +612,9 @@ def rollback(name):
                 run(["systemctl", "restart", "hkc-web.service"], timeout=40)
                 await_health(health_url, current.get("commit", ""))
             save_status(state, "rolled_back", f"Резервная сборка не запустилась, вернули текущую: {error}",
-                        progress=100, step="done")
+                        progress=100)
         else:
-            save_status(state, "failed", str(error), progress=100, step="done")
+            save_status(state, "failed", str(error), progress=100)
         raise
     finally:
         with contextlib.suppress(Exception):
@@ -490,9 +632,10 @@ def main():
         except BlockingIOError:
             return
         try:
+            clear_cancel()
             request = read_request(request_path(), state)
         except Exception as error:
-            save_status(state, "failed", str(error), progress=100, step="done", reset=True)
+            save_status(state, "failed", str(error), progress=100, reset=True)
             raise
         if request["action"] == "rollback":
             rollback(request["backup"])

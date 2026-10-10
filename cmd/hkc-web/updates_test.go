@@ -291,3 +291,37 @@ func TestStaleUpdateJobHidden(t *testing.T) {
 		}
 	}
 }
+
+// TestCancelUpdateOnlyBeforeSwitch проверяет, что отмена пишет флаг до замены сборки и
+// отклоняется после неё или без идущего задания.
+func TestCancelUpdateOnlyBeforeSwitch(t *testing.T) {
+	s := updateTestServer(t)
+	state := os.Getenv("HKC_UPDATE_DIR")
+	request := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/admin/updates/cancel", nil)
+		r.Header.Set("Authorization", "Bearer admin-secret")
+		w := httptest.NewRecorder()
+		s.routes().ServeHTTP(w, r)
+		return w
+	}
+	if w := request(); w.Code != 409 {
+		t.Fatalf("no job: %d", w.Code)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	write := func(step string) {
+		if err := os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"phase":"restarting","step":"`+step+`","updatedAt":"`+now+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("switch")
+	if w := request(); w.Code != 409 || !strings.Contains(w.Body.String(), "нельзя") {
+		t.Fatalf("after switch: %d %s", w.Code, w.Body.String())
+	}
+	write("download")
+	if w := request(); w.Code != 202 {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(s.dataDir, "update-cancel.json")); err != nil {
+		t.Fatal("cancel flag not written")
+	}
+}

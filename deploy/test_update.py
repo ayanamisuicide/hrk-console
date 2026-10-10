@@ -202,5 +202,71 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("Дополнительная копия", warnings[0])
 
 
+    # Отмена до замены сборки: бинарник не тронут, итог «cancelled», флаг убран.
+    def test_cancel_before_switch_changes_nothing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "bin").mkdir()
+            executable = root / "bin/hkc-web"
+            executable.write_bytes(b"previous binary")
+            data = root / "data"
+            data.mkdir()
+            old, new = "a" * 40, "b" * 40
+            metadata = [{"version": "v2.1.0", "commit": old}, {"version": "v2.2.0", "commit": new}]
+
+            def fake_run(args, **kwargs):
+                if args[-1] == "--version-json":
+                    return json.dumps(metadata.pop(0))
+                return ""
+
+            def fake_download(url, limit, progress=None):
+                if progress:
+                    (data / "update-cancel.json").write_text("{}")
+                    progress(10, 100)
+                return b"archive"
+
+            env = {"HKC_SOURCE_DIR": str(root), "HKC_LOCAL_SOURCE_DIR": "", "HKC_UPDATE_DIR": str(root / "state"),
+                   "HKC_AUTH_FILE": str(data / "web-auth.json")}
+            with patch.dict(os.environ, env), patch.object(update, "require_clean"), \
+                 patch.object(update, "git", return_value=new), patch.object(update, "run", side_effect=fake_run), \
+                 patch.object(update, "download", side_effect=fake_download), patch.object(update, "await_health"):
+                update.install("v2.2.0")
+            self.assertEqual(executable.read_bytes(), b"previous binary")
+            self.assertEqual(json.loads((root / "state/status.json").read_text())["phase"], "cancelled")
+            self.assertFalse((data / "update-cancel.json").exists())
+
+    # Параллельная загрузка частями собирает файл без потерь и сообщает общий прогресс.
+    def test_parallel_download_reassembles_ranges(self):
+        payload = bytes(range(256)) * 20000  # ~5 МБ
+        calls = []
+
+        class Response(io.BytesIO):
+            def __init__(self, data, status=200, headers=None):
+                super().__init__(data)
+                self.status = status
+                self.url = "https://cdn.example/asset"
+                self.headers = headers or {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(request, timeout=0):
+            if request.get_method() == "HEAD":
+                return Response(b"", headers={"Content-Length": str(len(payload)), "Accept-Ranges": "bytes"})
+            first, last = map(int, request.headers["Range"].split("=")[1].split("-"))
+            calls.append((first, last))
+            return Response(payload[first:last + 1], status=206)
+
+        seen = []
+        with patch.object(update.urllib.request, "urlopen", side_effect=fake_urlopen):
+            data = update.download("https://github.com/x", len(payload) + 1, lambda got, total: seen.append((got, total)))
+        self.assertEqual(data, payload)
+        self.assertEqual(len(calls), update.PARALLEL_STREAMS)
+        self.assertEqual(seen[-1][1], len(payload))
+        self.assertEqual(max(got for got, _ in seen), len(payload))
+
 if __name__ == "__main__":
     unittest.main()

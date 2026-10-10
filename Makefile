@@ -11,9 +11,10 @@ export CGO_ENABLED
 
 .PHONY: build test vet clean
 
-# Сборка включает статические ресурсы через go:embed.
+# Сборка включает статические ресурсы через go:embed. Без отладочных символов (-s -w)
+# архив релиза примерно на треть меньше; версия читается из встроенных метаданных.
 build:
-	$(GO) build -ldflags "-X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT)" -o $(BIN) ./cmd/hkc-web
+	$(GO) build -trimpath -ldflags "-s -w -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT)" -o $(BIN) ./cmd/hkc-web
 	@echo "собрано: $(BIN)"
 
 # Быстрые тесты всех пакетов; проверка гонок запускается отдельно в Linux/WSL.

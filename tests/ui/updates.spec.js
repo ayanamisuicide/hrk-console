@@ -158,3 +158,64 @@ test("обновление: понятная причина, если устан
   await expect(page.locator("#upd-install")).toBeDisabled();
   await expect(page.locator("#upd-version-install")).toBeDisabled();
 });
+
+test("обновление: мини-консоль и отмена до замены сборки", async ({ page }, testInfo) => {
+  let cancelled = false;
+  let cancelCalls = 0;
+  const events = [
+    { at: "2026-10-11T09:00:00Z", step: "prepare", phase: "checking", message: "Готовимся к установке: проверяем окружение." },
+    { at: "2026-10-11T09:00:01Z", step: "prepare", phase: "checking", kind: "cmd", message: "git fetch https://github.com/ayanamisuicide/hrk-console.git refs/tags/v2.6.0" },
+    { at: "2026-10-11T09:00:02Z", step: "download", phase: "downloading", message: "Скачиваем hkc-web-v2.6.0-linux-amd64.tar.gz." },
+    { at: "2026-10-11T09:00:02Z", step: "download", phase: "downloading", kind: "cmd", message: "GET https://github.com/ayanamisuicide/hrk-console/releases/download/v2.6.0/hkc-web-v2.6.0-linux-amd64.tar.gz" },
+  ];
+  const running = () => ({
+    running: true,
+    cancellable: true,
+    job: { phase: "downloading", step: "download", progress: 30, action: "install", version: "v2.6.0", downloaded: 1572864, total: 3329466,
+      message: "Скачиваем архив релиза.", startedAt: "2026-10-11T09:00:00Z", updatedAt: new Date().toISOString(), events },
+  });
+  const cancelledJob = () => ({ ...running().job, phase: "cancelled", step: "download", progress: 100,
+    message: "Обновление отменено. Ничего не изменено, работает прежняя версия.",
+    events: [...events, { at: "2026-10-11T09:00:05Z", step: "done", phase: "cancelled", message: "Обновление отменено. Ничего не изменено, работает прежняя версия." }] });
+  await mockAdmin(page, {
+    "/api/admin/updates": (route) => json(route, overview({ running: !cancelled, cancellable: !cancelled, job: cancelled ? cancelledJob() : running().job })),
+    "/api/admin/updates/progress": (route) =>
+      json(route, cancelled ? { running: false, cancellable: false, job: cancelledJob() } : running()),
+    "/api/admin/updates/cancel": (route) => {
+      cancelCalls++;
+      cancelled = true;
+      return json(route, { ok: true, message: "Отменяем — служба остановится на ближайшем шаге." }, 202);
+    },
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin/");
+  await expect(page.locator("#upd-hero")).toHaveAttribute("data-state", "running");
+  await expect(page.locator('#upd-console li[data-kind="cmd"]').first()).toContainText("git fetch");
+  await expect(page.locator("#upd-console .upd-console-live")).toContainText("47%");
+  await expect(page.locator("#upd-console .upd-console-cursor")).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath("updates-console.png"), fullPage: true });
+  const cancel = page.locator("#upd-cancel");
+  await expect(cancel).toBeEnabled();
+  await cancel.click();
+  await expect(page.locator("#confirm-title")).toHaveText("Отменить обновление?");
+  await page.locator("#confirm-accept").click();
+  await expect.poll(() => cancelCalls).toBe(1);
+  await expect(page.locator("#upd-hero")).toHaveAttribute("data-state", "cancelled");
+  await expect(page.locator("#upd-title")).toHaveText("Обновление отменено");
+  await expect(page.locator('#upd-steps li[data-step="download"]')).toHaveAttribute("data-status", "cancelled");
+  await expect(cancel).toBeHidden();
+  await expect(page.locator("#upd-console .upd-console-cursor")).toHaveCount(0);
+  await expect(page.locator('#upd-console li[data-kind="cancelled"]')).toHaveCount(1);
+});
+
+test("обновление: после замены сборки отмена недоступна и объясняет почему", async ({ page }) => {
+  await mockAdmin(page, {
+    "/api/admin/updates": (route) => json(route, overview({ running: true, cancellable: false, job: { phase: "restarting", step: "health", progress: 82, action: "install", version: "v2.6.0", updatedAt: new Date().toISOString(), events: [] } })),
+    "/api/admin/updates/progress": (route) => json(route, { running: true, cancellable: false, job: { phase: "restarting", step: "health", progress: 82, action: "install", version: "v2.6.0", updatedAt: new Date().toISOString(), events: [] } }),
+  });
+  await page.goto("/admin/");
+  const cancel = page.locator("#upd-cancel");
+  await expect(cancel).toBeVisible();
+  await expect(cancel).toBeDisabled();
+  await expect(cancel).toHaveAttribute("title", /прервать нельзя/);
+});

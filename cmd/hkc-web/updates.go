@@ -389,7 +389,7 @@ func readUpdateJob() map[string]any {
 // Незавершённые задания не трогаем: их запись до перезапуска — обычная часть установки.
 func staleUpdateJob(job map[string]any, started time.Time) bool {
 	phase, _ := job["phase"].(string)
-	if phase != "complete" && phase != "failed" && phase != "rolled_back" {
+	if phase != "complete" && phase != "failed" && phase != "rolled_back" && phase != "cancelled" {
 		return false
 	}
 	updated, _ := job["updatedAt"].(string)
@@ -423,6 +423,7 @@ type updateOverview struct {
 	Backups         []backupInfo   `json:"backups"`
 	Job             map[string]any `json:"job"`
 	Running         bool           `json:"running"`
+	Cancellable     bool           `json:"cancellable"`
 	Blockers        []updateIssue  `json:"blockers"`
 	Sources         []sourceInfo   `json:"sources"`
 }
@@ -435,6 +436,7 @@ func (s *server) buildUpdateOverview(ctx context.Context) updateOverview {
 		Job: readUpdateJob(), Blockers: []updateIssue{}, Sources: []sourceInfo{},
 		Enabled: runtime.GOOS == "linux" && os.Getenv("HKC_UPDATE_ENABLED") == "1"}
 	overview.Running = jobRunning(overview.Job)
+	overview.Cancellable = jobCancellable(overview.Job)
 	overview.UpdateAvailable = remote.Error == "" && compareVersions(remote.Version, installed.Version) > 0
 	if remote.Releases != nil {
 		overview.Releases = remote.Releases
@@ -497,7 +499,7 @@ func (s *server) updateProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	job := readUpdateJob()
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"job": job, "running": jobRunning(job), "installed": currentVersion()})
+	writeJSON(w, http.StatusOK, map[string]any{"job": job, "running": jobRunning(job), "cancellable": jobCancellable(job), "installed": currentVersion()})
 }
 
 // updateRequest — Задание для службы обновления; пишется в каталог данных панели.
@@ -506,6 +508,38 @@ type updateRequest struct {
 	Version     string `json:"version,omitempty"`
 	Backup      string `json:"backup,omitempty"`
 	RequestedAt string `json:"requestedAt"`
+}
+
+// jobCancellable — задание идёт и ещё не дошло до замены сборки. После замены прерывать
+// нельзя: служба сама вернёт прежнюю сборку, если новая не запустится.
+func jobCancellable(job map[string]any) bool {
+	step, _ := job["step"].(string)
+	return jobRunning(job) && (step == "" || step == "prepare" || step == "download" || step == "verify" || step == "backup")
+}
+
+// cancelUpdate оставляет флаг отмены рядом с файлом задания; служба проверяет его перед
+// каждым этапом и во время загрузки и останавливается, ничего не меняя.
+func (s *server) cancelUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAuthorized(r) {
+		writeJSON(w, 401, actionResponse{Message: "требуется административный токен"})
+		return
+	}
+	job := readUpdateJob()
+	if !jobRunning(job) {
+		writeJSON(w, http.StatusConflict, actionResponse{Message: "обновление сейчас не выполняется"})
+		return
+	}
+	if !jobCancellable(job) {
+		writeJSON(w, http.StatusConflict, actionResponse{Message: "сборка уже заменяется — отменить нельзя; при сбое вернётся прежняя версия"})
+		return
+	}
+	path := filepath.Join(filepath.Dir(s.updateRequestPath()), "update-cancel.json")
+	if err := writePrivateAtomic(path, []byte(`{"cancel":true}`)); err != nil {
+		writeJSON(w, 500, actionResponse{Message: "не удалось передать отмену службе обновления"})
+		return
+	}
+	s.record(r, "admin", "update.cancel", "")
+	writeJSON(w, http.StatusAccepted, actionResponse{OK: true, Message: "Отменяем — служба остановится на ближайшем шаге."})
 }
 
 func (s *server) updateRequestPath() string {
