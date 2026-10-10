@@ -105,10 +105,10 @@ for (const width of [390, 1440])
       expect(expanded).toBeGreaterThan(collapsed + 30);
       expect(
         await page
-          .locator(".module-orbit > i")
-          .last()
+          .locator('.modules-matrix [data-state="loading"]')
+          .first()
           .evaluate((el) => getComputedStyle(el).animationName),
-      ).toBe("module-orbit");
+      ).toContain("module-loading-wave");
       await page.screenshot({
         path: testInfo.outputPath(`modules-grid-${width}-${theme}.png`),
         fullPage: true,
@@ -200,6 +200,12 @@ test("секундный опрос сохраняет строки, раскр�
   await row.evaluate((element) => {
     element.dataset.persistent = "yes";
   });
+  await page
+    .locator("#modules-matrix i")
+    .first()
+    .evaluate((element) => {
+      element.dataset.persistent = "yes";
+    });
   state = "ready";
   const before = hits;
   await page.clock.runFor(2200);
@@ -207,6 +213,14 @@ test("секундный опрос сохраняет строки, раскр�
   await expect(row).toHaveAttribute("data-state", "ready");
   await expect(row).toHaveAttribute("open", "");
   await expect(row).toHaveAttribute("data-persistent", "yes");
+  await expect(page.locator("#modules-matrix i").first()).toHaveAttribute(
+    "data-persistent",
+    "yes",
+  );
+  await expect(page.locator("#modules-matrix i").first()).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
   await expect(
     page.locator("#modules-list img, #modules-list script"),
   ).toHaveCount(0);
@@ -223,6 +237,94 @@ test("секундный опрос сохраняет строки, раскр�
   const idle = hits;
   await page.clock.runFor(2200);
   expect(hits).toBe(idle);
+});
+
+test("сводка учитывает выгруженные модули и неизвестные состояния", async ({
+  page,
+}) => {
+  await fixture(page);
+  let modules = Array.from({ length: 40 }, (_, index) => ({
+    id: `inventory-${index}`,
+    name: `Module${index}`,
+    kind: "external",
+    state: index < 38 ? "ready" : "unloaded",
+  }));
+  await page.route("**/api/modules", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "live",
+        session: "inventory",
+        message: "Подключено",
+        modules,
+      }),
+    }),
+  );
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.locator("#username")).toHaveText("tester");
+  await page.locator('[data-view="modules"]').click();
+  await expect(page.locator("#modules-total")).toHaveText("40");
+  await expect(page.locator("#modules-ready")).toHaveText("38");
+  await expect(page.locator("#modules-unloaded")).toHaveText("2");
+  await expect(page.locator("#modules-summary")).toHaveText(
+    "38 из 40 готовы к работе",
+  );
+  await expect(
+    page.locator('.modules-matrix [data-state="unloaded"]'),
+  ).toHaveCount(2);
+  await page.locator('[data-modules-state="unloaded"]').click();
+  await expect(page.locator(".module-row:visible")).toHaveCount(2);
+  await expect(page.locator('[data-id="inventory-38"]')).toBeVisible();
+  await page.locator("#modules-reset").click();
+  await expect(page.locator(".module-row:visible")).toHaveCount(12);
+  modules = [
+    "ready",
+    "loading",
+    "error",
+    "suspended",
+    "unloaded",
+    "future-state",
+  ].map((state, index) => ({
+    id: `mixed-${index}`,
+    name: `Mixed${index}`,
+    kind: "core",
+    state,
+  }));
+  await page.clock.runFor(1100);
+  await expect(page.locator("#modules-total")).toHaveText("6");
+  await expect(page.locator("#modules-problems")).toHaveText("2");
+  await expect(page.locator("#modules-unknown")).toHaveText("1");
+  const sum = await page
+    .locator(".modules-counters strong")
+    .evaluateAll((elements) =>
+      elements.reduce(
+        (value, element) => value + Number(element.textContent),
+        0,
+      ),
+    );
+  expect(sum).toBe(6);
+  await page.locator('[data-modules-state="unknown"]').click();
+  await expect(page.locator(".module-row:visible")).toHaveCount(1);
+  await expect(
+    page.locator(".module-row:visible .module-state span"),
+  ).toHaveText("Неизвестно");
+  await page.locator('[data-modules-state="unknown"]').click();
+  await expect(page.locator(".module-row:visible")).toHaveCount(6);
+  modules = Array.from({ length: 81 }, (_, index) => ({
+    id: `large-${index}`,
+    name: `Large${index}`,
+    kind: "external",
+    state: index === 80 ? "unloaded" : "ready",
+  }));
+  await page.clock.runFor(1100);
+  await expect(page.locator("#modules-total")).toHaveText("81");
+  await expect(page.locator("#modules-ready")).toHaveText("80");
+  await expect(page.locator("#modules-unloaded")).toHaveText("1");
+  await expect(page.locator("#modules-matrix i")).toHaveCount(60);
+  await expect(page.locator("#modules-map-caption")).toHaveText(
+    "Первые 60 из 81",
+  );
 });
 
 test("потеря связи и новый запуск не оставляют старые зелёные статусы", async ({
@@ -259,6 +361,9 @@ test("потеря связи и новый запуск не оставляют
     "stale",
   );
   await expect(page.locator("#modules-list")).toHaveClass(/modules-stale/);
+  await expect(page.locator("#modules-summary")).toContainText(
+    "Последний снимок",
+  );
   fail = false;
   session = "two";
   await page.clock.runFor(1100);

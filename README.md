@@ -7,7 +7,7 @@
 Веб-панель управления Telegram-юзерботом [Heroku](https://github.com/ZetGoHack/Heroku).
 Сервер работает рядом с ботом на Linux или WSL; панель открывается в браузере с любой ОС.
 
-[Последний релиз](https://github.com/ayanamisuicide/hrk-console/releases/latest) · [Что изменилось в v2.2.29](CHANGELOG.md#2229--2026-10-10) · [Инструкция по установке](docs/web.md)
+[Последний релиз](https://github.com/ayanamisuicide/hrk-console/releases/latest) · [Что изменилось в v2.2.30](CHANGELOG.md#2230--2026-10-10) · [Инструкция по установке](docs/web.md)
 
 ## Возможности
 
@@ -50,7 +50,7 @@
 и уже установленный Heroku с виртуальным окружением `.venv` или `venv`.
 
 ```sh
-git clone --branch v2.2.29 --depth 1 https://github.com/ayanamisuicide/hrk-console ~/heroku-console
+git clone --branch v2.2.30 --depth 1 https://github.com/ayanamisuicide/hrk-console ~/heroku-console
 cd ~/heroku-console
 make build
 

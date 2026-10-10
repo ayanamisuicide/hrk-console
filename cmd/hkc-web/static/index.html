@@ -76,16 +76,22 @@
       <!-- Раздел notice: содержимое обновляется соответствующим модулем страницы. -->
       <section id="notice" class="notice" hidden></section>
       <section id="modules-view" class="workspace-view modules-view" hidden>
-        <div class="view-intro"><div><span class="eyebrow">ВНУТРИ HEROKU</span><h3>Модули бота</h3><p>От первого импорта до готовности. Всё состояние загрузки — в одном месте.</p></div><span class="modules-cadence">↻ Каждую секунду</span></div>
+        <div class="view-intro"><div><span class="eyebrow">HEROKU / ИНВЕНТАРЬ</span><h3>Модули</h3><p>Что работает, что загружается и что осталось за бортом.</p></div><span class="modules-cadence"><i></i> LIVE · 1 СЕК</span></div>
         <div class="modules-overview">
-          <div class="module-orbit" aria-hidden="true"><i></i><i></i><i></i><span>◈</span></div><div class="modules-total"><span class="eyebrow">В ТЕКУЩЕМ ЗАПУСКЕ</span><strong id="modules-total">—</strong><span>модулей обнаружено</span></div>
-          <div class="modules-counters"><div><i class="module-dot ready"></i><strong id="modules-ready">—</strong><span>Готовы</span></div><div><i class="module-dot loading"></i><strong id="modules-loading">—</strong><span>Загружаются</span></div><div><i class="module-dot error"></i><strong id="modules-problems">—</strong><span>С проблемами</span></div></div>
-          <div class="modules-progress" aria-hidden="true"><i id="modules-progress" role="progressbar" aria-label="Доля готовых модулей" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></i></div>
+          <div class="modules-total"><span class="modules-kicker">ТЕКУЩИЙ ЗАПУСК</span><div class="modules-number"><strong id="modules-total">—</strong><span>модулей<br>обнаружено</span></div><p id="modules-summary">Знакомимся с загрузчиком…</p></div>
+          <div class="modules-map"><div class="modules-map-heading"><span>КАРТА СОСТОЯНИЙ</span><small id="modules-map-caption">Ожидаем снимок</small></div><div id="modules-matrix" class="modules-matrix" aria-hidden="true"></div><div class="modules-progress" role="img" aria-label="Распределение состояний модулей"><i id="modules-progress"></i><i data-module-segment="loading"></i><i data-module-segment="problems"></i><i data-module-segment="unloaded"></i><i data-module-segment="unknown"></i></div></div>
+        </div>
+        <div class="modules-counters" role="group" aria-label="Состояния модулей">
+          <button type="button" data-modules-state="ready" aria-pressed="false"><span><i class="module-dot ready"></i>Готовы</span><strong id="modules-ready">—</strong></button>
+          <button type="button" data-modules-state="loading" aria-pressed="false"><span><i class="module-dot loading"></i>Загружаются</span><strong id="modules-loading">—</strong></button>
+          <button type="button" data-modules-state="problems" aria-pressed="false"><span><i class="module-dot error"></i>С проблемами</span><strong id="modules-problems">—</strong></button>
+          <button type="button" data-modules-state="unloaded" aria-pressed="false"><span><i class="module-dot unloaded"></i>Выгружены</span><strong id="modules-unloaded">—</strong></button>
+          <button type="button" data-modules-state="unknown" aria-pressed="false"><span><i class="module-dot unknown"></i>Неизвестно</span><strong id="modules-unknown">—</strong></button>
         </div>
         <div id="modules-connection" class="modules-connection" role="status"><i></i><span>Ожидаем данные…</span></div>
         <div class="modules-toolbar"><label class="modules-search"><span aria-hidden="true">⌕</span><input id="modules-search" type="search" placeholder="Найти модуль…" aria-label="Найти модуль"></label><div class="modules-filters" role="group" aria-label="Тип модулей"><button class="compact active" data-modules-kind="all" aria-pressed="true">Все</button><button class="compact" data-modules-kind="external" aria-pressed="false">Установленные</button><button class="compact" data-modules-kind="core" aria-pressed="false">Встроенные</button></div><button id="modules-only-problems" class="compact" aria-pressed="false">Только проблемы</button></div>
 
-        <div id="modules-list" class="modules-list"></div><div class="modules-pagination"><button id="modules-prev" class="compact" type="button">← Назад</button><span id="modules-page">1 / 1</span><button id="modules-next" class="compact" type="button">Далее →</button></div>
+        <div class="modules-directory-heading"><span>КАТАЛОГ МОДУЛЕЙ</span><button id="modules-reset" type="button" class="compact" hidden>Сбросить фильтры ×</button></div><div id="modules-list" class="modules-list"></div><div class="modules-pagination"><button id="modules-prev" class="compact" type="button">← Назад</button><span id="modules-page">1 / 1</span><button id="modules-next" class="compact" type="button">Далее →</button></div>
         <p id="modules-empty" class="modules-empty">Подключаемся к мониторингу…</p>
         <p class="modules-footnote">«Готов» означает успешную инициализацию. Ошибки при выполнении команд доступны в журнале и происшествиях.</p>
       </section>

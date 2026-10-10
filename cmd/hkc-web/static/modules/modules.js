@@ -1,6 +1,7 @@
 // Строки сохраняют DOM и раскрытие при опросе. Меняются только изменившиеся поля.
 export function createModules(ctx) {
   const rows = new Map();
+  const matrixCells = new Map();
   const labels = {
     ready: "Готов",
     loading: "Загружается",
@@ -11,11 +12,19 @@ export function createModules(ctx) {
   let snapshot = null;
   let busy = false;
   let kind = "all";
-  let problemsOnly = false;
+  let stateFilter = "all";
+  let matrixSignature = "";
   let session = "";
   let page = 0;
   const compact = matchMedia("(max-width: 700px)");
   const isProblem = (item) => ["error", "suspended"].includes(item.state);
+  // Категории исчерпывают весь снимок, включая выгрузку и будущие состояния моста.
+  const category = (item) =>
+    isProblem(item)
+      ? "problems"
+      : ["ready", "loading", "unloaded"].includes(item.state)
+        ? item.state
+        : "unknown";
   const setText = (element, text) => {
     if (element.textContent !== String(text)) element.textContent = text;
   };
@@ -27,7 +36,7 @@ export function createModules(ctx) {
     row.style.setProperty("--entry-delay", `${Math.min(index, 8) * 35}ms`);
     // Разметка постоянна; данные бота записываются исключительно через textContent.
     row.innerHTML =
-      '<summary><span class="module-symbol" aria-hidden="true">◈</span><span class="module-identity"><strong></strong><small></small></span><span class="module-state"><i class="module-dot"></i><span></span></span><span class="module-chevron" aria-hidden="true">⌄</span></summary><div class="module-detail"><p class="module-explanation"></p><pre class="module-error" hidden></pre><button class="compact module-log" type="button">Открыть журнал →</button></div>';
+      '<summary><span class="module-symbol" aria-hidden="true"></span><span class="module-identity"><strong></strong><small></small></span><span class="module-state"><i class="module-dot"></i><span></span></span><span class="module-chevron" aria-hidden="true">+</span></summary><div class="module-detail"><p class="module-explanation"></p><pre class="module-error" hidden></pre><button class="compact module-log" type="button">Открыть журнал ↗</button></div>';
     row.querySelector(".module-log").addEventListener("click", () => {
       // Поиск по имени не предполагает совпадения имени модуля и logger.name.
       ctx.filterInput.value = row.querySelector(
@@ -65,7 +74,7 @@ export function createModules(ctx) {
     const filtered = items.filter(
       (item) =>
         (kind === "all" || kind === item.kind) &&
-        (!problemsOnly || isProblem(item)) &&
+        (stateFilter === "all" || category(item) === stateFilter) &&
         `${item.name} ${item.version || ""}`
           .toLocaleLowerCase()
           .includes(query),
@@ -91,6 +100,10 @@ export function createModules(ctx) {
         row.dataset.signature = signature;
         row.dataset.state = item.state;
         setText(row.querySelector(".module-identity strong"), item.name);
+        setText(
+          row.querySelector(".module-symbol"),
+          (item.name || "?").slice(0, 2).toLocaleUpperCase(),
+        );
         setText(
           row.querySelector(".module-identity small"),
           `${item.kind === "core" ? "Встроенный" : "Установленный"}${item.version ? ` · v${item.version}` : ""}`,
@@ -129,19 +142,84 @@ export function createModules(ctx) {
       }
       row.hidden = !visibleIds.has(item.id);
     }
-    const counts = [
-      items.length,
-      items.filter((i) => i.state === "ready").length,
-      items.filter((i) => i.state === "loading").length,
-      items.filter(isProblem).length,
-    ];
-    ["total", "ready", "loading", "problems"].forEach((name, index) => {
+    const counts = {
+      total: items.length,
+      ready: 0,
+      loading: 0,
+      problems: 0,
+      unloaded: 0,
+      unknown: 0,
+    };
+    items.forEach((item) => counts[category(item)]++);
+    Object.entries(counts).forEach(([name, count]) => {
       const element = ctx.$(`#modules-${name}`);
-      if (element.textContent !== String(counts[index]))
-        ctx.animateValue(element, String(counts[index]));
+      if (element.textContent !== String(count))
+        ctx.animateValue(element, String(count));
     });
-    ctx.$("#modules-progress").style.width =
-      `${counts[0] ? (counts[1] / counts[0]) * 100 : 0}%`;
+    for (const name of [
+      "ready",
+      "loading",
+      "problems",
+      "unloaded",
+      "unknown",
+    ]) {
+      const segment =
+        name === "ready"
+          ? ctx.$("#modules-progress")
+          : ctx.$(`[data-module-segment="${name}"]`);
+      segment.style.width = `${counts.total ? (counts[name] / counts.total) * 100 : 0}%`;
+    }
+    const currentMatrix = JSON.stringify(
+      items.slice(0, 60).map((item) => [item.id, item.name, item.state]),
+    );
+    if (currentMatrix !== matrixSignature) {
+      matrixSignature = currentMatrix;
+      const visibleCells = new Set(items.slice(0, 60).map((item) => item.id));
+      for (const [id, cell] of matrixCells) {
+        if (!visibleCells.has(id)) {
+          cell.remove();
+          matrixCells.delete(id);
+        }
+      }
+      const cells = items.slice(0, 60).map((item, index) => {
+        let cell = matrixCells.get(item.id);
+        if (!cell) {
+          cell = document.createElement("i");
+          matrixCells.set(item.id, cell);
+          cell.style.setProperty("--cell-delay", `${index * 12}ms`);
+        }
+        cell.dataset.state = category(item);
+        cell.title = `${item.name} · ${labels[item.state] || "Неизвестно"}`;
+        return cell;
+      });
+      const matrix = ctx.$("#modules-matrix");
+      cells.forEach((cell, index) => {
+        if (matrix.children[index] !== cell)
+          matrix.insertBefore(cell, matrix.children[index] || null);
+      });
+    }
+    setText(
+      ctx.$("#modules-map-caption"),
+      !items.length
+        ? "Ожидаем снимок"
+        : items.length > 60
+          ? `Первые 60 из ${items.length}`
+          : "Одна ячейка — один модуль",
+    );
+    setText(
+      ctx.$("#modules-summary"),
+      items.length
+        ? `${snapshot.status === "live" ? "" : "Последний снимок · "}${counts.ready} из ${counts.total} готовы к работе`
+        : snapshot.status === "live"
+          ? "Загрузчик ещё обнаруживает модули"
+          : "Ожидаем связь с Heroku",
+    );
+    ctx
+      .$(".modules-progress")
+      .setAttribute(
+        "aria-label",
+        `Готовы: ${counts.ready}; загружаются: ${counts.loading}; с проблемами: ${counts.problems}; выгружены: ${counts.unloaded}; неизвестно: ${counts.unknown}`,
+      );
     const empty = ctx.$("#modules-empty");
     empty.hidden = filtered.length > 0;
     ctx.$("#modules-page").textContent =
@@ -149,15 +227,25 @@ export function createModules(ctx) {
     ctx.$("#modules-prev").disabled = page === 0;
     ctx.$("#modules-next").disabled = page >= pages - 1;
     ctx.$(".modules-overview").dataset.loading = String(
-      counts[2] > 0 || !items.length,
+      counts.loading > 0 || !items.length,
     );
-    ctx.$(".modules-progress").dataset.loading = String(counts[2] > 0);
-    ctx
-      .$("#modules-progress")
-      .setAttribute(
-        "aria-valuenow",
-        String(counts[0] ? Math.round((counts[1] / counts[0]) * 100) : 0),
+    ctx.$("#modules-view").dataset.connection = snapshot.status;
+    document
+      .querySelectorAll("[data-modules-state]")
+      .forEach((button) =>
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.modulesState === stateFilter),
+        ),
       );
+    ctx.$("#modules-reset").hidden =
+      stateFilter === "all" && kind === "all" && !query;
+    ctx
+      .$("#modules-only-problems")
+      .setAttribute("aria-pressed", String(stateFilter === "problems"));
+    ctx
+      .$("#modules-only-problems")
+      .classList.toggle("active", stateFilter === "problems");
     setText(
       empty,
       items.length
@@ -185,6 +273,9 @@ export function createModules(ctx) {
         session = data.session;
         page = 0;
         rows.clear();
+        matrixSignature = "";
+        matrixCells.clear();
+        ctx.$("#modules-matrix").replaceChildren();
         ctx.$("#modules-list").replaceChildren();
       }
       snapshot = data;
@@ -242,11 +333,32 @@ export function createModules(ctx) {
         renderModules();
       }),
     );
-    ctx.$("#modules-only-problems").addEventListener("click", (event) => {
+    ctx.$("#modules-only-problems").addEventListener("click", () => {
       page = 0;
-      problemsOnly = !problemsOnly;
-      event.currentTarget.setAttribute("aria-pressed", String(problemsOnly));
-      event.currentTarget.classList.toggle("active", problemsOnly);
+      stateFilter = stateFilter === "problems" ? "all" : "problems";
+      renderModules();
+    });
+    document.querySelectorAll("[data-modules-state]").forEach((button) =>
+      button.addEventListener("click", () => {
+        page = 0;
+        stateFilter =
+          stateFilter === button.dataset.modulesState
+            ? "all"
+            : button.dataset.modulesState;
+        renderModules();
+      }),
+    );
+    ctx.$("#modules-reset").addEventListener("click", () => {
+      page = 0;
+      kind = stateFilter = "all";
+      ctx.$("#modules-search").value = "";
+      document.querySelectorAll("[data-modules-kind]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.modulesKind === "all");
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.modulesKind === "all"),
+        );
+      });
       renderModules();
     });
     document.addEventListener("visibilitychange", () => {
