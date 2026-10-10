@@ -99,6 +99,7 @@ export function createModules(ctx) {
         const previous = row.dataset.state;
         row.dataset.signature = signature;
         row.dataset.state = item.state;
+        row.dataset.category = category(item);
         setText(row.querySelector(".module-identity strong"), item.name);
         setText(
           row.querySelector(".module-symbol"),

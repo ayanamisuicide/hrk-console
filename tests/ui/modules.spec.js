@@ -65,10 +65,17 @@ for (const width of [390, 1440])
       await expect(page.locator(".module-row:visible")).toHaveCount(
         width === 390 ? 6 : 12,
       );
+      await expect(page.locator(".modules-health")).toBeVisible();
       await expect(page.locator("#modules-page")).toContainText(
         width === 390 ? "1 / 8" : "1 / 4",
       );
+      expect(
+        await page.locator("#modules-list").evaluate((el) =>
+          getComputedStyle(el).gridTemplateColumns.split(" ").length,
+        ),
+      ).toBe(width === 390 ? 1 : 2);
       const row = page.locator('[data-id="module-0"]');
+      await expect(row).toHaveAttribute("data-category", "problems");
       await row.scrollIntoViewIfNeeded();
       const collapsed = await row.evaluate(
         (el) => el.getBoundingClientRect().height,
