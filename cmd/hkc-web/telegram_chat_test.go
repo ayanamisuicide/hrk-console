@@ -58,6 +58,10 @@ func TestParseIntentPhrases(t *testing.T) {
 		phrase string
 		want   intentKind
 	}{
+		{"меню", intentMenu},
+		{"главное меню", intentMenu},
+		{"открой меню", intentMenu},
+		{"дашборд", intentMenu},
 		{"статус", intentStatus},
 		{"как дела?", intentStatus},
 		{"бот, как ты там", intentStatus},

@@ -26,6 +26,8 @@ type fakeBotAPI struct {
 	nextID int
 	// failDescription — текст ошибки при отказе метода (по умолчанию «method is not available»).
 	failDescription string
+	// failCode — код ошибки при отказе (по умолчанию 400).
+	failCode int
 }
 
 type fakeCall struct {
@@ -82,15 +84,19 @@ func newFakeBotAPI(t *testing.T) (*fakeBotAPI, *httptest.Server) {
 		updates := fake.updates
 		failing := fake.fail[method]
 		description := fake.failDescription
+		code := fake.failCode
 		fake.nextID++
 		id := fake.nextID
 		fake.mu.Unlock()
 		if failing {
-			w.WriteHeader(http.StatusBadRequest)
+			if code == 0 {
+				code = http.StatusBadRequest
+			}
+			w.WriteHeader(code)
 			if description == "" {
 				description = "Bad Request: method is not available"
 			}
-			body, _ := json.Marshal(map[string]any{"ok": false, "error_code": 400, "description": description})
+			body, _ := json.Marshal(map[string]any{"ok": false, "error_code": code, "description": description})
 			_, _ = w.Write(body)
 			return
 		}

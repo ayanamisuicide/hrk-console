@@ -194,7 +194,7 @@ func (c *telegramControl) streamPause(ctx context.Context) bool {
 }
 
 // streamTo набирает текст в черновике draft (0 — новый), а затем отправляет итоговое сообщение.
-func (c *telegramControl) streamTo(ctx context.Context, chat, draft int64, text string, keyboard map[string]any) {
+func (c *telegramControl) streamTo(ctx context.Context, chat, draft int64, text string, keyboard map[string]any) int64 {
 	total := htmlVisibleLen(text)
 	if c.canStream(chat) && total >= streamMinVisible {
 		if draft == 0 {
@@ -210,7 +210,7 @@ func (c *telegramControl) streamTo(ctx context.Context, chat, draft int64, text 
 			}
 		}
 	}
-	c.send(ctx, chat, text, keyboard)
+	return c.sendMessageID(ctx, chat, text, keyboard)
 }
 
 // reply отвечает в чат с набором текста.

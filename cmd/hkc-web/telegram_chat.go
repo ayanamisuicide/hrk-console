@@ -41,6 +41,8 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *tgMessage, 
 		c.cmdMute(ctx, chat, user, it)
 	case intentUnmute:
 		c.cmdUnmute(ctx, chat, user)
+	case intentMenu:
+		c.openMenu(ctx, chat)
 	case intentHelp:
 		c.reply(ctx, chat, c.helpText(), nil)
 	case intentApp:
@@ -50,7 +52,7 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *tgMessage, 
 			c.reply(ctx, chat, "Мини-приложение не настроено: нужен публичный HTTPS-адрес панели в HKC_TELEGRAM_WEBAPP_URL. Всё остальное работает и без него — напишите «помощь».", nil)
 		}
 	case intentHello:
-		c.reply(ctx, chat, "Привет! Я на связи 👋 Спросите «статус», «ошибки» или «покажи логи». Все возможности — «помощь».", nil)
+		c.reply(ctx, chat, "Привет! Я на связи 👋 Напишите «меню» — открою главное меню с живым статусом. Все возможности — «помощь».", nil)
 	case intentThanks:
 		c.reply(ctx, chat, "Пожалуйста! 🙂", nil)
 	default:

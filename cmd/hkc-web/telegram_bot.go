@@ -42,6 +42,7 @@ type telegramCommand struct {
 
 // Один список питает ответ /help, меню команд в Telegram и раздел админки.
 var telegramCommands = []telegramCommand{
+	{Name: "menu", Description: "Главное меню"},
 	{Name: "status", Description: "Состояние бота и сервера"},
 	{Name: "logs", Description: "Последние записи журнала"},
 	{Name: "errors", Description: "Что упало: ошибки, сгруппированные"},
@@ -215,6 +216,8 @@ type telegramControl struct {
 	views map[string]*logView
 	// Тишина уведомлений.
 	mute *muteStore
+	// Главное меню: сообщение-дашборд, которое бот сам обновляет.
+	menu *menuStore
 }
 
 func newTelegramControl(s *server, config telegramConfig) *telegramControl {
@@ -222,6 +225,7 @@ func newTelegramControl(s *server, config telegramConfig) *telegramControl {
 		wake: make(chan struct{}, 1), pending: map[string]telegramPending{}, state: "off",
 		streamGap: streamDefaultGap * time.Millisecond, views: map[string]*logView{}}
 	c.mute = newMuteStore(muteFilePath(s.dataDir), c.now)
+	c.menu = newMenuStore(menuFilePath(s.dataDir))
 	for _, id := range config.Admins {
 		c.admins[id] = true
 	}
@@ -284,6 +288,7 @@ func (c *telegramControl) run(ctx context.Context) {
 	}
 	// После перезапуска панели дописываем итог начатого из Telegram обновления; управление для этого не нужно.
 	go c.resumePendingUpdate()
+	go c.runMenus(ctx)
 	backoff := 5 * time.Second
 	for ctx.Err() == nil {
 		if !c.settings().ControlEnabled {
@@ -441,6 +446,7 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 	if c.now().Sub(time.Unix(message.Date, 0)) > telegramStaleCommand {
 		return
 	}
+	c.menu.touch(message.Chat.ID, c.now())
 	text := strings.TrimSpace(message.Text)
 	private := message.Chat.Type == "private"
 	c.mu.Lock()
@@ -477,7 +483,7 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 	name = strings.ToLower(name)
 	chat := message.Chat.ID
 	// Команды, у которых есть слова-синонимы, идут тем же путём, что и фразы.
-	slash := map[string]intentKind{"start": intentHelp, "help": intentHelp, "status": intentStatus, "update": intentUpdate, "app": intentApp,
+	slash := map[string]intentKind{"start": intentMenu, "menu": intentMenu, "help": intentHelp, "status": intentStatus, "update": intentUpdate, "app": intentApp,
 		"logs": intentLogs, "errors": intentErrors, "find": intentSearch, "mute": intentMute, "unmute": intentUnmute}
 	if kind, ok := slash[name]; ok {
 		it, _ := parseIntent(args)
@@ -587,6 +593,9 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallba
 	case "ic":
 		c.handleIncidentAction(ctx, callback, nonce, answer)
 		return
+	case "mn":
+		c.handleMenuCallback(ctx, callback, nonce, answer)
+		return
 	}
 	c.mu.Lock()
 	pending, ok := c.pending[nonce]
@@ -646,6 +655,7 @@ func capitalize(text string) string {
 func (c *telegramControl) helpText() string {
 	var text strings.Builder
 	text.WriteString("<b>Управление Heroku</b>\nПишите словами — слэш не нужен:\n")
+	text.WriteString("\n• «меню» — главное меню: живой статус, который сам обновляется, и кнопки")
 	text.WriteString("\n• «статус» — как бот и сервер, с кнопками действий")
 	text.WriteString("\n• «покажи логи», «логи 30», «логи updates» — записи журнала")
 	text.WriteString("\n• «ошибки», «что упало» — ошибки, сгруппированные по причинам")

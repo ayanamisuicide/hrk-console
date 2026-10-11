@@ -29,6 +29,7 @@ const (
 	intentMute     intentKind = "mute"
 	intentUnmute   intentKind = "unmute"
 	intentHelp     intentKind = "help"
+	intentMenu     intentKind = "menu"
 	intentApp      intentKind = "app"
 	intentHello    intentKind = "hello"
 	intentThanks   intentKind = "thanks"
@@ -166,6 +167,9 @@ func parseIntent(raw string) (intent, bool) {
 	}
 
 	switch {
+	case hasStem(words, "меню", "menu", "дашборд", "dashboard") && len(words) <= 4:
+		it.kind = intentMenu
+		return it, true
 	case hasStem(words, "помо", "справк", "помощ", "команд", "help", "умеешь") && len(words) <= 4:
 		it.kind = intentHelp
 		return it, true
