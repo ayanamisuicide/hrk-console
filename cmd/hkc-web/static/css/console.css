@@ -300,6 +300,13 @@ body {
   font-size: 11.5px;
   font-weight: 600;
 }
+.live-badge.off {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.live-badge.off i {
+  animation: none;
+}
 .live-badge i {
   width: 6px;
   height: 6px;
@@ -414,6 +421,10 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   min-height: 0;
   padding-bottom: 12px;
 }
+/* Шапка не сжимается: место отдаёт только лента. */
+.logs-view > :not(.jr-main) {
+  flex-shrink: 0;
+}
 .jr-top,
 .jr-quick {
   display: flex;
@@ -436,6 +447,10 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
 }
 #stream-state.online {
   color: var(--text-2);
+}
+#stream-state[hidden],
+#module-filter[hidden] {
+  display: none;
 }
 #stream-state.online i {
   background: var(--ok);
@@ -461,6 +476,60 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
   background: var(--warn-soft);
   color: var(--warn);
+}
+/* Строка поиска; в свёрнутой шапке рядом с ней итоги окна и переходы между ошибками. */
+.jr-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jr-searchrow .jr-query {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.jr-mini {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.jr-mini-n {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-mini-n b {
+  font-variant-numeric: tabular-nums;
+}
+.jr-mini-n.err b {
+  color: var(--bad);
+}
+.jr-mini-n.warn b {
+  color: var(--warn);
+}
+.jr-mini .jr-link:not(.strong) {
+  min-width: 28px;
+  font-size: 16px;
+}
+.logs-view.compact {
+  gap: 8px;
+}
+.logs-view.compact .jr-mini {
+  display: flex;
+}
+.logs-view.compact .jr-top,
+.logs-view.compact .jr-stats,
+.logs-view.compact .jr-quick,
+.logs-view.compact .jr-tl-head {
+  display: none;
+}
+.logs-view.compact .jr-timeline {
+  padding: 4px 12px 2px;
+}
+.logs-view.compact .jr-bars {
+  height: 40px;
 }
 /* Строка запроса: чипы фильтров и поле ввода в одной рамке. */
 .jr-query {
@@ -549,6 +618,23 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   max-width: 190px;
   min-height: 30px;
   font-size: 12.5px;
+}
+#module-filter.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jr-pill-btn::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
 }
 .filter-chip.warning.active {
   color: var(--warn);
@@ -751,20 +837,23 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 }
 .jr-day {
-  position: sticky;
-  top: 4px;
-  z-index: 2;
-  align-self: center;
-  margin: 6px 0 2px;
-  padding: 3px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-2);
-  box-shadow: var(--shadow-sm, 0 2px 8px -4px rgb(0 0 0 / 0.4));
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 2px 2px;
   color: var(--text-3);
   font-size: 11.5px;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+.jr-day::before,
+.jr-day::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  content: "";
 }
 .jr-card {
   position: relative;
@@ -801,6 +890,11 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
 .jr-card[data-level="DEBUG"] {
   border-left-color: transparent;
   opacity: 0.82;
+}
+.jr-card.selected[data-level] {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
 }
 .jr-card.focused {
   outline: 2px solid var(--bad);
@@ -1251,6 +1345,120 @@ button.jr-tile:hover:not(:disabled) {
   justify-content: space-between;
   gap: 8px;
 }
+.jr-dh strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-back {
+  flex: none;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+.jr-prob-tabs {
+  align-self: flex-start;
+}
+.jr-prob-note {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.jr-prob {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jr-prob-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bad);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.jr-prob-row.warn {
+  border-left-color: var(--warn);
+}
+.jr-prob-row:hover,
+.jr-prob-row:focus-visible {
+  background: var(--surface-hover);
+}
+.jr-prob-row.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jr-prob-n {
+  align-self: start;
+  min-width: 38px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font: 600 12px var(--mono);
+  text-align: center;
+}
+.jr-prob-row.warn .jr-prob-n {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-prob-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.jr-prob-body strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.jr-prob-reason {
+  overflow: hidden;
+  color: var(--bad);
+  font: 12px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-prob-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.jr-prob-mod {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  font: 12px var(--mono);
+}
+.jr-prob-mod::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
+}
+.jr-prob-row > .jr-link {
+  grid-column: 2;
+  justify-self: start;
+  margin-left: -8px;
+}
+/* Затемнение позади шторки: только на узком экране, клик закрывает панель. */
+.jr-backdrop {
+  display: none;
+}
 .jr-x {
   min-height: 28px;
   padding: 0 8px;
@@ -1305,20 +1513,61 @@ button.jr-tile:hover:not(:disabled) {
   overflow-y: auto;
   font: 12px/1.5 var(--mono);
 }
+.jr-ctx > * {
+  flex: none;
+}
 .jr-ctx-row {
   display: flex;
+  align-items: baseline;
   gap: 8px;
-  padding: 2px 8px;
+  width: 100%;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 0;
   border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
   color: var(--text-3);
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  justify-content: flex-start;
+}
+button.jr-ctx-row:hover {
+  border: 0;
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .jr-ctx-row time {
   flex: none;
 }
 .jr-ctx-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  /* Длинная строка видна целиком до трёх строк, дальше — в деталях этой записи. */
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.jr-ctx-tb {
+  color: var(--text-3);
+  font-style: normal;
+  opacity: 0.8;
+}
+.jr-ctx-more {
+  flex: none;
+  min-height: 26px;
+  margin: 2px 0;
+  border-style: dashed;
+  color: var(--text-3);
+  font: 12px var(--font);
+}
+.jr-ctx-more:disabled {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.7;
 }
 .jr-ctx-row.cur {
   background: var(--accent-soft);
@@ -1343,8 +1592,40 @@ button.jr-tile:hover:not(:disabled) {
     z-index: 30;
     max-height: 70vh;
     flex: none;
+    padding-top: 22px;
     border-radius: 16px 16px 0 0;
     box-shadow: var(--shadow-lg);
+    overscroll-behavior: contain;
+  }
+  .jr-drawer::before {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+    transform: translateX(-50%);
+    content: "";
+  }
+  .jr-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    display: block;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgb(0 0 0 / 0.32);
+    box-shadow: none;
+  }
+  .jr-backdrop:hover {
+    border: 0;
+    background: rgb(0 0 0 / 0.32);
+  }
+  .jr-backdrop[hidden] {
+    display: none;
   }
   .jr-card {
     grid-template-columns: 34px minmax(0, 1fr);
@@ -1353,9 +1634,6 @@ button.jr-tile:hover:not(:disabled) {
     grid-column: 2;
     grid-row: 2;
     flex-wrap: wrap;
-  }
-  .jr-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 /* На телефоне снизу закреплена навигация (68px): шторка встаёт над ней, а не под неё. */
@@ -3147,23 +3425,110 @@ button.jr-tile:hover:not(:disabled) {
   .view-intro h3 {
     font-size: 18px;
   }
+  /* Журнал занимает ровно экран над нижней навигацией: лента прокручивается внутри него и
+     не прячется под второй прокруткой страницы, а шапка при чтении истории сворачивается. */
   .logs-view {
-    height: auto;
+    gap: 10px;
+    height: calc(100dvh - 68px - 44px);
+    min-height: 480px;
+    padding-bottom: 0;
   }
-  .jr-feed-wrap {
-    height: 62dvh;
+  .jr-main {
+    min-height: 0;
   }
   .log-actions {
-    margin-left: 0;
+    margin-left: auto;
+  }
+  .jr-stats {
+    gap: 6px;
+  }
+  .jr-tile {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 6px 9px;
+  }
+  .jr-tile b {
+    font-size: 17px;
+  }
+  .jr-tile > span[data-short] {
+    font-size: 0;
+  }
+  .jr-tile > span[data-short]::after {
+    font-size: 11px;
+    content: attr(data-short);
+  }
+  .jr-tile > span {
+    font-size: 11px;
+  }
+  .jr-tile small {
+    display: none;
+  }
+  /* Модули — одной строкой с прокруткой вбок, а не тремя рядами. */
+  .jr-quick {
+    flex-wrap: nowrap;
+    margin: 0 -14px;
+    padding: 0 14px 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .jr-quick > *,
+  .jr-module-chips > * {
+    flex: none;
+  }
+  .jr-quick .log-advanced {
+    position: static;
+  }
+  /* Окно сохранённых фильтров привязано к экрану, а не к прокручиваемой строке модулей,
+     иначе строка обрезала бы его. По вертикали оно остаётся под кнопкой (top: auto). */
+  .log-advanced-grid {
+    position: absolute;
+    top: auto;
+    right: 14px;
+    left: 14px;
+    width: auto;
+    margin-top: 8px;
+  }
+  .jr-tl-tools {
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+  .jr-nav-label {
+    display: none;
+  }
+  .jr-tl-tools .jr-link {
+    padding: 0 7px;
+  }
+  .jr-bars {
+    height: 72px;
+  }
+  .jr-mini-n {
+    padding: 0 8px;
+  }
+  /* В свёрнутой шапке на телефоне итоги идут строкой под поиском. */
+  .logs-view.compact .jr-searchrow {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .logs-view.compact .jr-query {
+    flex-basis: 100%;
+  }
+  .jr-mini {
+    flex: 1 1 100%;
+  }
+  #jr-expand {
+    margin-left: auto;
+  }
+  #jr-expand {
+    padding: 0 6px;
+  }
+  .log-actions {
+    gap: 4px;
   }
   .log-actions button span {
     display: none;
   }
   .log-advanced-grid {
-    position: static;
     grid-template-columns: 1fr;
-    width: 100%;
-    margin-top: 8px;
   }
   .load-values strong {
     font-size: 18px;

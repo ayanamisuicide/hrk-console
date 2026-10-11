@@ -88,7 +88,7 @@ ctx.setJournalNavOpen(localStorage.getItem("hkc-journal-nav-open") === "true");
 
 ctx.bindJournalNavToggle();
 
-ctx.setView(localStorage.getItem("hkc-view") || "logs");
+ctx.setView(ctx.initialView() || localStorage.getItem("hkc-view") || "logs");
 
 
 ctx.bindSearch();

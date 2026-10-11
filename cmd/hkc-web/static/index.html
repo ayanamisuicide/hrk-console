@@ -247,39 +247,43 @@
         <!-- Журнал -->
         <section id="logs-view" class="workspace-view logs-view" hidden>
           <div class="jr-top">
-            <span id="stream-state"><i></i> подключение к потоку</span>
+            <span id="stream-state" hidden><i></i> подключение к потоку</span>
             <span class="line-count"><b id="line-count">0</b> записей</span>
             <div class="log-actions">
               <div class="segmented" role="group" aria-label="Режим журнала">
                 <button id="mode-live" type="button" aria-pressed="true">Поток</button>
                 <button id="mode-archive" type="button" aria-pressed="false">Архив</button>
               </div>
-              <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные записи"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Закладки</span></button>
+              <button id="problems-open" class="compact" type="button" aria-pressed="false" title="Повторяющиеся ошибки за окно" aria-label="Частые ошибки"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="19" cy="6" r="2"/></svg><span>Частые ошибки</span></button>
+              <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные записи" aria-label="Закладки"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Закладки</span></button>
               <button id="clear-log" class="compact" type="button" title="Скрыть записи до этого момента (файл журнала не меняется)" aria-label="Очистить экран"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Очистить</span></button>
               <button id="export-logs" class="compact" type="button" title="Выгрузить результат запроса в файл" aria-label="Экспорт журнала"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Экспорт</span></button>
             </div>
           </div>
           <section id="jr-stats" class="jr-stats" aria-label="Сводка за окно">
             <button class="jr-tile err" type="button" data-tile="err" title="Показать только ошибки"><span>Ошибки</span><b>0</b></button>
-            <button class="jr-tile warn" type="button" data-tile="warn" title="Показать только предупреждения"><span>Предупреждения</span><b>0</b></button>
-            <div class="jr-tile" data-tile="total"><span>Записей в окне</span><b>0</b></div>
-            <button class="jr-tile" type="button" data-tile="mod" title="Показать только этот модуль"><span>Шумный модуль</span><b>—</b><small></small></button>
+            <button class="jr-tile warn" type="button" data-tile="warn" title="Показать только предупреждения"><span data-short="Предупр.">Предупреждения</span><b>0</b></button>
+            <button class="jr-tile" type="button" data-tile="total" title="Показать записи всех уровней"><span data-short="Записей">Записей в окне</span><b>0</b></button>
+            <button class="jr-tile" type="button" data-tile="mod" title="Показать только этот модуль"><span data-short="Шумный">Шумный модуль</span><b>—</b><small></small></button>
           </section>
-          <label class="jr-query">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-            <span id="query-chips"></span>
-            <input id="filter" type="search" placeholder="Поиск · level:error  module:updates  «текст»" autocomplete="off" aria-label="Поиск по журналу">
-            <kbd>/</kbd>
-          </label>
-          <div class="jr-quick">
-            <div class="segmented level-filters" role="group" aria-label="Уровень событий">
-              <button class="filter-chip active" type="button" data-level="ALL">Все</button>
-              <button class="filter-chip" type="button" data-level="INFO">Инфо</button>
-              <button class="filter-chip warning" type="button" data-level="WARNING">Предупреждения</button>
-              <button class="filter-chip error" type="button" data-level="ERROR">Ошибки</button>
+          <div class="jr-searchrow">
+            <label class="jr-query">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <span id="query-chips"></span>
+              <input id="filter" type="search" placeholder="Поиск · level:error  module:updates  «текст»" autocomplete="off" aria-label="Поиск по журналу">
+              <kbd>/</kbd>
+            </label>
+            <div class="jr-mini" role="group" aria-label="Итоги окна">
+              <button class="jr-mini-n err" type="button" data-tile="err" title="Только ошибки"><b>0</b> ош.</button>
+              <button class="jr-mini-n warn" type="button" data-tile="warn" title="Только предупреждения"><b>0</b> пред.</button>
+              <button id="mini-prev" class="jr-link" type="button" title="К предыдущей ошибке ( [ )" aria-label="К предыдущей ошибке">‹</button>
+              <button id="mini-next" class="jr-link" type="button" title="К следующей ошибке ( ] )" aria-label="К следующей ошибке">›</button>
+              <button id="jr-expand" class="jr-link strong" type="button" title="Показать сводку, фильтры и шкалу">Развернуть</button>
             </div>
+          </div>
+          <div class="jr-quick">
             <span id="module-chips" class="jr-module-chips"></span>
-            <select id="module-filter" aria-label="Модуль"><option value="">Все модули</option></select>
+            <select id="module-filter" aria-label="Другие модули" hidden><option value="">Ещё модули</option></select>
             <details class="log-advanced">
               <summary>Сохранённые <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
               <div class="log-advanced-grid">
@@ -294,7 +298,7 @@
               <span id="tl-info">Последние 6 часов</span>
               <span class="jr-tl-tools">
                 <span class="jr-nav" role="group" aria-label="Переход между ошибками">
-                  <span>Ошибки</span>
+                  <span class="jr-nav-label">Ошибки</span>
                   <button id="err-prev" class="jr-link" type="button" title="К предыдущей ошибке ( [ )" aria-label="К предыдущей ошибке">‹</button>
                   <button id="err-next" class="jr-link" type="button" title="К следующей ошибке ( ] )" aria-label="К следующей ошибке">›</button>
                 </span>
@@ -313,6 +317,7 @@
               <button id="log-pill" class="jr-pill" type="button" hidden></button>
             </div>
             <aside id="log-drawer" class="jr-drawer" hidden aria-label="Детали записи"></aside>
+            <button id="log-backdrop" class="jr-backdrop" type="button" tabindex="-1" aria-label="Закрыть панель" hidden></button>
           </div>
         </section>
       </div>

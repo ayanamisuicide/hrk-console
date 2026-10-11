@@ -184,19 +184,61 @@ func (s *server) logStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// logContext отдаёт соседние записи вокруг выбранной.
+// logContext отдаёт соседние записи вокруг выбранной: n с каждой стороны, а before и after
+// задают число более ранних и более поздних отдельно — так окружение листается кнопками.
 func (s *server) logContext(w http.ResponseWriter, r *http.Request) {
+	v := r.URL.Query()
+	count := func(raw string, fallback int) int {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 200 {
+			return parsed
+		}
+		return fallback
+	}
 	n := 20
-	if parsed, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && parsed > 0 && parsed <= 50 {
+	if parsed, err := strconv.Atoi(v.Get("n")); err == nil && parsed > 0 && parsed <= 50 {
 		n = parsed
 	}
-	entries, index, ok := logfeed.Around(s.bot.LogFile, queryInt64(r.URL.Query().Get("ts")), r.URL.Query().Get("id"), n)
+	older, newer := count(v.Get("before"), n), count(v.Get("after"), n)
+	entries, index, ok := logfeed.AroundN(s.bot.LogFile, queryInt64(v.Get("ts")), v.Get("id"), older, newer)
 	if !ok {
 		http.Error(w, "запись не найдена: возможно, файл уже ротирован", http.StatusNotFound)
 		return
 	}
 	maskEntries(entries, s.logMask(r))
 	writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "index": index})
+}
+
+// logProblems отдаёт частые ошибки за окно: одинаковые записи собраны в группы со счётчиком,
+// временем первой и последней. По умолчанию — ошибки за последние 6 часов.
+func (s *server) logProblems(w http.ResponseWriter, r *http.Request) {
+	q := logQuery(r)
+	mask := s.logMask(r)
+	q.Mask = mask
+	from, to := q.From, q.To
+	if from == 0 {
+		end := to
+		if end == 0 {
+			end = time.Now().UnixMilli()
+		}
+		from = end - 6*time.Hour.Milliseconds()
+	}
+	q.From, q.To = 0, 0
+	limit := 20
+	if parsed, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && parsed > 0 && parsed <= 50 {
+		limit = parsed
+	}
+	var to1 int64
+	if to > 0 {
+		to1 = to + 1 // to в запросе включительно, как у /api/logs/entries
+	}
+	problems := logfeed.Problems(s.bot.LogFile, from, to1, q, limit)
+	for i := range problems {
+		last := []logfeed.Entry{problems[i].Last}
+		maskEntries(last, mask)
+		problems[i].Last = last[0]
+		problems[i].Query = logfeed.SearchHint(problems[i].Last.Message)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"problems": problems, "from": from, "to": to})
 }
 
 // streamQuiet — сколько ждать продолжения записи, прежде чем отдать её. Строки

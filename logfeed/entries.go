@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -437,27 +438,33 @@ func Collect(path string, from, to, bucketMs int64, q Query) Stats {
 // Around возвращает запись и до n соседей с каждой стороны из того же файла.
 // Запись ищется по времени и ID. index — позиция записи в результате.
 func Around(path string, ts int64, id string, n int) (entries []Entry, index int, ok bool) {
+	return AroundN(path, ts, id, n, n)
+}
+
+// AroundN — то же, что Around, но число соседей задаётся отдельно: older записей
+// до найденной и newer после неё. Так окружение листается в одну сторону.
+func AroundN(path string, ts int64, id string, older, newer int) (entries []Entry, index int, ok bool) {
 	files := Files(path)
-	for i := len(files) - 1; i >= 0 && !ok; i-- {
-		var newer, older []Entry // newer — окно из n записей новее найденной, в порядке чтения
+	for i := len(files) - 1; i >= 0; i-- {
+		var after, before []Entry // after — окно из newer записей новее найденной, в порядке чтения
 		var target Entry
 		found := false
 		eachEntryBackwards(files[i], 0, func(e Entry) bool {
 			if found {
-				older = append(older, e)
-				return len(older) < n
+				before = append(before, e)
+				return len(before) < older
 			}
 			if e.TS == ts {
 				e.seal()
 				if e.ID == id {
 					target, found = e, true
-					return n > 0
+					return older > 0
 				}
 			}
-			if n > 0 {
-				newer = append(newer, e)
-				if len(newer) > n {
-					newer = newer[1:]
+			if newer > 0 {
+				after = append(after, e)
+				if len(after) > newer {
+					after = after[1:]
 				}
 			}
 			return true
@@ -465,23 +472,136 @@ func Around(path string, ts int64, id string, n int) (entries []Entry, index int
 		if !found {
 			continue
 		}
-		out := make([]Entry, 0, len(older)+1+len(newer))
-		for j := len(older) - 1; j >= 0; j-- {
-			older[j].detach()
-			older[j].seal()
-			out = append(out, older[j])
+		out := make([]Entry, 0, len(before)+1+len(after))
+		for j := len(before) - 1; j >= 0; j-- {
+			before[j].detach()
+			before[j].seal()
+			out = append(out, before[j])
 		}
 		index = len(out)
 		target.detach()
 		out = append(out, target)
-		for j := len(newer) - 1; j >= 0; j-- {
-			newer[j].detach()
-			newer[j].seal()
-			out = append(out, newer[j])
+		for j := len(after) - 1; j >= 0; j-- {
+			after[j].detach()
+			after[j].seal()
+			out = append(out, after[j])
 		}
 		return out, index, true
 	}
 	return nil, 0, false
+}
+
+// Problem — повторяющаяся ошибка: записи одного модуля с одинаковым сообщением (числа
+// не в счёт) и одним типом исключения в traceback.
+type Problem struct {
+	Count int   `json:"count"`
+	First int64 `json:"first"` // время самой ранней записи группы в окне, мс
+	Last  Entry `json:"last"`  // самая свежая запись группы
+	// Query — устойчивая часть сообщения: по ней строка поиска находит записи группы.
+	Query string `json:"query"`
+}
+
+// maxProblemGroups ограничивает память при потоке разных ошибок: новые группы сверх
+// предела не заводятся, уже найденные продолжают считаться.
+const maxProblemGroups = 2000
+
+// Problems собирает повторяющиеся записи за окно [from, to) и возвращает до limit
+// групп, самые частые первыми (при равенстве — более свежие). Уровень, модуль и текст
+// берутся из q; без уровня считаются ошибки (ERROR и CRITICAL).
+func Problems(path string, from, to int64, q Query, limit int) []Problem {
+	if len(q.Levels) == 0 {
+		q.Levels = []string{"ERROR"}
+	}
+	q = q.prepare()
+	groups := map[string]*Problem{}
+	var order []*Problem
+	files := Files(path)
+	for i := len(files) - 1; i >= 0; i-- {
+		older := false
+		eachEntryBackwards(files[i], 0, func(e Entry) bool {
+			if e.TS < from && e.TS > 0 {
+				older = true
+				return false
+			}
+			if (to > 0 && e.TS >= to) || e.TS < from || !q.matchSoft(e, true) {
+				return true
+			}
+			key := ProblemKey(e)
+			if p, known := groups[key]; known {
+				p.Count++
+				p.First = e.TS
+				return true
+			}
+			if len(groups) >= maxProblemGroups {
+				return true
+			}
+			e.detach()
+			e.seal()
+			p := &Problem{Count: 1, First: e.TS, Last: e}
+			groups[key] = p
+			order = append(order, p)
+			return true
+		})
+		if older {
+			break
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		if order[a].Count != order[b].Count {
+			return order[a].Count > order[b].Count
+		}
+		return order[a].Last.TS > order[b].Last.TS
+	})
+	if limit > 0 && len(order) > limit {
+		order = order[:limit]
+	}
+	out := make([]Problem, len(order))
+	for i, p := range order {
+		out[i] = *p
+	}
+	return out
+}
+
+// volatile — части сообщения, которые меняются от раза к разу: адреса, хэши, числа.
+var volatile = regexp.MustCompile(`(?i)\b0x[0-9a-f]+\b|\b[0-9a-f]*[0-9][0-9a-f]*[a-f][0-9a-f]*\b|\d+(?:[.,:]\d+)*`)
+
+// ProblemKey — подпись записи для группировки: модуль, сообщение без изменчивых частей
+// и тип исключения из последней строки traceback.
+func ProblemKey(e Entry) string {
+	return e.Module + "\x00" + volatile.ReplaceAllString(e.Message, "#") + "\x00" + exceptionType(e.Trace)
+}
+
+// exceptionType возвращает имя исключения из последней непустой строки traceback
+// («aiohttp.ClientError: …» → «aiohttp.ClientError»), если строка на него похожа.
+func exceptionType(trace []string) string {
+	for i := len(trace) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(trace[i])
+		if line == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(line, ":")
+		if name == "" || strings.ContainsAny(name, " \t()[]'\"") {
+			return ""
+		}
+		return name
+	}
+	return ""
+}
+
+// SearchHint выбирает из сообщения самый длинный кусок без изменчивых частей: строка
+// поиска с ним находит записи той же группы. Слишком короткий кусок не годится — пусто.
+func SearchHint(message string) string {
+	best := ""
+	for _, part := range volatile.Split(message, -1) {
+		part = strings.TrimFunc(part, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) })
+		if utf8.RuneCountInString(part) > utf8.RuneCountInString(best) {
+			best = part
+		}
+	}
+	if utf8.RuneCountInString(best) < 4 {
+		return ""
+	}
+	return best
 }
 
 // String нужен отладочным сообщениям тестов.

@@ -86,8 +86,29 @@ function createJournalApi(lines = defaultLines, { now = Date.now() } = {}) {
       const at = entries.findIndex((e) => e.ts === ts && e.id === p.get("id"));
       if (at < 0) return null;
       const n = Number(p.get("n")) || 20;
-      const lo = Math.max(0, at - n);
-      return { entries: entries.slice(lo, at + n + 1), index: at - lo };
+      const count = (name) => (p.has(name) ? Number(p.get(name)) : n);
+      const lo = Math.max(0, at - count("before"));
+      return { entries: entries.slice(lo, at + count("after") + 1), index: at - lo };
+    }
+    if (pathname === "/api/logs/problems") {
+      // Упрощённая группировка сервера: модуль, сообщение без чисел и последняя строка traceback.
+      const levels = (p.get("level") || "ERROR").split(",");
+      const from = Number(p.get("from")) || 0;
+      const to = Number(p.get("to")) || 0;
+      const groups = new Map();
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.ts < from || (to && e.ts > to)) continue;
+        if (!levels.some((l) => l === e.level || (l === "ERROR" && e.level === "CRITICAL"))) continue;
+        const key = `${e.module}|${e.message.replace(/\d+([.,:]\d+)*/g, "#")}|${(e.trace || []).at(-1) || ""}`;
+        const g = groups.get(key);
+        if (g) {
+          g.count++;
+          g.first = e.ts;
+        } else groups.set(key, { count: 1, first: e.ts, last: e, query: e.message.split(/\d/)[0].trim() });
+      }
+      const problems = [...groups.values()].sort((a, b) => b.count - a.count || b.last.ts - a.last.ts);
+      return { problems, from, to };
     }
     return undefined;
   }

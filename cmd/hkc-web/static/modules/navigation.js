@@ -31,6 +31,9 @@ export function createNavigation(ctx) {
         modules: "Модули бота",
       }[view],
     );
+    // Запрос журнала хранится в адресе (#logs?…); в других разделах он не нужен.
+    if (view !== "logs" && location.hash.startsWith("#logs"))
+      history.replaceState(history.state, "", location.pathname + location.search);
     if (view === "logs") ctx.onJournalShown?.();
     if (view === "incidents" && ctx.authenticated) ctx.refreshIncidents();
     if (view === "system" && ctx.authenticated) {
@@ -179,7 +182,10 @@ export function createNavigation(ctx) {
     ctx.$("#copy-console-link").addEventListener("click", async (event) => {
       const button = event.currentTarget;
       try {
-        await navigator.clipboard.writeText(location.origin + "/");
+        // В журнале ссылка ведёт на текущий запрос и открытую запись (они в адресе).
+        await navigator.clipboard.writeText(
+          location.origin + "/" + (ctx.currentView === "logs" ? location.hash : ""),
+        );
         button.textContent = "Ссылка скопирована";
         setTimeout(() => {
           button.textContent = "Скопировать ссылку";

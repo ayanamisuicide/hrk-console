@@ -11,6 +11,11 @@ const MAX_ENTRIES = 2500;
 const WINDOW_MS = 6 * 3600 * 1000;
 const BUCKET_MS = 5 * 60 * 1000;
 const BOOKMARKS_KEY = "hkc-log-bookmarks-v2";
+// Сколько самых шумных модулей показывать кнопками; остальные — в списке «Ещё модули».
+const QUICK_MODULES = 4;
+// Окружение записи: сколько соседей грузить сразу и сколько добавлять кнопками «Раньше» и «Позже».
+const CONTEXT_STEP = 20;
+const CONTEXT_MAX = 200;
 const CLEARED_KEY = "hkc-log-cleared-at";
 
 export function createJournal(ctx) {
@@ -40,6 +45,13 @@ export function createJournal(ctx) {
     tiles: { buckets: [] }, // сводка для плиток: без фильтра по уровню, иначе «Ошибки» обнулили бы «Предупреждения»
     bookmarks: [],
     lastDay: "",
+    compact: false, // шапка свёрнута в строку: при чтении истории ленте нужно больше места
+    compactHold: false, // шапку развернули вручную: не сворачивать, пока лента не вернётся вниз
+    lastScroll: 0,
+    drawerMode: null, // "entry" — детали записи, "problems" — частые ошибки
+    fromProblems: false, // запись открыта из списка частых ошибок: в панели есть «назад»
+    problemsLevel: "ERROR",
+    pendingEntry: null, // запись из ссылки: откроется после первой загрузки
   };
   let dom = null;
   let reloadTimer = 0;
@@ -607,11 +619,19 @@ export function createJournal(ctx) {
     }
   }
 
+  // Состояние потока показывается, только когда что-то не так или включён архив: о работающем
+  // потоке говорит значок Live в заголовке, и дублировать его строкой не нужно.
   function setStreamState(text, online) {
     S.online = online;
     const node = $("#stream-state");
     node.replaceChildren(el("i"), document.createTextNode(` ${text}`));
     node.classList.toggle("online", online);
+    node.hidden = online && S.live && !S.bookmarksMode;
+    const badge = document.querySelector(".live-badge");
+    if (badge) {
+      badge.classList.toggle("off", !online);
+      badge.lastChild.textContent = online ? "Live" : "Нет связи";
+    }
   }
 
   // Закрывает прежний EventSource и подключает новый; переподключение выполняет браузер.
@@ -652,6 +672,7 @@ export function createJournal(ctx) {
     S.opened = true;
     await reload();
     startTimeline();
+    await openPendingEntry();
   }
 
   /* ---------- Шкала ---------- */
@@ -752,6 +773,8 @@ export function createJournal(ctx) {
   // Применяет изменения запроса и перезагружает ленту; быстрые правки (ввод) откладываются.
   function queryChanged(delay = 0) {
     renderChips();
+    // Открытый список частых ошибок следует за выбранным окном времени.
+    if (S.drawerMode === "problems" && S.problemsKey !== problemsScope()) openProblems();
     S.timeline?.setSelection(S.range ? [S.range.from, S.range.to ?? clock()] : null);
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(reload, delay);
@@ -827,16 +850,12 @@ export function createJournal(ctx) {
     if (S.clearedAt) {
       chip("очищено", `до ${new Date(S.clearedAt).toTimeString().slice(0, 5)}`, () => setCleared(0));
     }
-    document.querySelectorAll(".filter-chip").forEach((button) => {
-      const active = button.dataset.level === S.level;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
     $("#tl-reset").hidden = !S.range;
     renderTimelineInfo();
     renderStats();
-    dom.moduleSelect.value = S.module;
+    renderQuick();
     $("#preset-delete").disabled = !$("#preset-select").value;
+    writeUrl();
   }
 
   // Подпись шкалы: окно или диапазон и итоги по ошибкам и предупреждениям в нём.
@@ -879,6 +898,12 @@ export function createJournal(ctx) {
     set("err", errors).classList.toggle("on", S.level === "ERROR");
     set("warn", warnings).classList.toggle("on", S.level === "WARNING");
     set("total", total);
+    // Те же итоги в свёрнутой шапке.
+    for (const [name, value, level] of [["err", errors, "ERROR"], ["warn", warnings, "WARNING"]]) {
+      const mini = dom.mini.querySelector(`[data-tile="${name}"]`);
+      mini.querySelector("b").textContent = value;
+      mini.setAttribute("aria-pressed", String(S.level === level));
+    }
     const top = (S.tiles.modules || S.modules)[0];
     const mod = set("mod", top ? top[0] : "—", top ? `${top[1]} ${plural(top[1], "запись", "записи", "записей")}` : "");
     mod.dataset.module = top ? top[0] : "";
@@ -945,39 +970,71 @@ export function createJournal(ctx) {
     setLive(true);
   }
 
-  // Быстрые фильтры: самые шумные модули кнопками, остальные в списке.
+  // Быстрые фильтры: самые шумные модули кнопками, остальные в списке «Ещё модули». Модуль не
+  // повторяется в двух местах; выбранный, но редкий модуль показывается выбранным в списке.
   function renderQuick() {
     const box = $("#module-chips");
-    box.replaceChildren();
-    for (const [name] of S.modules.slice(0, 5)) {
-      const button = el("button", "jr-pill-btn", name);
-      button.type = "button";
-      button.setAttribute("aria-pressed", String(S.module === name));
-      button.addEventListener("click", () => setQuery({ module: S.module === name ? "" : name }));
-      box.append(button);
+    const quick = S.modules.slice(0, QUICK_MODULES).map(([name]) => name);
+    const rest = S.modules.slice(QUICK_MODULES).map(([name]) => name);
+    if (S.module && !quick.includes(S.module) && !rest.includes(S.module)) rest.unshift(S.module);
+    const signature = JSON.stringify([quick, rest]);
+    if (box.dataset.sig !== signature) {
+      box.dataset.sig = signature;
+      box.replaceChildren();
+      for (const name of quick) {
+        const button = el("button", "jr-pill-btn", name);
+        button.type = "button";
+        button.dataset.module = name;
+        button.style.setProperty("--mh", String(moduleHue(name)));
+        button.addEventListener("click", () => setQuery({ module: S.module === name ? "" : name }));
+        box.append(button);
+      }
+      const select = dom.moduleSelect;
+      select.replaceChildren(new Option(`Ещё модули · ${rest.length}`, ""));
+      for (const name of rest) select.add(new Option(name, name));
+      select.hidden = rest.length === 0;
     }
-    const select = dom.moduleSelect;
-    select.replaceChildren(new Option("Все модули", ""));
-    for (const [name] of S.modules) select.add(new Option(name, name));
-    if (S.module && !S.modules.some(([name]) => name === S.module)) select.add(new Option(S.module, S.module));
-    select.value = S.module;
+    box.querySelectorAll("button").forEach((button) => button.setAttribute("aria-pressed", String(S.module === button.dataset.module)));
+    const inRest = S.module && !quick.includes(S.module);
+    dom.moduleSelect.value = inRest ? S.module : "";
+    dom.moduleSelect.classList.toggle("on", !!inRest);
   }
 
   /* ---------- Панель деталей ---------- */
 
-  async function openDrawer(e) {
-    S.selected = entryKey(e);
-    markSelected();
-    const drawer = dom.drawer;
-    drawer.hidden = false;
-    drawer.replaceChildren();
+  // Готовит панель под новое содержимое: на телефоне это шторка с затемнением позади.
+  function showDrawer(mode) {
+    S.drawerMode = mode;
+    dom.drawer.hidden = false;
+    dom.backdrop.hidden = false;
+    dom.drawer.replaceChildren();
+    dom.drawer.scrollTop = 0;
+    $("#problems-open").setAttribute("aria-pressed", String(mode === "problems"));
+  }
+
+  function drawerHead(title, back) {
     const head = el("div", "jr-dh");
-    head.append(el("strong", "", `${e.module || "Запись"} · ${hms(e)}`));
+    if (back) {
+      const button = el("button", "jr-back", "‹ Частые ошибки");
+      button.type = "button";
+      button.addEventListener("click", openProblems);
+      head.append(button);
+    }
+    head.append(el("strong", "", title));
     const close = el("button", "jr-x", "×");
     close.type = "button";
     close.setAttribute("aria-label", "Закрыть панель");
     close.addEventListener("click", closeDrawer);
     head.append(close);
+    return head;
+  }
+
+  function openDrawer(e, { fromProblems = false } = {}) {
+    S.selected = entryKey(e);
+    S.fromProblems = fromProblems;
+    markSelected();
+    showDrawer("entry");
+    const drawer = dom.drawer;
     // В рамке — сама запись; traceback ниже разобран по кадрам, а «Копировать» берёт всё целиком.
     const full = el("pre", "jr-full", rawText({ ...e, trace: [] }));
     const kv = el("dl", "jr-kv");
@@ -990,31 +1047,66 @@ export function createJournal(ctx) {
       actions.append(b);
     };
     act("Копировать", () => copyText(rawText(e), "Запись скопирована"));
+    act("Ссылка", () => copyText(entryLink(e), "Ссылка на запись скопирована"));
     if (e.module) act(`Только ${e.module}`, () => setQuery({ module: e.module }));
     act(isMarked(e) ? "Убрать закладку" : "В закладки", () => {
       toggleBookmark(e);
-      openDrawer(e);
+      openDrawer(e, { fromProblems });
     });
-    drawer.append(head, full);
+    drawer.append(drawerHead(`${e.module || "Запись"} · ${hms(e)}`, fromProblems), full);
     if (e.trace?.length) drawer.append(renderTrace(e.trace));
     drawer.append(kv, actions);
-    const ctxTitle = el("div", "jr-ctx-title", "Окружение");
     const list = el("div", "jr-ctx");
-    list.append(el("div", "jr-ctx-note", "Загрузка…"));
-    drawer.append(ctxTitle, list);
+    drawer.append(el("div", "jr-ctx-title", "Окружение"), list);
+    writeUrl();
+    loadContext(e, list, CONTEXT_STEP, CONTEXT_STEP);
+  }
+
+  // Окружение записи: соседи из того же файла. «Раньше» и «Позже» дозагружают по CONTEXT_STEP
+  // в свою сторону, и список при этом не прыгает. Клик по строке открывает ту запись.
+  async function loadContext(e, list, before, after, keep = "center") {
+    const key = entryKey(e);
+    if (!list.childElementCount) list.append(el("div", "jr-ctx-note", "Загрузка…"));
+    let data;
     try {
-      const data = await ctx.request(`/api/logs/context?ts=${e.ts}&id=${encodeURIComponent(e.id)}&n=20`);
-      if (S.selected !== entryKey(e)) return;
-      list.replaceChildren();
-      data.entries.forEach((item, index) => {
-        const row = el("div", `jr-ctx-row${index === data.index ? " cur" : ""}${item.level === "ERROR" || item.level === "CRITICAL" ? " bad" : item.level === "WARNING" ? " warn" : ""}`);
-        row.append(el("time", "", hms(item)), el("span", "", `${item.module ? `${item.module}: ` : ""}${item.message}`));
-        list.append(row);
-      });
-      list.querySelector(".cur")?.scrollIntoView({ block: "center" });
+      data = await ctx.request(`/api/logs/context?ts=${e.ts}&id=${encodeURIComponent(e.id)}&before=${before}&after=${after}`);
     } catch (_) {
-      list.replaceChildren(el("div", "jr-ctx-note", "Окружение недоступно: файл мог ротироваться."));
+      if (S.selected === key) list.replaceChildren(el("div", "jr-ctx-note", "Окружение недоступно: файл мог ротироваться."));
+      return;
     }
+    if (S.selected !== key || S.drawerMode !== "entry") return;
+    const fromBottom = list.scrollHeight - list.scrollTop;
+    list.replaceChildren();
+    const more = (label, edge, enabled, fn) => {
+      const button = el("button", "jr-ctx-more", enabled ? label : edge);
+      button.type = "button";
+      button.disabled = !enabled;
+      button.addEventListener("click", fn);
+      return button;
+    };
+    const hasOlder = data.index >= before && before < CONTEXT_MAX;
+    const hasNewer = data.entries.length - 1 - data.index >= after && after < CONTEXT_MAX;
+    list.append(more("↑ Раньше", "Начало файла", hasOlder, () => loadContext(e, list, Math.min(CONTEXT_MAX, before + CONTEXT_STEP), after, "bottom")));
+    data.entries.forEach((item, index) => {
+      const current = index === data.index;
+      const kind = item.level === "ERROR" || item.level === "CRITICAL" ? " bad" : item.level === "WARNING" ? " warn" : "";
+      const row = el(current ? "div" : "button", `jr-ctx-row${current ? " cur" : ""}${kind}`);
+      if (!current) {
+        row.type = "button";
+        row.title = "Открыть эту запись";
+        row.addEventListener("click", () => openDrawer(item));
+      }
+      const text = el("span", "", `${item.module ? `${item.module}: ` : ""}${item.message}`);
+      if (item.trace?.length) text.append(el("i", "jr-ctx-tb", " · traceback"));
+      row.append(el("time", "", hms(item)), text);
+      list.append(row);
+    });
+    list.append(more("↓ Позже", "Конец файла", hasNewer, () => loadContext(e, list, before, Math.min(CONTEXT_MAX, after + CONTEXT_STEP), "top")));
+    // Прокручивается только список окружения, а не вся панель и страница: иначе заголовок
+    // панели и сама запись уезжали из виду (особенно в шторке на телефоне).
+    const cur = list.querySelector(".cur");
+    if (keep === "center" && cur) list.scrollTop = cur.offsetTop - list.clientHeight / 2 + cur.offsetHeight / 2;
+    else if (keep === "bottom") list.scrollTop = list.scrollHeight - fromBottom;
   }
 
   function rawText(e) {
@@ -1031,8 +1123,224 @@ export function createJournal(ctx) {
 
   function closeDrawer() {
     S.selected = null;
+    S.drawerMode = null;
     dom.drawer.hidden = true;
+    dom.backdrop.hidden = true;
+    $("#problems-open").setAttribute("aria-pressed", "false");
     markSelected();
+    writeUrl();
+  }
+
+  /* ---------- Частые ошибки ---------- */
+
+  // Окно частых ошибок — то же, что у плиток: выбранный диапазон или последние 6 часов.
+  // Фильтры модуля и текста не учитываются: клик по группе их меняет, а список должен оставаться.
+  function problemsWindow() {
+    const from = S.range ? lowerBound() : Math.max(lowerBound(), Math.floor(clock() - WINDOW_MS));
+    const to = S.range && S.range.to != null ? Math.ceil(S.range.to) : 0;
+    return { from, to };
+  }
+
+  const problemsScope = () => `${S.range ? `${S.range.from}-${S.range.to}` : ""}|${S.clearedAt}`;
+
+  async function openProblems() {
+    S.problemsKey = problemsScope();
+    S.selected = null;
+    markSelected();
+    showDrawer("problems");
+    writeUrl();
+    const drawer = dom.drawer;
+    const { from, to } = problemsWindow();
+    const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
+    const span = S.range ? `${t(from)} — ${to ? t(to) : "сейчас"}` : "последние 6 часов";
+    drawer.append(drawerHead("Частые ошибки", false));
+    const tabs = el("div", "segmented jr-prob-tabs");
+    tabs.setAttribute("role", "group");
+    tabs.setAttribute("aria-label", "Уровень");
+    for (const [level, label] of [["ERROR", "Ошибки"], ["WARNING", "Предупреждения"]]) {
+      const b = el("button", "", label);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(S.problemsLevel === level));
+      b.addEventListener("click", () => {
+        S.problemsLevel = level;
+        openProblems();
+      });
+      tabs.append(b);
+    }
+    const note = el("div", "jr-prob-note", `Одинаковые записи за ${span}; числа в тексте не в счёт. Клик показывает их в ленте.`);
+    const list = el("div", "jr-prob");
+    list.append(el("div", "jr-ctx-note", "Загрузка…"));
+    drawer.append(tabs, note, list);
+    const p = new URLSearchParams({ level: S.problemsLevel, from: String(from), limit: "30" });
+    if (to) p.set("to", String(to));
+    const level = S.problemsLevel;
+    let data;
+    try {
+      data = await ctx.request(`/api/logs/problems?${p}`);
+    } catch (error) {
+      if (S.drawerMode === "problems") list.replaceChildren(el("div", "jr-ctx-note", `Не удалось посчитать: ${error.message}`));
+      return;
+    }
+    if (S.drawerMode !== "problems" || S.problemsLevel !== level || !list.isConnected) return;
+    list.replaceChildren();
+    const problems = data.problems || [];
+    if (!problems.length) {
+      list.append(el("div", "jr-ctx-note", level === "ERROR" ? "За это время ошибок нет." : "За это время предупреждений нет."));
+      return;
+    }
+    for (const problem of problems) list.append(problemRow(problem));
+  }
+
+  function problemRow(problem) {
+    const e = problem.last;
+    const row = el("div", `jr-prob-row${e.level === "WARNING" ? " warn" : ""}`);
+    row.tabIndex = 0;
+    row.title = "Показать эти записи в ленте";
+    const count = el("span", "jr-prob-n", `×${problem.count}`);
+    const body = el("div", "jr-prob-body");
+    body.append(el("strong", "", e.message || "(пустое сообщение)"));
+    const reason = e.trace?.length ? traceSummary(e.trace) : "";
+    if (reason) body.append(el("span", "jr-prob-reason", reason));
+    const meta = el("span", "jr-prob-meta");
+    if (e.module) {
+      const module = el("span", "jr-prob-mod", e.module);
+      module.style.setProperty("--mh", String(moduleHue(e.module)));
+      meta.append(module);
+    }
+    const first = new Date(problem.first).toTimeString().slice(0, 5);
+    meta.append(`последняя ${ago(e.ts)}${problem.count > 1 ? ` · первая в ${first}` : ""}`);
+    body.append(meta);
+    const open = el("button", "jr-link", "Последняя ›");
+    open.type = "button";
+    open.title = "Открыть последнюю запись";
+    open.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDrawer(e, { fromProblems: true });
+    });
+    row.append(count, body, open);
+    const show = () => {
+      // Ровно эти записи: уровень, модуль и устойчивая часть сообщения. Диапазон не трогаем.
+      setQuery({ level: e.level === "WARNING" ? "WARNING" : "ERROR", module: e.module || "", text: problem.query || "" });
+      dom.drawer.querySelectorAll(".jr-prob-row.on").forEach((node) => node.classList.remove("on"));
+      row.classList.add("on");
+      if (window.matchMedia("(max-width: 900px)").matches) closeDrawer();
+    };
+    row.addEventListener("click", show);
+    row.addEventListener("keydown", (event) => {
+      if (event.target === row && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        show();
+      }
+    });
+    return row;
+  }
+
+  /* ---------- Адрес страницы ---------- */
+
+  // Запрос журнала и открытая запись живут в адресе (#logs?level=ERROR&module=…&entry=…): ссылкой
+  // можно поделиться, а перезагрузка страницы не сбрасывает фильтры. Адрес заменяется, а не
+  // добавляется в историю, чтобы «Назад» не листал каждую букву поиска.
+  function urlParams() {
+    const p = baseParams();
+    if (S.range) {
+      p.set("from", String(Math.floor(S.range.from)));
+      if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
+    }
+    if (S.drawerMode === "entry" && S.selected) {
+      const at = S.selected.indexOf("|");
+      p.set("entry", `${S.selected.slice(0, at)}~${S.selected.slice(at + 1)}`);
+    }
+    return p;
+  }
+
+  function writeUrl() {
+    if (ctx.currentView !== "logs" || !dom) return;
+    const p = urlParams().toString();
+    const hash = p ? `#logs?${p}` : "#logs";
+    if (location.hash !== hash) history.replaceState(history.state, "", `${location.pathname}${location.search}${hash}`);
+  }
+
+  function entryLink(e) {
+    return `${location.origin}${location.pathname}#logs?entry=${e.ts}~${encodeURIComponent(e.id)}`;
+  }
+
+  // Разбирает адрес; true, если он относится к журналу.
+  function readUrl() {
+    const m = location.hash.match(/^#logs(?:\?(.*))?$/);
+    if (!m) return false;
+    const p = new URLSearchParams(m[1] || "");
+    const level = (p.get("level") || "").toUpperCase();
+    S.level = ["ERROR", "WARNING", "INFO"].includes(level) ? level : "ALL";
+    S.module = p.get("module") || "";
+    S.text = p.get("q") || "";
+    if (dom) dom.input.value = S.text;
+    const from = Number(p.get("from")) || 0;
+    const to = Number(p.get("to")) || 0;
+    S.range = from ? { from, to: to > from ? to : null } : null;
+    S.bookmarksMode = false;
+    S.live = !S.range || S.range.to == null;
+    S.pendingEntry = null;
+    const entry = (p.get("entry") || "").match(/^(\d+)~(.+)$/);
+    if (entry) S.pendingEntry = { ts: Number(entry[1]), id: entry[2] };
+    return true;
+  }
+
+  // Открывает запись из ссылки: показывает её место в ленте (диапазон ±15 минут, если её нет среди
+  // загруженных) и панель деталей. Если запись не подходит под фильтры, панель всё равно открывается.
+  async function openPendingEntry() {
+    const target = S.pendingEntry;
+    S.pendingEntry = null;
+    if (!target) return;
+    const key = `${target.ts}|${target.id}`;
+    const loaded = () => S.entries.find((e) => entryKey(e) === key);
+    if (!loaded() && !S.bookmarksMode) {
+      const pad = 15 * 60000;
+      S.range = { from: target.ts - pad, to: Math.min(target.ts + pad, Math.floor(clock())) };
+      S.live = false;
+      syncModeButtons();
+      renderChips();
+      S.timeline?.setSelection([S.range.from, S.range.to]);
+      clearTimeout(reloadTimer);
+      await reload();
+    }
+    let entry = loaded();
+    if (!entry) {
+      try {
+        const data = await ctx.request(`/api/logs/context?ts=${target.ts}&id=${encodeURIComponent(target.id)}&before=0&after=0`);
+        entry = data.entries?.[data.index];
+      } catch (_) {
+        /* Ниже — сообщение о ротации. */
+      }
+    }
+    if (!entry) {
+      ctx.showNotice("Запись из ссылки не найдена: журнал мог ротироваться", "error");
+      return;
+    }
+    const group = S.groups.find((g) => g.entries.some((item) => entryKey(item) === key));
+    if (group?.node) {
+      S.stick = false;
+      group.node.scrollIntoView({ block: "center" });
+      group.node.classList.add("focused");
+      setTimeout(() => group.node.classList.remove("focused"), 2400);
+    }
+    openDrawer(entry);
+  }
+
+  // Вызывается точкой входа: раздел из адреса важнее запомненного в браузере.
+  function initialView() {
+    return /^#logs(\?|$)/.test(location.hash) ? "logs" : "";
+  }
+
+  /* ---------- Свёрнутая шапка ---------- */
+
+  // Пока читаешь историю, шапка (плитки, модули, подписи шкалы) сворачивается в строку поиска
+  // с итогами и узкой шкалой; у живого хвоста разворачивается обратно.
+  function setCompact(on) {
+    if (S.compact === on) return;
+    S.compact = on;
+    dom.view.classList.toggle("compact", on);
+    if (S.stick) dom.feed.scrollTop = dom.feed.scrollHeight;
+    S.lastScroll = dom.feed.scrollTop;
   }
 
   /* ---------- Очистка экрана ---------- */
@@ -1055,7 +1363,7 @@ export function createJournal(ctx) {
     $("#mode-live").setAttribute("aria-pressed", String(S.live && !S.bookmarksMode));
     $("#mode-archive").setAttribute("aria-pressed", String(!S.live && !S.bookmarksMode));
     $("#bookmarks-only").setAttribute("aria-pressed", String(S.bookmarksMode));
-    if (S.online) setStreamState(S.live ? "поток подключён" : "архив · поток идёт в фоне", true);
+    if (S.online) setStreamState(S.bookmarksMode ? "закладки · поток идёт в фоне" : S.live ? "поток подключён" : "архив · поток идёт в фоне", true);
   }
 
   function setLive(live) {
@@ -1199,6 +1507,7 @@ export function createJournal(ctx) {
   function onJournalShown() {
     S.timeline?.invalidate();
     if (S.opened) refreshStats();
+    writeUrl();
   }
 
   /* ---------- Подписки ---------- */
@@ -1209,8 +1518,12 @@ export function createJournal(ctx) {
       input: $("#filter"),
       pill: $("#log-pill"),
       drawer: $("#log-drawer"),
+      backdrop: $("#log-backdrop"),
       moduleSelect: $("#module-filter"),
+      mini: $(".jr-mini"),
+      view: $("#logs-view"),
     };
+    readUrl();
     try {
       const stored = JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || "[]");
       if (Array.isArray(stored)) S.bookmarks = stored.filter((e) => e && typeof e.ts === "number");
@@ -1242,9 +1555,11 @@ export function createJournal(ctx) {
         queryChanged();
       }
     });
-    document.querySelectorAll(".filter-chip").forEach((button) =>
-      button.addEventListener("click", () => setQuery({ level: button.dataset.level })),
-    );
+    // Подсказка в поиске короче на узком экране, иначе она обрезается посреди слова.
+    const narrow = window.matchMedia("(max-width: 760px)");
+    const placeholder = () => (dom.input.placeholder = narrow.matches ? "Поиск по журналу" : "Поиск · level:error  module:updates  «текст»");
+    narrow.addEventListener?.("change", placeholder);
+    placeholder();
     dom.moduleSelect.addEventListener("change", () => setQuery({ module: dom.moduleSelect.value }));
     $("#mode-live").addEventListener("click", () => setLive(true));
     $("#mode-archive").addEventListener("click", () => {
@@ -1260,15 +1575,37 @@ export function createJournal(ctx) {
       queryChanged();
     });
     $("#export-logs").addEventListener("click", exportLogs);
-    // Плитки сводки — быстрые фильтры; повторное нажатие снимает фильтр.
-    $('#jr-stats [data-tile="err"]').addEventListener("click", () => setQuery({ level: S.level === "ERROR" ? "ALL" : "ERROR" }));
-    $('#jr-stats [data-tile="warn"]').addEventListener("click", () => setQuery({ level: S.level === "WARNING" ? "ALL" : "WARNING" }));
+    // Плитки сводки — быстрые фильтры уровня; повторное нажатие снимает фильтр, «Записей» — все уровни.
+    // Те же счётчики в свёрнутой шапке ведут себя так же.
+    document.querySelectorAll('#jr-stats [data-tile="err"], .jr-mini [data-tile="err"]').forEach((button) =>
+      button.addEventListener("click", () => setQuery({ level: S.level === "ERROR" ? "ALL" : "ERROR" })),
+    );
+    document.querySelectorAll('#jr-stats [data-tile="warn"], .jr-mini [data-tile="warn"]').forEach((button) =>
+      button.addEventListener("click", () => setQuery({ level: S.level === "WARNING" ? "ALL" : "WARNING" })),
+    );
+    $('#jr-stats [data-tile="total"]').addEventListener("click", () => setQuery({ level: "ALL" }));
     $('#jr-stats [data-tile="mod"]').addEventListener("click", (event) => {
       const name = event.currentTarget.dataset.module;
       if (name) setQuery({ module: S.module === name ? "" : name });
     });
+    $("#problems-open").addEventListener("click", () => (S.drawerMode === "problems" ? closeDrawer() : openProblems()));
+    dom.backdrop.addEventListener("click", closeDrawer);
+    $("#jr-expand").addEventListener("click", () => {
+      S.compactHold = true;
+      setCompact(false);
+    });
     $("#err-prev").addEventListener("click", () => jumpError(-1));
     $("#err-next").addEventListener("click", () => jumpError(1));
+    $("#mini-prev").addEventListener("click", () => jumpError(-1));
+    $("#mini-next").addEventListener("click", () => jumpError(1));
+    // Ссылка, вставленная в адресную строку уже открытой панели, применяется без перезагрузки.
+    window.addEventListener("hashchange", () => {
+      if (!readUrl()) return;
+      closeDrawer();
+      ctx.setView("logs");
+      queryChanged();
+      if (S.pendingEntry) setTimeout(openPendingEntry, 0);
+    });
     $("#tl-now").addEventListener("click", jumpNow);
     $("#tl-reset").addEventListener("click", () => {
       S.range = null;
@@ -1293,6 +1630,14 @@ export function createJournal(ctx) {
         S.missed = 0;
         dom.pill.hidden = true;
       }
+      // Прокрутка вверх по истории сворачивает шапку, возврат к живому хвосту разворачивает.
+      // Развёрнутую вручную шапку не трогаем, пока лента снова не дойдёт до низа.
+      const up = f.scrollTop < S.lastScroll - 4;
+      S.lastScroll = f.scrollTop;
+      if (S.stick) {
+        S.compactHold = false;
+        if (S.live) setCompact(false);
+      } else if (up && !S.compactHold) setCompact(true);
       if (f.scrollTop < 240) loadOlder();
     });
     document.addEventListener("keydown", (event) => {
@@ -1303,7 +1648,7 @@ export function createJournal(ctx) {
         jumpError(event.key === "[" ? -1 : 1);
         return;
       }
-      if (event.key === "Escape" && S.selected && ctx.currentView === "logs" && document.activeElement !== dom.input) closeDrawer();
+      if (event.key === "Escape" && S.drawerMode && ctx.currentView === "logs" && document.activeElement !== dom.input) closeDrawer();
     });
     ctx.timestamps?.addEventListener("change", () => dom.feed.classList.toggle("no-time", !ctx.timestamps.checked));
     dom.feed.classList.toggle("no-time", ctx.timestamps ? !ctx.timestamps.checked : false);
@@ -1328,6 +1673,7 @@ export function createJournal(ctx) {
     clearSearch,
     onJournalShown,
     refreshPresetOptions,
+    initialView,
     stopJournalTimers() {
       clearInterval(statsTimer);
       S.timeline?.destroy();

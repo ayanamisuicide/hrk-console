@@ -200,3 +200,85 @@ func TestAround(t *testing.T) {
 		t.Error("несуществующая запись не должна находиться")
 	}
 }
+
+// TestAroundNPagesOneSide проверяет, что соседей до и после можно запросить отдельно.
+func TestAroundNPagesOneSide(t *testing.T) {
+	base := sampleFiles(t)
+	all, _ := Search(base, Query{Limit: 100})
+	target := all[5]
+	around, idx, ok := AroundN(base, target.TS, target.ID, 3, 0)
+	if !ok || idx != 3 || len(around) != 4 || around[idx].ID != target.ID {
+		t.Fatalf("только ранние: ok=%v idx=%d len=%d", ok, idx, len(around))
+	}
+	around, idx, ok = AroundN(base, target.TS, target.ID, 0, 1)
+	if !ok || idx != 0 || len(around) != 2 {
+		t.Fatalf("только поздние: ok=%v idx=%d len=%d", ok, idx, len(around))
+	}
+}
+
+// TestProblemsGroupsRepeats проверяет группировку повторяющихся ошибок: числа в сообщении
+// не разделяют группу, другой тип исключения — разделяет, частые идут первыми.
+func TestProblemsGroupsRepeats(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heroku.log")
+	lines := []string{
+		"2026-10-03 10:00:00 [ERROR] updates: timeout after 10 s",
+		"Traceback (most recent call last):",
+		"aiohttp.ServerTimeoutError: Timeout on reading data",
+		"2026-10-03 10:00:05 [INFO] Core: ok",
+		"2026-10-03 10:00:10 [ERROR] updates: timeout after 12 s",
+		"Traceback (most recent call last):",
+		"aiohttp.ServerTimeoutError: Timeout on reading data",
+		"2026-10-03 10:00:20 [ERROR] updates: timeout after 30 s",
+		"Traceback (most recent call last):",
+		"ValueError: bad manifest",
+		"2026-10-03 10:00:30 [CRITICAL] loader: module 0x7f3a crashed",
+		"2026-10-03 10:00:40 [ERROR] updates: timeout after 14 s",
+		"Traceback (most recent call last):",
+		"aiohttp.ServerTimeoutError: Timeout on reading data",
+		"2026-10-03 10:00:50 [WARNING] net: slow 4.2 s",
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	from, _ := time.ParseInLocation(timeLayout, "2026-10-03 10:00:00", time.Local)
+	got := Problems(path, from.UnixMilli(), 0, Query{}, 10)
+	if len(got) != 3 {
+		t.Fatalf("групп %d, ожидали 3: %+v", len(got), got)
+	}
+	top := got[0]
+	if top.Count != 3 || top.Last.Message != "timeout after 14 s" || top.First != from.UnixMilli() {
+		t.Errorf("частая ошибка: %+v", top)
+	}
+	if got[1].Last.Level != "CRITICAL" || got[2].Last.Message != "timeout after 30 s" {
+		t.Errorf("при равном счёте свежие первыми: %+v", got[1:])
+	}
+	// Окно отсекает старые записи, уровень WARNING выбирается явно.
+	late := Problems(path, from.UnixMilli()+15000, 0, Query{}, 10)
+	if len(late) != 3 || late[0].Count != 1 {
+		t.Errorf("окно: %+v", late)
+	}
+	warn := Problems(path, from.UnixMilli(), 0, Query{Levels: []string{"WARNING"}}, 10)
+	if len(warn) != 1 || warn[0].Last.Module != "net" {
+		t.Errorf("предупреждения: %+v", warn)
+	}
+	if one := Problems(path, from.UnixMilli(), 0, Query{}, 1); len(one) != 1 {
+		t.Errorf("limit: %d", len(one))
+	}
+}
+
+// TestSearchHint проверяет устойчивую часть сообщения для поиска группы.
+func TestSearchHint(t *testing.T) {
+	cases := map[string]string{
+		"timeout after 10 s": "timeout after",
+		"не удалось получить манифест":      "не удалось получить манифест",
+		"module 0x7f3a crashed at 12:00:01": "crashed at",
+		"42":                                "",
+		"id 5f2c9a1b: ok":                   "",
+		"Telegram ответил 429, ждём 3 с":    "Telegram ответил",
+	}
+	for in, want := range cases {
+		if got := SearchHint(in); got != want {
+			t.Errorf("SearchHint(%q) = %q, ожидали %q", in, got, want)
+		}
+	}
+}

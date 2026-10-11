@@ -254,7 +254,7 @@ test.describe("плавность шкалы", () => {
         for (let y = 0; y < canvas.height; y++) if (column[y * 4 + 3] > 40) return canvas.height - y;
         return 0;
       };
-      document.querySelector('.filter-chip[data-level="ERROR"]').click();
+      document.querySelector('#jr-stats [data-tile="err"]').click();
       const samples = [];
       const started = performance.now();
       await new Promise((resolve) => {
@@ -414,4 +414,173 @@ test("у модуля цветная точка, у времени подска�
   expect(hues[0]).not.toBe(hues[1]);
   await page.locator("#log .jr-time").first().hover();
   await expect(page.locator("#log .jr-time").first()).toHaveAttribute("title", /мин назад/);
+});
+
+// Журнал за последний час: повторяющиеся таймауты net, одна ошибка updates и фон.
+function recentLines(now) {
+  const out = [];
+  for (let i = 0; i < 40; i++) out.push(`${localStamp(now - (60 - i) * 60e3)} [INFO] ${["Core", "loader", "weather", "reminders", "tts", "db"][i % 6]}: фон ${i}`);
+  for (let i = 0; i < 4; i++) out.push(`${localStamp(now - (30 - i * 5) * 60e3 + 500)} [ERROR] net: таймаут Telegram через ${10 + i} с`);
+  out.push(`${localStamp(now - 12 * 60e3 + 700)} [ERROR] updates: не удалось получить манифест`);
+  out.push(`${localStamp(now - 8 * 60e3 + 900)} [WARNING] net: медленный ответ`);
+  const at = (s) => new Date(s.slice(0, 19).replace(" ", "T")).getTime();
+  return out.sort((a, b) => at(a) - at(b));
+}
+
+test("частые ошибки: группы со счётчиком, клик фильтрует ленту, «Последняя» открывает запись", async ({ page }) => {
+  await openJournal(page, recentLines(Date.now()));
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  await page.locator("#problems-open").click();
+  const rows = page.locator("#log-drawer .jr-prob-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator(".jr-prob-n")).toHaveText("×4");
+  await expect(rows.first()).toContainText("таймаут Telegram через 13 с");
+
+  // Клик по группе показывает ровно эти записи; список при этом остаётся.
+  await rows.first().click();
+  await expect(page.locator("#query-chips")).toContainText("level:error");
+  await expect(page.locator("#query-chips")).toContainText("module:net");
+  await expect(page.locator("#filter")).toHaveValue("таймаут Telegram через");
+  await expect(page.locator("#log .jr-card")).toHaveCount(4);
+  await expect(rows).toHaveCount(2);
+
+  // «Последняя» открывает запись, «‹ Частые ошибки» возвращает список.
+  await rows.first().locator(".jr-link").click();
+  await expect(page.locator("#log-drawer .jr-full")).toContainText("через 13 с");
+  await page.locator("#log-drawer .jr-back").click();
+  await expect(rows).toHaveCount(2);
+
+  // Вкладка предупреждений и закрытие повторным нажатием.
+  await page.locator("#log-drawer .jr-prob-tabs button", { hasText: "Предупреждения" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("медленный ответ");
+  await page.locator("#problems-open").click();
+  await expect(page.locator("#log-drawer")).toBeHidden();
+});
+
+test("запрос и открытая запись живут в адресе: перезагрузка и ссылка их восстанавливают", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openJournal(page, recentLines(Date.now()));
+  await page.locator("#filter").fill("level:error module:net таймаут");
+  await page.locator("#filter").press("Enter");
+  await expect(page.locator("#log .jr-card")).toHaveCount(4);
+  await expect(page).toHaveURL(/#logs\?level=ERROR&module=net&q=/);
+
+  await page.reload();
+  await expect(page.locator("#query-chips")).toContainText("module:net");
+  await expect(page.locator("#filter")).toHaveValue("таймаут");
+  await expect(page.locator("#log .jr-card")).toHaveCount(4);
+
+  // Ссылка на запись из панели деталей ведёт прямо к ней, даже без фильтров.
+  await page.locator("#log .jr-card .jr-message").nth(1).click();
+  await page.locator("#log-drawer .jr-acts button", { hasText: "Ссылка" }).click();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toMatch(/#logs\?entry=\d+~/);
+  await page.goto("about:blank");
+  await page.goto(link);
+  await expect(page.locator("#log-drawer .jr-full")).toContainText("таймаут Telegram через 11 с");
+  await expect(page.locator("#log .jr-card.selected .jr-message")).toHaveText("таймаут Telegram через 11 с");
+  await expect(page).toHaveURL(/entry=/);
+
+  // Закрытие панели убирает запись из адреса; другой раздел убирает и запрос журнала.
+  await page.keyboard.press("Escape");
+  await expect(page).not.toHaveURL(/entry=/);
+  await page.locator('[data-view="system"]').click();
+  await expect(page).not.toHaveURL(/#logs/);
+});
+
+test("шапка сворачивается при чтении истории и разворачивается кнопкой или у живого хвоста", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await openJournal(page, Array.from({ length: 120 }, (_, i) => line(i, i % 17 ? "INFO" : "ERROR")));
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  const view = page.locator("#logs-view");
+  await expect(view).not.toHaveClass(/compact/);
+  const feedBefore = await page.locator("#log").evaluate((f) => f.clientHeight);
+  await page.locator("#log").hover();
+  await page.mouse.wheel(0, -900);
+  await expect(view).toHaveClass(/compact/);
+  await expect(page.locator(".jr-mini")).toBeVisible();
+  await expect(page.locator("#jr-stats")).toBeHidden();
+  expect(await page.locator("#log").evaluate((f) => f.clientHeight)).toBeGreaterThan(feedBefore + 150);
+  await expect(page.locator('.jr-mini [data-tile="err"] b')).toHaveText(await page.locator('#jr-stats [data-tile="err"] b').textContent());
+
+  // «Развернуть» возвращает шапку и не даёт ей тут же свернуться снова.
+  await page.locator("#jr-expand").click();
+  await expect(view).not.toHaveClass(/compact/);
+  await page.locator("#log").hover();
+  await page.mouse.wheel(0, -300);
+  // Прокрутка колесом плавная: даём ей закончиться, прежде чем проверять и двигать ленту дальше.
+  await page.waitForTimeout(400);
+  await expect(view).not.toHaveClass(/compact/);
+
+  // Снова свернуть и вернуться вниз — шапка разворачивается сама.
+  // Ждём кадр: иначе прокрутка вниз и колесо сольются в одно событие и низ не будет замечен.
+  await page.locator("#log").evaluate((f) => {
+    f.scrollTop = f.scrollHeight;
+    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await page.locator("#log").hover();
+  await page.mouse.wheel(0, -900);
+  await expect(view).toHaveClass(/compact/);
+  await page.locator("#log").evaluate((f) => (f.scrollTop = f.scrollHeight));
+  await expect(view).not.toHaveClass(/compact/);
+});
+
+test("окружение записи: «Раньше» и «Позже» дозагружают, клик открывает соседнюю, панель не уезжает", async ({ page }) => {
+  await openJournal(page, Array.from({ length: 120 }, (_, i) => line(i)));
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  await page.locator("#log .jr-card", { hasText: "событие 100" }).click();
+  const rows = page.locator("#log-drawer .jr-ctx-row");
+  // 20 записей до, сама запись и 19 после — до конца файла.
+  await expect(rows).toHaveCount(40);
+  await expect(page.locator("#log-drawer .jr-ctx-row.cur")).toContainText("событие 100");
+  // Заголовок панели остаётся видимым: прокручивается только список окружения.
+  expect(await page.locator("#log-drawer").evaluate((d) => d.scrollTop)).toBe(0);
+
+  await page.locator("#log-drawer .jr-ctx-more", { hasText: "Раньше" }).click();
+  await expect(rows).toHaveCount(60);
+  await expect(page.locator("#log-drawer .jr-ctx-more", { hasText: "Конец файла" })).toBeDisabled();
+
+  await rows.filter({ hasText: "событие 99" }).first().click();
+  await expect(page.locator("#log-drawer .jr-full")).toContainText("событие 99");
+  await expect(page.locator("#log-drawer .jr-ctx-row.cur")).toContainText("событие 99");
+});
+
+test("модули: самые шумные кнопками, остальные в «Ещё модули» без повторов; уровни — плитками", async ({ page }) => {
+  await openJournal(page, recentLines(Date.now()));
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  const quick = await page.locator("#module-chips button").allTextContents();
+  expect(quick).toHaveLength(4);
+  const rest = await page.locator("#module-filter option").evaluateAll((nodes) => nodes.slice(1).map((n) => n.value));
+  expect(rest.length).toBeGreaterThan(0);
+  expect(rest.filter((name) => quick.includes(name))).toEqual([]);
+  await expect(page.locator(".filter-chip")).toHaveCount(0);
+
+  // Редкий модуль из списка выбран там же, плитка «Записей» снимает фильтр уровня.
+  await page.locator("#module-filter").selectOption(rest[0]);
+  await expect(page.locator("#query-chips")).toContainText(`module:${rest[0]}`);
+  await expect(page.locator("#module-filter")).toHaveClass(/on/);
+  await page.locator('#jr-stats [data-tile="err"]').click();
+  await expect(page.locator("#query-chips")).toContainText("level:error");
+  await page.locator('#jr-stats [data-tile="total"]').click();
+  await expect(page.locator("#query-chips")).not.toContainText("level:");
+});
+
+test("разделитель дня — строка ленты, а не липкая плашка поверх записей", async ({ page }) => {
+  await openJournal(page, [line(1), line(2)]);
+  await expect(page.locator("#log .jr-day")).toHaveCount(1);
+  expect(await page.locator("#log .jr-day").evaluate((n) => getComputedStyle(n).position)).toBe("static");
+});
+
+test("шторка на телефоне: заголовок виден, затемнение позади закрывает её", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openJournal(page, Array.from({ length: 80 }, (_, i) => line(i, i === 60 ? "ERROR" : "INFO")));
+  await page.locator("#log .jr-card", { hasText: "событие 60" }).click();
+  await expect(page.locator("#log-drawer .jr-dh strong")).toBeInViewport();
+  await expect(page.locator("#log-drawer .jr-ctx-row.cur")).toBeVisible();
+  expect(await page.locator("#log-drawer").evaluate((d) => d.scrollTop)).toBe(0);
+  await expect(page.locator("#log-backdrop")).toBeVisible();
+  await page.mouse.click(195, 40);
+  await expect(page.locator("#log-drawer")).toBeHidden();
+  await expect(page.locator("#log-backdrop")).toBeHidden();
 });

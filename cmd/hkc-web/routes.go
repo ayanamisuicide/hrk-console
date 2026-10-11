@@ -75,6 +75,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/logs/entries", s.authorize(s.logEntries))
 	mux.HandleFunc("GET /api/logs/stats", s.authorize(s.logStats))
 	mux.HandleFunc("GET /api/logs/context", s.authorize(s.logContext))
+	mux.HandleFunc("GET /api/logs/problems", s.authorize(s.logProblems))
 	mux.HandleFunc("GET /api/logs/stream", s.authorize(s.logStream))
 	mux.HandleFunc("POST /api/bot/{action}", s.authorizeControl(s.action))
 

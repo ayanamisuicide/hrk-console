@@ -33,6 +33,7 @@ func TestJournalMasksSecretsForNonOperators(t *testing.T) {
 		{method: "GET", path: "/api/logs/entries", cookie: viewer},
 		{method: "GET", path: "/api/logs", cookie: viewer},
 		{method: "GET", path: "/api/incidents", cookie: viewer},
+		{method: "GET", path: "/api/logs/problems?from=1", cookie: viewer},
 	} {
 		response := f.do(t, request)
 		want(t, request.path, response, http.StatusOK)

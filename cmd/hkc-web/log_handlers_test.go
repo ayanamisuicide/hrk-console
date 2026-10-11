@@ -196,3 +196,56 @@ func TestLogStreamSendsWholeEntries(t *testing.T) {
 	}
 	t.Fatalf("запись не пришла: %v", lines.Err())
 }
+
+// TestLogContextPagesOneSide проверяет параметры before и after у окружения записи.
+func TestLogContextPagesOneSide(t *testing.T) {
+	s := serverWithLog(t, sampleJournal)
+	var all struct{ Entries []logfeed.Entry }
+	getJSON(t, s.logEntries, "/api/logs/entries", &all)
+	target := all.Entries[1]
+	var ctx struct {
+		Entries []logfeed.Entry
+		Index   int
+	}
+	getJSON(t, s.logContext, "/api/logs/context?before=5&after=0&ts="+itoa(target.TS)+"&id="+target.ID, &ctx)
+	if len(ctx.Entries) != 2 || ctx.Index != 1 {
+		t.Errorf("только ранние: %+v", ctx)
+	}
+	getJSON(t, s.logContext, "/api/logs/context?before=0&after=999&n=1&ts="+itoa(target.TS)+"&id="+target.ID, &ctx)
+	if len(ctx.Entries) != 2 || ctx.Index != 0 {
+		t.Errorf("after вне предела берёт n: %+v", ctx)
+	}
+}
+
+// TestLogProblemsGroups проверяет частые ошибки: группы, подсказку для поиска и окно.
+func TestLogProblemsGroups(t *testing.T) {
+	s := serverWithLog(t, `2026-10-03 10:00:00 [ERROR] updates: timeout after 10 s
+2026-10-03 10:00:01 [ERROR] updates: timeout after 12 s
+2026-10-03 10:00:02 [WARNING] net: slow
+2026-10-03 10:00:03 [ERROR] loader: crashed
+`)
+	var res struct {
+		Problems []logfeed.Problem `json:"problems"`
+	}
+	getJSON(t, s.logProblems, "/api/logs/problems?from=1", &res)
+	if len(res.Problems) != 2 || res.Problems[0].Count != 2 || res.Problems[0].Query != "timeout after" {
+		t.Fatalf("группы: %+v", res.Problems)
+	}
+	getJSON(t, s.logProblems, "/api/logs/problems?from=1&level=warning", &res)
+	if len(res.Problems) != 1 || res.Problems[0].Last.Module != "net" {
+		t.Errorf("уровень: %+v", res.Problems)
+	}
+	// Без from окно — последние 6 часов: записи 2026-10-03 в него не входят.
+	getJSON(t, s.logProblems, "/api/logs/problems?to=1790000000000", &res)
+	if len(res.Problems) != 0 {
+		t.Errorf("окно по умолчанию: %+v", res.Problems)
+	}
+	// to включительно: запись ровно на границе входит.
+	var all struct{ Entries []logfeed.Entry }
+	getJSON(t, s.logEntries, "/api/logs/entries?level=error", &all)
+	first := all.Entries[0].TS
+	getJSON(t, s.logProblems, "/api/logs/problems?from=1&to="+itoa(first), &res)
+	if len(res.Problems) != 1 || res.Problems[0].Count != 1 {
+		t.Errorf("граница to: %+v", res.Problems)
+	}
+}
