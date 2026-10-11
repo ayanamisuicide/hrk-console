@@ -3,6 +3,7 @@
 // постранично назад, новые записи добавляются потоком SSE. Исходный файл бота не изменяется.
 // Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
 import { createLogTimeline } from "./log-timeline.js";
+import { renderTrace, traceSummary } from "./log-trace.js";
 
 const PAGE = 200;
 // В памяти и в DOM держится ограниченное число записей; это не лимит файла на сервере.
@@ -35,6 +36,7 @@ export function createJournal(ctx) {
     opened: false,
     modules: [],
     timeline: null,
+    buckets: [], // последняя сводка шкалы: по ней считаются итоги и переходы между ошибками
     bookmarks: [],
     lastDay: "",
   };
@@ -182,7 +184,9 @@ export function createJournal(ctx) {
       card.classList.add("fresh");
       card.addEventListener("animationend", () => card.classList.remove("fresh"), { once: true });
     }
-    card.append(el("time", "jr-time", hms(e)));
+    const time = el("time", "jr-time", hms(e));
+    time.addEventListener("pointerenter", () => (time.title = `${e.time} · ${ago(e.ts)}`));
+    card.append(time);
     const body = el("div", "jr-body");
     const level = el("span", `jr-level ${e.level}`, e.level === "INFO" || e.level === "DEBUG" ? "" : e.level === "WARNING" ? "WARN" : e.level);
     const message = el("span", "jr-message");
@@ -190,10 +194,30 @@ export function createJournal(ctx) {
     body.append(level, message);
     if (e.trace?.length) {
       const trace = el("details", "jr-trace");
-      trace.append(el("summary", "", `Traceback · ${e.trace.length} ${plural(e.trace.length, "строка", "строки", "строк")}`));
-      trace.append(el("pre", "", e.trace.join("\n")));
+      const reason = traceSummary(e.trace);
+      const summary = el("summary");
+      summary.append(el("span", "jr-tr-label", "Traceback"));
+      summary.append(reason ? el("span", "jr-tr-reason", reason) : el("span", "jr-tr-count", `${e.trace.length} ${plural(e.trace.length, "строка", "строки", "строк")}`));
+      trace.append(summary);
+      // Содержимое строится при первом раскрытии: лента с сотнями ошибок не разбирает все traceback сразу.
+      const fill = () => {
+        if (trace.querySelector(".jr-tv")) return;
+        const view = renderTrace(e.trace);
+        const copy = el("button", "jr-copy", "Копировать");
+        copy.type = "button";
+        copy.addEventListener("click", (event) => {
+          event.stopPropagation();
+          copyText(e.trace.join("\n"), "Traceback скопирован");
+        });
+        view.prepend(copy);
+        trace.append(view);
+      };
+      trace.addEventListener("toggle", () => trace.open && fill());
       // Если искомое найдено только в traceback, раскрываем его сразу.
-      if (S.text && !e.message.toLowerCase().includes(S.text.toLowerCase()) && e.trace.join("\n").toLowerCase().includes(S.text.toLowerCase())) trace.open = true;
+      if (S.text && !e.message.toLowerCase().includes(S.text.toLowerCase()) && e.trace.join("\n").toLowerCase().includes(S.text.toLowerCase())) {
+        trace.open = true;
+        fill();
+      }
       trace.addEventListener("click", (event) => event.stopPropagation());
       body.append(trace);
     }
@@ -203,6 +227,7 @@ export function createJournal(ctx) {
     if (e.module) {
       const module = el("button", "jr-module", e.module);
       module.type = "button";
+      module.style.setProperty("--mh", String(moduleHue(e.module)));
       module.title = "Показать только этот модуль";
       module.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -235,6 +260,31 @@ export function createJournal(ctx) {
       mark.setAttribute("aria-pressed", "true");
     } else mark.setAttribute("aria-pressed", "false");
     return card;
+  }
+
+  // Цвет точки у имени модуля: один модуль всегда одного оттенка, соседние различимы с первого взгляда.
+  function moduleHue(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return h;
+  }
+
+  // «3 мин назад» для подсказки у времени записи.
+  function ago(ts) {
+    const s = Math.max(0, Math.round((clock() - ts) / 1000));
+    if (s < 60) return `${s} с назад`;
+    if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
+    if (s < 86400) return `${Math.floor(s / 3600)} ч назад`;
+    return `${Math.floor(s / 86400)} дн назад`;
+  }
+
+  async function copyText(text, notice) {
+    try {
+      await navigator.clipboard.writeText(text);
+      ctx.showNotice(notice);
+    } catch (_) {
+      ctx.showNotice("Не удалось скопировать", "error");
+    }
   }
 
   function plural(n, one, few, many) {
@@ -613,6 +663,8 @@ export function createJournal(ctx) {
         return;
       }
       S.timeline.setStats(stats);
+      S.buckets = stats.buckets || [];
+      renderTimelineInfo();
       S.modules = Object.entries(stats.modules || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       renderQuick();
     } catch (_) {
@@ -738,13 +790,92 @@ export function createJournal(ctx) {
       button.setAttribute("aria-pressed", String(active));
     });
     $("#tl-reset").hidden = !S.range;
-    const info = $("#tl-info");
-    if (S.range) {
-      const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
-      info.textContent = `Диапазон ${t(S.range.from)} — ${S.range.to == null ? "сейчас" : t(S.range.to)}`;
-    } else info.textContent = "Последние 6 часов";
+    renderTimelineInfo();
     dom.moduleSelect.value = S.module;
     $("#preset-delete").disabled = !$("#preset-select").value;
+  }
+
+  // Подпись шкалы: окно или диапазон и итоги по ошибкам и предупреждениям в нём.
+  function renderTimelineInfo() {
+    const info = $("#tl-info");
+    if (!info) return;
+    info.replaceChildren();
+    let from = -Infinity;
+    let to = Infinity;
+    if (S.range) {
+      const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
+      info.append(`Диапазон ${t(S.range.from)} — ${S.range.to == null ? "сейчас" : t(S.range.to)}`);
+      from = S.range.from - BUCKET_MS;
+      to = S.range.to ?? Infinity;
+    } else info.append("Последние 6 часов");
+    let errors = 0;
+    let warnings = 0;
+    for (const b of S.buckets) {
+      if (b.t < from || b.t > to) continue;
+      errors += b.err;
+      warnings += b.warn;
+    }
+    if (errors) info.append(" · ", el("b", "jr-tl-e", `${errors} ${plural(errors, "ошибка", "ошибки", "ошибок")}`));
+    if (warnings) info.append(" · ", el("b", "jr-tl-w", `${warnings} ${plural(warnings, "предупреждение", "предупреждения", "предупреждений")}`));
+  }
+
+  /* ---------- Переходы между ошибками ---------- */
+
+  const errorCards = () => [...dom.feed.querySelectorAll('.jr-card[data-level="ERROR"], .jr-card[data-level="CRITICAL"]')];
+
+  function focusCard(card) {
+    dom.feed.querySelectorAll(".jr-card.nav").forEach((node) => node.classList.remove("nav"));
+    card.classList.add("nav");
+    S.stick = false;
+    card.scrollIntoView({ block: "center", behavior: motionOk() ? "smooth" : "auto" });
+  }
+
+  // Ищет ближайшую к якорю ошибку среди загруженных карточек. Якорь — последняя выбранная
+  // стрелками карточка, а без неё середина видимой ленты.
+  function neighbourError(dir) {
+    const feedTop = dom.feed.getBoundingClientRect().top;
+    const at = (card) => card.getBoundingClientRect().top - feedTop;
+    const anchor = dom.feed.querySelector(".jr-card.nav");
+    const y = anchor ? at(anchor) : dom.feed.clientHeight / 2;
+    const cards = errorCards().filter((card) => card !== anchor);
+    if (dir > 0) return cards.find((card) => at(card) > y + 1);
+    return [...cards].reverse().find((card) => at(card) < y - 1);
+  }
+
+  // Переход к предыдущей (dir < 0) или следующей ошибке: сначала по загруженной ленте,
+  // затем подгрузкой старых записей, затем перескоком на ближайший интервал шкалы с ошибками.
+  async function jumpError(dir) {
+    let target = neighbourError(dir);
+    for (let i = 0; !target && dir < 0 && S.hasOlder && i < 6; i++) {
+      await loadOlder();
+      target = neighbourError(dir);
+    }
+    if (target) return focusCard(target);
+    const edge = dir < 0 ? S.entries[0]?.ts : S.entries.at(-1)?.ts;
+    if (edge == null) return ctx.showNotice("Записей нет");
+    const edgeBucket = Math.floor(edge / BUCKET_MS) * BUCKET_MS;
+    const candidates = S.buckets.filter((b) => b.err > 0 && (dir < 0 ? b.t < edgeBucket : b.t > edgeBucket));
+    const bucket = dir < 0 ? candidates.at(-1) : candidates[0];
+    if (!bucket) return ctx.showNotice(dir < 0 ? "Более ранних ошибок в этом окне нет" : "Более поздних ошибок нет");
+    const to = bucket.t + BUCKET_MS - 1;
+    S.range = { from: bucket.t, to: to >= clock() - BUCKET_MS / 2 ? null : to };
+    if (S.range.to != null) S.live = false;
+    syncModeButtons();
+    renderChips();
+    S.timeline?.setSelection([S.range.from, S.range.to ?? clock()]);
+    clearTimeout(reloadTimer);
+    await reload();
+    const cards = errorCards();
+    const found = dir < 0 ? cards.at(-1) : cards[0];
+    if (found) focusCard(found);
+  }
+
+  // Возврат к живому хвосту: диапазон снимается, лента прокручивается вниз.
+  function jumpNow() {
+    S.range = null;
+    S.stick = true;
+    dom.feed.querySelectorAll(".jr-card.nav").forEach((node) => node.classList.remove("nav"));
+    setLive(true);
   }
 
   // Быстрые фильтры: самые шумные модули кнопками, остальные в списке.
@@ -780,7 +911,8 @@ export function createJournal(ctx) {
     close.setAttribute("aria-label", "Закрыть панель");
     close.addEventListener("click", closeDrawer);
     head.append(close);
-    const full = el("pre", "jr-full", rawText(e));
+    // В рамке — сама запись; traceback ниже разобран по кадрам, а «Копировать» берёт всё целиком.
+    const full = el("pre", "jr-full", rawText({ ...e, trace: [] }));
     const kv = el("dl", "jr-kv");
     for (const [k, v] of [["Время", e.time], ["Уровень", e.level], ["Модуль", e.module || "—"]]) kv.append(el("dt", "", k), el("dd", "", v));
     const actions = el("div", "jr-acts");
@@ -790,20 +922,15 @@ export function createJournal(ctx) {
       b.addEventListener("click", fn);
       actions.append(b);
     };
-    act("Копировать", async () => {
-      try {
-        await navigator.clipboard.writeText(rawText(e));
-        ctx.showNotice("Запись скопирована");
-      } catch (_) {
-        ctx.showNotice("Не удалось скопировать", "error");
-      }
-    });
+    act("Копировать", () => copyText(rawText(e), "Запись скопирована"));
     if (e.module) act(`Только ${e.module}`, () => setQuery({ module: e.module }));
     act(isMarked(e) ? "Убрать закладку" : "В закладки", () => {
       toggleBookmark(e);
       openDrawer(e);
     });
-    drawer.append(head, full, kv, actions);
+    drawer.append(head, full);
+    if (e.trace?.length) drawer.append(renderTrace(e.trace));
+    drawer.append(kv, actions);
     const ctxTitle = el("div", "jr-ctx-title", "Окружение");
     const list = el("div", "jr-ctx");
     list.append(el("div", "jr-ctx-note", "Загрузка…"));
@@ -1066,6 +1193,9 @@ export function createJournal(ctx) {
       queryChanged();
     });
     $("#export-logs").addEventListener("click", exportLogs);
+    $("#err-prev").addEventListener("click", () => jumpError(-1));
+    $("#err-next").addEventListener("click", () => jumpError(1));
+    $("#tl-now").addEventListener("click", jumpNow);
     $("#tl-reset").addEventListener("click", () => {
       S.range = null;
       queryChanged();
@@ -1092,6 +1222,13 @@ export function createJournal(ctx) {
       if (f.scrollTop < 240) loadOlder();
     });
     document.addEventListener("keydown", (event) => {
+      // [ и ] — к предыдущей и следующей ошибке, когда фокус не в поле ввода.
+      if ((event.key === "[" || event.key === "]") && ctx.currentView === "logs" && !event.ctrlKey && !event.metaKey && !event.altKey &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) {
+        event.preventDefault();
+        jumpError(event.key === "[" ? -1 : 1);
+        return;
+      }
       if (event.key === "Escape" && S.selected && ctx.currentView === "logs" && document.activeElement !== dom.input) closeDrawer();
     });
     ctx.timestamps?.addEventListener("change", () => dom.feed.classList.toggle("no-time", !ctx.timestamps.checked));

@@ -63,10 +63,12 @@ test("записи собраны: traceback внутри, повторы схл
   await expect(page.locator("#line-count")).toHaveText("5");
   // Traceback — часть записи, а не отдельная строка ленты.
   const error = page.locator('#log .jr-card[data-level="ERROR"]');
-  await expect(error.locator(".jr-trace")).toContainText("Traceback · 2 строки");
-  await expect(error.locator(".jr-trace pre")).toBeHidden();
+  await expect(error.locator(".jr-trace")).toContainText("Traceback");
+  await expect(error.locator(".jr-trace")).toContainText("2 строки");
+  // Разбор traceback строится при раскрытии, а не для каждой записи ленты.
+  await expect(error.locator(".jr-tv")).toHaveCount(0);
   await error.locator(".jr-trace summary").click();
-  await expect(error.locator(".jr-trace pre")).toContainText('File "u.py"');
+  await expect(error.locator(".jr-fr-loc")).toContainText("u.py");
 
   await page.locator("#filter").fill("manifest");
   await expect(page.locator("#log .jr-card")).toHaveCount(1);
@@ -74,7 +76,7 @@ test("записи собраны: traceback внутри, повторы схл
   // Поиск находит и текст внутри traceback.
   await page.locator("#filter").fill("u.py");
   await expect(page.locator("#log .jr-card")).toHaveCount(1);
-  await expect(page.locator("#log .jr-trace pre")).toBeVisible();
+  await expect(page.locator("#log .jr-tv")).toBeVisible();
 });
 
 test("запрос level:/module: превращается в чипы, Backspace и Esc снимают их", async ({ page }) => {
@@ -274,4 +276,140 @@ test.describe("плавность шкалы", () => {
     const maxStep = Math.max(...heights.slice(1).map((value, i) => value - heights[i]));
     expect(maxStep).toBeLessThan(final * 0.4);
   });
+});
+
+// Время записей без пояса, как у бота; фикстура читает его как местное.
+const localStamp = (ms) => {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+test("разбор traceback: кадры, цепочка исключений, библиотеки и итоговое исключение", async ({ page }) => {
+  await openJournal(page, [line(0)]);
+  const parsed = await page.evaluate(async () => {
+    const { parseTrace, traceSummary } = await import("/modules/log-trace.js");
+    const lines = [
+      "Traceback (most recent call last):",
+      '  File "/opt/bot/updates.py", line 88, in fetch',
+      "    await session.get(URL)",
+      "                      ^^^",
+      '  File "/usr/lib/python3.12/site-packages/aiohttp/client.py", line 12, in get',
+      "    raise OSError",
+      '  File "/usr/lib/python3.12/site-packages/aiohttp/base.py", line 5, in _req',
+      "ConnectionError: reset by peer",
+      "",
+      "During handling of the above exception, another exception occurred:",
+      "",
+      "Traceback (most recent call last):",
+      '  File "/opt/bot/main.py", line 3, in <module>',
+      "TimeoutError: Таймаут обновления",
+    ];
+    const result = parseTrace(lines);
+    return {
+      ok: result.ok,
+      blocks: result.blocks.length,
+      first: result.blocks[0].frames.map((f) => ({ func: f.func, line: f.line, own: f.own, code: f.code })),
+      firstException: result.blocks[0].exception.type,
+      note: result.blocks[1].note,
+      summary: traceSummary(lines),
+      notPython: parseTrace(["что-то", "другое"]).ok,
+      longSummary: traceSummary(["Traceback (most recent call last):", '  File "a.py", line 1, in f', `ValueError: ${"x".repeat(300)}`]).length,
+    };
+  });
+  expect(parsed.ok).toBe(true);
+  expect(parsed.blocks).toBe(2);
+  expect(parsed.first).toEqual([
+    { func: "fetch", line: 88, own: true, code: "await session.get(URL)" },
+    { func: "get", line: 12, own: false, code: "raise OSError" },
+    { func: "_req", line: 5, own: false, code: "" },
+  ]);
+  expect(parsed.firstException).toBe("ConnectionError");
+  expect(parsed.note).toMatch(/During handling/);
+  expect(parsed.summary).toBe("TimeoutError: Таймаут обновления");
+  expect(parsed.notPython).toBe(false);
+  expect(parsed.longSummary).toBeLessThanOrEqual(110);
+});
+
+test("traceback в карточке: причина в заголовке, свои кадры видны, библиотеки свёрнуты, копирование", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const lines = [
+    line(0, "ERROR", "updates", "manifest failed"),
+    "Traceback (most recent call last):",
+    '  File "/opt/bot/updates.py", line 88, in fetch',
+    "    await session.get(URL)",
+    '  File "/usr/lib/python3.12/site-packages/aiohttp/client.py", line 12, in get',
+    '  File "/usr/lib/python3.12/site-packages/aiohttp/base.py", line 5, in _req',
+    "ServerTimeoutError: Timeout on reading data",
+  ];
+  await openJournal(page, lines);
+  const card = page.locator('#log .jr-card[data-level="ERROR"]');
+  await expect(card.locator(".jr-tr-reason")).toHaveText("ServerTimeoutError: Timeout on reading data");
+  await card.locator("summary").click();
+  await expect(card.locator(".jr-fr:not(.lib) .jr-fr-func").first()).toHaveText("fetch");
+  await expect(card.locator(".jr-fr-code").first()).toHaveText("await session.get(URL)");
+  await expect(card.locator(".jr-exc")).toContainText("ServerTimeoutError");
+  // Два подряд идущих кадра библиотеки сложены в одну строку-раскрывашку.
+  await expect(card.locator(".jr-lib summary")).toHaveText("2 вызова библиотек");
+  await expect(card.locator(".jr-lib .jr-fr").first()).toBeHidden();
+  await card.locator(".jr-lib summary").click();
+  await expect(card.locator(".jr-lib .jr-fr").first()).toBeVisible();
+  // Копирование берёт исходный текст traceback целиком; клик не открывает панель деталей.
+  await card.locator(".jr-copy").click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('File "/opt/bot/updates.py", line 88, in fetch');
+  await expect(page.locator("#log-drawer")).toBeHidden();
+  // Панель деталей показывает тот же разбор.
+  await card.locator(".jr-message").click();
+  await expect(page.locator("#log-drawer .jr-tv .jr-exc")).toContainText("ServerTimeoutError");
+});
+
+test("переходы между ошибками: стрелки, клавиши [ ], перескок по шкале и «Сейчас»", async ({ page }) => {
+  const now = Date.now();
+  const lines = [
+    `${localStamp(now - 5 * 3600e3)} [ERROR] net: первая ошибка`,
+    `${localStamp(now - 4.9 * 3600e3)} [INFO] Core: фон`,
+    `${localStamp(now - 3 * 3600e3)} [ERROR] net: вторая ошибка`,
+    `${localStamp(now - 2.9 * 3600e3)} [WARNING] net: предупреждение`,
+    `${localStamp(now - 10 * 60e3)} [ERROR] net: третья ошибка`,
+    `${localStamp(now - 5 * 60e3)} [INFO] Core: хвост`,
+  ];
+  await openJournal(page, lines);
+  const navMessage = page.locator("#log .jr-card.nav .jr-message");
+  // Итоги по окну на шкале.
+  await expect(page.locator("#tl-info .jr-tl-e")).toHaveText("3 ошибки");
+  await expect(page.locator("#tl-info .jr-tl-w")).toHaveText("1 предупреждение");
+
+  // От середины ленты: «назад» берёт ближайшую выше, повторное — ещё выше, «]» возвращает.
+  await page.locator("#err-prev").click();
+  await expect(navMessage).toHaveCount(1);
+  const first = await navMessage.textContent();
+  await page.locator("#err-prev").click();
+  await expect(navMessage).not.toHaveText(first);
+  await page.keyboard.press("]");
+  await expect(navMessage).toHaveText(first);
+
+  // Окно в последние 15 минут: прежних ошибок в ленте нет, переход идёт по шкале.
+  await page.locator('[data-tl-range="15"]').click();
+  await expect(page.locator("#log .jr-card")).toHaveCount(2);
+  await page.locator("#err-prev").click();
+  await expect(navMessage).toHaveText("третья ошибка");
+  await page.locator("#err-prev").click();
+  await expect(page.locator("#query-chips")).toContainText("время");
+  await expect(navMessage).toHaveText("вторая ошибка");
+
+  // «Сейчас» снимает диапазон и возвращает живой хвост.
+  await page.locator("#tl-now").click();
+  await expect(page.locator("#query-chips")).not.toContainText("время");
+  await expect(page.locator("#log .jr-card").last()).toContainText("хвост");
+  await expect(page.locator("#log .jr-card.nav")).toHaveCount(0);
+});
+
+test("у модуля цветная точка, у времени подсказка «сколько назад»", async ({ page }) => {
+  const now = Date.now();
+  await openJournal(page, [`${localStamp(now - 125 * 1000)} [INFO] weather: запись`, `${localStamp(now - 60 * 1000)} [INFO] net: запись`]);
+  const hues = await page.locator("#log .jr-module").evaluateAll((nodes) => nodes.map((n) => n.style.getPropertyValue("--mh")));
+  expect(hues).toHaveLength(2);
+  expect(hues[0]).not.toBe(hues[1]);
+  await page.locator("#log .jr-time").first().hover();
+  await expect(page.locator("#log .jr-time").first()).toHaveAttribute("title", /мин назад/);
 });

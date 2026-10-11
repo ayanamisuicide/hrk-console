@@ -632,16 +632,45 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
 }
 .jr-tl-head {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 6px 14px;
+  min-height: 28px;
   margin-bottom: 6px;
   color: var(--text-2);
   font-size: 12.5px;
 }
+/* Высота шапки постоянна: от текста итогов не должна меняться высота страницы, иначе шкала
+   пересчитывает размер и теряет плавность. На узком экране шапка переносится явно. */
+#tl-info {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .jr-tl-tools {
   display: inline-flex;
+  flex: none;
+  align-items: center;
   gap: 4px;
+}
+@media (max-width: 760px) {
+  .jr-tl-head {
+    flex-wrap: wrap;
+  }
+  .jr-tl-tools {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .jr-nav {
+    margin-right: auto;
+    border-right: 0;
+  }
+  #tl-info {
+    white-space: normal;
+  }
 }
 .jr-link {
   min-height: 24px;
@@ -722,8 +751,16 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 }
 .jr-day {
+  position: sticky;
+  top: 4px;
+  z-index: 2;
   align-self: center;
-  padding: 8px 0 2px;
+  margin: 6px 0 2px;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm, 0 2px 8px -4px rgb(0 0 0 / 0.4));
   color: var(--text-3);
   font-size: 11.5px;
   letter-spacing: 0.05em;
@@ -735,17 +772,18 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   flex: none;
   grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 2px 12px;
-  padding: 9px 12px;
+  gap: 2px 14px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   background: var(--surface);
   cursor: pointer;
-  transition: background var(--fast) ease, border-color var(--fast) ease;
+  transition: background var(--fast) ease, border-color var(--fast) ease, box-shadow var(--fast) ease;
 }
 .jr-card:hover {
   background: var(--surface-hover);
+  box-shadow: 0 1px 0 var(--border), 0 4px 14px -8px rgb(0 0 0 / 0.35);
 }
 .jr-card.selected {
   border-color: var(--accent);
@@ -798,7 +836,9 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   color: var(--accent);
 }
 .jr-level {
-  margin-right: 6px;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
   font: 600 10.5px var(--font);
   letter-spacing: 0.06em;
 }
@@ -806,10 +846,12 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   display: none;
 }
 .jr-level.WARNING {
+  background: var(--warn-soft);
   color: var(--warn);
 }
 .jr-level.ERROR,
 .jr-level.CRITICAL {
+  background: var(--bad-soft);
   color: var(--bad);
 }
 .jr-meta {
@@ -829,6 +871,9 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   display: none;
 }
 .jr-module {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 22px;
   max-width: 180px;
   padding: 0 8px;
@@ -838,6 +883,14 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   font: 12px var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.jr-module::before {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
 }
 .jr-module:hover {
   color: var(--accent);
@@ -863,11 +916,32 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   margin-top: 6px;
 }
 .jr-trace summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   color: var(--text-2);
   font-family: var(--font);
   font-size: 12px;
   cursor: pointer;
   list-style: none;
+}
+.jr-tr-label {
+  flex: none;
+}
+.jr-tr-reason {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bad);
+  font: 12px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-trace[open] .jr-tr-reason {
+  white-space: normal;
+}
+.jr-tr-count {
+  color: var(--text-3);
 }
 .jr-trace summary::-webkit-details-marker {
   display: none;
@@ -887,6 +961,134 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   background: var(--bg-subtle);
   color: var(--text-2);
   font: 12px/1.5 var(--mono);
+}
+.jr-tv {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  font: 12px/1.5 var(--mono);
+}
+.jr-tv-raw {
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text-2);
+}
+.jr-copy {
+  align-self: flex-end;
+  min-height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.jr-tv-note {
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-style: italic;
+}
+.jr-frames {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jr-fr {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+.jr-fr.lib {
+  border-left-color: var(--border-strong);
+  color: var(--text-3);
+}
+.jr-fr-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.jr-fr-func {
+  color: var(--text);
+  font-weight: 600;
+}
+.jr-fr.lib .jr-fr-func {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.jr-fr-loc {
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.jr-fr-loc b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.jr-fr-dir {
+  opacity: 0.7;
+}
+.jr-fr-line {
+  color: var(--accent);
+}
+.jr-fr-code {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jr-lib {
+  padding-left: 10px;
+  border-left: 2px dashed var(--border-strong);
+}
+.jr-lib summary {
+  color: var(--text-3);
+  font: 11.5px var(--font);
+  cursor: pointer;
+}
+.jr-lib[open] summary {
+  margin-bottom: 6px;
+}
+.jr-lib .jr-fr {
+  margin-bottom: 6px;
+}
+.jr-exc {
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.jr-exc b {
+  font-weight: 700;
+}
+.jr-card.nav {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.jr-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  color: var(--text-3);
+}
+.jr-nav .jr-link {
+  min-width: 26px;
+  padding: 0 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+.jr-tl-e {
+  color: var(--bad);
+  font-weight: 600;
+}
+.jr-tl-w {
+  color: var(--warn);
+  font-weight: 600;
 }
 .jr-pill {
   position: absolute;

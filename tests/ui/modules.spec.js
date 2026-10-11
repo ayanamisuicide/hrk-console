@@ -259,6 +259,7 @@ test("модуль с ошибкой открывает журнал на сво
   await expect(page.locator("#query-chips")).toContainText("heroku.modules.weather");
   await expect(page.locator("#filter")).toHaveValue("");
   await expect(page.locator("#log .jr-card")).toHaveCount(2);
+  await page.locator("#log .jr-trace summary").click();
   await expect(page.locator("#log .jr-trace pre")).toHaveText("Traceback (most recent call last):");
   await expect(page.locator('#log .jr-card[data-level="ERROR"]')).toHaveClass(/focused/);
 

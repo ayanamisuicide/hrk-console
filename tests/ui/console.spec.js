@@ -206,10 +206,16 @@ for (const width of [390, 1440])
       await expect(page.locator("#logs-view")).toBeVisible();
       await expect(page.locator("#query-chips")).toContainText("время");
       await expect(page.locator("#query-chips")).toContainText("Core");
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth > innerWidth + 1,
+      // При ошибке тест называет элементы, вышедшие за правый край, а не просто «true».
+      const offenders = await page.evaluate(() =>
+        document.documentElement.scrollWidth <= innerWidth + 1
+          ? []
+          : [...document.querySelectorAll("body *")]
+              .filter((node) => node.getBoundingClientRect().right > innerWidth + 1 && node.getClientRects().length)
+              .slice(0, 8)
+              .map((node) => `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ""}.${node.className}`),
       );
-      expect(overflow).toBe(false);
+      expect(offenders).toEqual([]);
     });
   }
 

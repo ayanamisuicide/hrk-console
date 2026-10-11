@@ -24,8 +24,12 @@ function sampleLines(now) {
   for (let i = 0; i < 4; i++) add(3900 - i * 40, "WARNING", "net", "медленный ответ Telegram: 4.2 с");
   add(1500, "ERROR", "updates", "не удалось получить манифест обновлений", [
     "Traceback (most recent call last):",
-    '  File "updates.py", line 88, in fetch',
-    "    await session.get(MANIFEST_URL, timeout=10)",
+    '  File "/opt/heroku/modules/updates.py", line 88, in fetch',
+    "    async with session.get(MANIFEST_URL, timeout=10) as reply:",
+    '  File "/opt/heroku/.venv/lib/python3.12/site-packages/aiohttp/client.py", line 1359, in __aenter__',
+    "    self._resp = await self._coro",
+    '  File "/opt/heroku/.venv/lib/python3.12/site-packages/aiohttp/client.py", line 690, in _request',
+    "    await resp.start(conn)",
     "aiohttp.client_exceptions.ServerTimeoutError: Timeout on reading data from socket",
   ]);
   for (let minutes = 24; minutes > 0; minutes -= 6) add(minutes * 60, "INFO", "Core", "сообщение обработано");
@@ -61,6 +65,7 @@ test("скриншот: журнал", async ({ page }) => {
   await page.goto("/");
   await page.locator('[data-view="logs"]').click();
   await expect(page.locator(".jr-card").first()).toBeVisible();
+  await page.locator('#log .jr-card[data-level="ERROR"] summary').click();
   await page.waitForTimeout(600);
   await page.screenshot({ path: "docs/images/journal.png" });
 });
