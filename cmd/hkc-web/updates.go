@@ -209,9 +209,15 @@ func (c *updateChecker) snapshot() remoteVersion {
 }
 
 // check обновляет сведения о релизе в фоне, не допуская параллельных и слишком частых проверок.
-func (c *updateChecker) check() {
+func (c *updateChecker) check() { c.checkEvery(30 * time.Second) }
+
+// checkNow — проверка по явной просьбе человека (команда /update): интервал короче, чем у
+// фоновых проверок, иначе ответ опирался бы на результат, полученный до выхода релиза.
+func (c *updateChecker) checkNow() { c.checkEvery(5 * time.Second) }
+
+func (c *updateChecker) checkEvery(gap time.Duration) {
 	c.mu.Lock()
-	if c.remote.Checking || time.Since(c.remote.CheckedAt) < 30*time.Second {
+	if c.remote.Checking || time.Since(c.remote.CheckedAt) < gap {
 		c.mu.Unlock()
 		return
 	}

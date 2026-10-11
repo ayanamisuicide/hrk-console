@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,11 +21,40 @@ type fakeBotAPI struct {
 	mu      sync.Mutex
 	calls   []fakeCall
 	updates func() (int, string)
+	// fail — методы, которые Telegram отвергает с ошибкой 400; nextID — номер следующего сообщения.
+	fail   map[string]bool
+	nextID int
+	// failDescription — текст ошибки при отказе метода (по умолчанию «method is not available»).
+	failDescription string
 }
 
 type fakeCall struct {
 	method  string
 	payload map[string]any
+	raw     string
+}
+
+// setFail включает или выключает отказ метода.
+func (f *fakeBotAPI) setFail(method string, fail bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail == nil {
+		f.fail = map[string]bool{}
+	}
+	f.fail[method] = fail
+}
+
+// rawBodies возвращает тела всех вызовов метода (нужно для multipart-загрузок).
+func (f *fakeBotAPI) rawBodies(method string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []string
+	for _, call := range f.calls {
+		if call.method == method {
+			result = append(result, call.raw)
+		}
+	}
+	return result
 }
 
 func (f *fakeBotAPI) byMethod(method string) []map[string]any {
@@ -44,12 +75,28 @@ func newFakeBotAPI(t *testing.T) (*fakeBotAPI, *httptest.Server) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method := r.URL.Path[strings.LastIndexByte(r.URL.Path, '/')+1:]
 		var payload map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&payload)
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &payload)
 		fake.mu.Lock()
-		fake.calls = append(fake.calls, fakeCall{method, payload})
+		fake.calls = append(fake.calls, fakeCall{method, payload, string(body)})
 		updates := fake.updates
+		failing := fake.fail[method]
+		description := fake.failDescription
+		fake.nextID++
+		id := fake.nextID
 		fake.mu.Unlock()
+		if failing {
+			w.WriteHeader(http.StatusBadRequest)
+			if description == "" {
+				description = "Bad Request: method is not available"
+			}
+			body, _ := json.Marshal(map[string]any{"ok": false, "error_code": 400, "description": description})
+			_, _ = w.Write(body)
+			return
+		}
 		switch method {
+		case "sendMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":` + strconv.Itoa(id) + `}}`))
 		case "getMe":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":42,"is_bot":true,"first_name":"Panel","username":"panel_bot"}}`))
 		case "getUpdates":
@@ -79,6 +126,8 @@ func newTestTelegram(t *testing.T, apiURL string, admins ...int64) (*server, *te
 		t.Fatal(err)
 	}
 	control := newTelegramControl(s, telegramConfig{Token: testBotToken, APIBase: apiURL, Admins: admins})
+	// В тестах текст набирается без пауз.
+	control.streamGap = 0
 	s.telegram = control
 	return s, control
 }

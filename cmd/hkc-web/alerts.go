@@ -240,6 +240,15 @@ type telegramSink struct {
 	client  *http.Client
 	// markup добавляет к сообщению кнопки; nil или пустой ответ — сообщение без кнопок.
 	markup func(alertEvent) map[string]any
+	// incidentMarkup даёт кнопки инцидента: действия, пока он открыт, и «Что случилось» после.
+	incidentMarkup func(key string, phase incidentPhase, from, to time.Time) map[string]any
+	// mute глушит уведомления на время; nil — не глушит.
+	mute *muteStore
+	// Живые сообщения об инцидентах (см. telegram_incidents.go).
+	incidentsPath string
+	now           func() time.Time
+	flow          sync.Mutex
+	open          map[string]*openIncident
 }
 
 func (sink *telegramSink) name() string { return "telegram" }
@@ -262,38 +271,6 @@ func telegramText(event alertEvent) string {
 	}
 	text.WriteString("\n<i>" + html.EscapeString(footer) + "</i>")
 	return text.String()
-}
-
-func (sink *telegramSink) send(ctx context.Context, event alertEvent) error {
-	payload := map[string]any{"chat_id": sink.chatID, "text": telegramText(event),
-		"parse_mode": "HTML", "disable_web_page_preview": true}
-	if sink.markup != nil {
-		if keyboard := sink.markup(event); keyboard != nil {
-			payload["reply_markup"] = keyboard
-		}
-	}
-	data, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sink.apiBase+"/bot"+sink.token+"/sendMessage", bytes.NewReader(data))
-	if err != nil {
-		return errors.New("некорректный запрос к Telegram")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := sink.client.Do(req)
-	if err != nil {
-		return redactURLError(err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 200 && res.StatusCode < 300 {
-		return nil
-	}
-	var answer struct {
-		Description string `json:"description"`
-	}
-	_ = json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&answer)
-	if answer.Description != "" {
-		return fmt.Errorf("Telegram HTTP %d: %s", res.StatusCode, strings.ReplaceAll(answer.Description, sink.token, "***"))
-	}
-	return fmt.Errorf("Telegram HTTP %d", res.StatusCode)
 }
 
 // redactURLError убирает адрес из сетевой ошибки: в нём может быть секрет канала.

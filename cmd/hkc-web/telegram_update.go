@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"log"
@@ -58,6 +59,9 @@ func (c *telegramControl) attachUpdateButton() {
 	for _, sink := range c.s.alerts.sinks {
 		if tg, ok := sink.(*telegramSink); ok {
 			tg.markup = c.updateMarkup
+			tg.mute = c.mute
+			tg.incidentMarkup = c.incidentMarkup
+			tg.incidentsPath = incidentsFilePath(c.s.dataDir)
 		}
 	}
 }
@@ -83,7 +87,12 @@ func (c *telegramControl) cmdUpdate(ctx context.Context, chat int64) {
 		c.send(ctx, chat, "Проверка обновлений на этом сервере не настроена.", nil)
 		return
 	}
-	c.s.updates.check()
+	// «Думаю…» на время проверки: она может занять несколько секунд.
+	draft := c.think(ctx, chat)
+	send := func(ctx context.Context, chat int64, text string, keyboard map[string]any) {
+		c.streamTo(ctx, chat, draft, text, keyboard)
+	}
+	c.s.updates.checkNow()
 	// Проверка идёт в фоне (слишком частая просто не запускается); ждём её недолго, чтобы ответить свежими данными.
 	for i := 0; i < 16 && c.s.updates.snapshot().Checking; i++ {
 		time.Sleep(500 * time.Millisecond)
@@ -94,11 +103,11 @@ func (c *telegramControl) cmdUpdate(ctx context.Context, chat int64) {
 	installed := html.EscapeString(overview.Installed.Version)
 	switch {
 	case overview.Running:
-		c.send(ctx, chat, "⏳ <b>Обновление уже идёт</b>\nО результате сообщу здесь.", nil)
+		send(ctx, chat, "⏳ <b>Обновление уже идёт</b>\nО результате сообщу здесь.", nil)
 	case overview.Latest.Error != "" && overview.Latest.Version == "":
-		c.send(ctx, chat, "⚠️ Не удалось проверить обновления: "+html.EscapeString(overview.Latest.Error), nil)
+		send(ctx, chat, "⚠️ Не удалось проверить обновления: "+html.EscapeString(overview.Latest.Error), nil)
 	case !overview.UpdateAvailable:
-		c.send(ctx, chat, "✅ <b>Установлена последняя версия</b>\nhrk-console "+installed, nil)
+		send(ctx, chat, "✅ <b>Установлена последняя версия</b>\nhrk-console "+installed, nil)
 	default:
 		var text strings.Builder
 		fmt.Fprintf(&text, "🔵 <b>Доступна hrk-console %s</b>\nУстановлена: %s", html.EscapeString(overview.Latest.Version), installed)
@@ -108,10 +117,10 @@ func (c *telegramControl) cmdUpdate(ctx context.Context, chat int64) {
 		if len(overview.Blockers) > 0 {
 			blocker := overview.Blockers[0]
 			text.WriteString("\n\n⚠️ " + html.EscapeString(blocker.Text+" "+blocker.Fix))
-			c.send(ctx, chat, text.String(), nil)
+			send(ctx, chat, text.String(), nil)
 			return
 		}
-		c.send(ctx, chat, text.String(), updateKeyboard(overview.Latest.Version))
+		send(ctx, chat, text.String(), updateKeyboard(overview.Latest.Version))
 	}
 }
 
@@ -122,11 +131,19 @@ func (c *telegramControl) editMessage(ctx context.Context, chat, message int64, 
 		if keyboard != nil {
 			payload["reply_markup"] = keyboard
 		}
-		if err := c.api.call(ctx, "editMessageText", payload, nil); err == nil {
+		err := c.api.call(ctx, "editMessageText", payload, nil)
+		if err == nil || isNotModified(err) {
 			return
 		}
 	}
 	c.send(ctx, chat, text, keyboard)
+}
+
+// isNotModified — Telegram отверг правку, потому что текст и кнопки те же. Это не сбой:
+// повторное нажатие «Обновить» без изменений не должно порождать новое сообщение.
+func isNotModified(err error) bool {
+	var apiErr *telegramAPIError
+	return errors.As(err, &apiErr) && apiErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(apiErr.Description), "not modified")
 }
 
 // handleUpdateCallback — нажатие «Обновить до vX».

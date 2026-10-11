@@ -14,9 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"heroku-console/botproc"
 )
 
 // Управление ботом из Telegram. Панель сама опрашивает Bot API (getUpdates), поэтому открытый
@@ -44,6 +43,11 @@ type telegramCommand struct {
 // Один список питает ответ /help, меню команд в Telegram и раздел админки.
 var telegramCommands = []telegramCommand{
 	{Name: "status", Description: "Состояние бота и сервера"},
+	{Name: "logs", Description: "Последние записи журнала"},
+	{Name: "errors", Description: "Что упало: ошибки, сгруппированные"},
+	{Name: "find", Description: "Найти в журнале"},
+	{Name: "mute", Description: "Выключить уведомления на время"},
+	{Name: "unmute", Description: "Включить уведомления"},
 	{Name: "run", Description: "Запустить бота", Action: "start"},
 	{Name: "restart", Description: "Перезапустить бота", Action: "restart", Confirm: true},
 	{Name: "stop", Description: "Остановить бота", Action: "stop", Confirm: true},
@@ -203,11 +207,21 @@ type telegramControl struct {
 	watching   bool
 	updatePoll time.Duration
 	installed  func() string
+	// Анимированные ответы: пауза между шагами (отрицательная — без анимации) и признак того,
+	// что Telegram отверг черновики.
+	streamGap time.Duration
+	draftOff  atomic.Bool
+	// Просмотры журнала в чате, к которым привязаны кнопки «Старее», «Файлом» и т. п.
+	views map[string]*logView
+	// Тишина уведомлений.
+	mute *muteStore
 }
 
 func newTelegramControl(s *server, config telegramConfig) *telegramControl {
 	c := &telegramControl{s: s, config: config, admins: map[int64]bool{}, now: time.Now,
-		wake: make(chan struct{}, 1), pending: map[string]telegramPending{}, state: "off"}
+		wake: make(chan struct{}, 1), pending: map[string]telegramPending{}, state: "off",
+		streamGap: streamDefaultGap * time.Millisecond, views: map[string]*logView{}}
+	c.mute = newMuteStore(muteFilePath(s.dataDir), c.now)
 	for _, id := range config.Admins {
 		c.admins[id] = true
 	}
@@ -429,17 +443,31 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 	}
 	text := strings.TrimSpace(message.Text)
 	private := message.Chat.Type == "private"
+	c.mu.Lock()
+	bot := c.bot
+	c.mu.Unlock()
 	if !strings.HasPrefix(text, "/") {
-		if private {
-			c.send(ctx, message.Chat.ID, "Команды — /help.", nil)
+		// Обычные слова. В группе бот откликается только на обращение по имени: иначе он
+		// принимал бы за команду любую реплику в разговоре людей.
+		if !private {
+			username := ""
+			if bot != nil {
+				username = bot.Username
+			}
+			var mentioned bool
+			if text, mentioned = stripMention(text, username); !mentioned {
+				return
+			}
+		}
+		if it, ok := parseIntent(text); ok {
+			c.handleIntent(ctx, message, it)
 		}
 		return
 	}
-	name := strings.TrimPrefix(strings.Fields(text)[0], "/")
+	fields := strings.Fields(text)
+	name := strings.TrimPrefix(fields[0], "/")
+	args := strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
 	if at := strings.IndexByte(name, '@'); at >= 0 {
-		c.mu.Lock()
-		bot := c.bot
-		c.mu.Unlock()
 		// В группе команда может адресоваться другому боту.
 		if bot != nil && !strings.EqualFold(name[at+1:], bot.Username) {
 			return
@@ -447,22 +475,34 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 		name = name[:at]
 	}
 	name = strings.ToLower(name)
-	switch name {
-	case "start", "help":
-		c.send(ctx, message.Chat.ID, c.helpText(), nil)
-		return
-	case "status":
-		c.send(ctx, message.Chat.ID, c.statusText(), c.appKeyboard())
-		return
-	case "update":
-		c.cmdUpdate(ctx, message.Chat.ID)
-		return
-	case "app":
-		if keyboard := c.appKeyboard(); keyboard != nil {
-			c.send(ctx, message.Chat.ID, "Мини-приложение панели:", keyboard)
-		} else {
-			c.send(ctx, message.Chat.ID, "Мини-приложение не настроено: нужен публичный HTTPS-адрес панели в HKC_TELEGRAM_WEBAPP_URL. Команды работают и без него — /help.", nil)
+	chat := message.Chat.ID
+	// Команды, у которых есть слова-синонимы, идут тем же путём, что и фразы.
+	slash := map[string]intentKind{"start": intentHelp, "help": intentHelp, "status": intentStatus, "update": intentUpdate, "app": intentApp,
+		"logs": intentLogs, "errors": intentErrors, "find": intentSearch, "mute": intentMute, "unmute": intentUnmute}
+	if kind, ok := slash[name]; ok {
+		it, _ := parseIntent(args)
+		if args == "" {
+			it = intent{}
 		}
+		// Слова после команды уточняют её («/logs 30 updates», «/mute 2h»), но вид задаёт сама команда.
+		words := tokenize(normalize(args))
+		it.words = words
+		it.kind = kind
+		fillView(&it, normalize(args))
+		switch kind {
+		case intentErrors:
+			it.level = "ERROR"
+		case intentSearch:
+			it.text = strings.Trim(strings.TrimSpace(args), `"'«»`)
+			if it.text == "" {
+				c.reply(ctx, chat, "Что искать? Например: /find таймаут", nil)
+				return
+			}
+		case intentMute:
+			it.mute, it.muteSet = parseMuteDuration(normalize(args), c.now())
+			it.muteAll = hasStem(words, "совсем", "полностью", "вообще", "all")
+		}
+		c.handleIntent(ctx, message, it)
 		return
 	}
 	for _, command := range telegramCommands {
@@ -470,13 +510,13 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 			continue
 		}
 		if command.Confirm && c.settings().Confirm {
-			c.askConfirm(ctx, message.Chat.ID, *message.From, command)
+			c.askConfirm(ctx, chat, *message.From, command)
 		} else {
-			c.send(ctx, message.Chat.ID, c.execute(*message.From, command.Action), nil)
+			c.reply(ctx, chat, c.execute(*message.From, command.Action), nil)
 		}
 		return
 	}
-	c.send(ctx, message.Chat.ID, "Не знаю команду /"+html.EscapeString(name)+". Список — /help.", nil)
+	c.send(ctx, chat, "Не знаю команду /"+html.EscapeString(name)+". Список — /help.", nil)
 }
 
 // appKeyboard — кнопка открытия мини-приложения под сообщением, если оно настроено.
@@ -515,7 +555,7 @@ func (c *telegramControl) askConfirm(ctx context.Context, chat int64, user tgUse
 		{"text": accept, "callback_data": "ok:" + nonce},
 		{"text": "Отмена", "callback_data": "no:" + nonce},
 	}}}
-	c.send(ctx, chat, question, keyboard)
+	c.reply(ctx, chat, question, keyboard)
 }
 
 func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallback) {
@@ -528,8 +568,24 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallba
 		return
 	}
 	kind, nonce, _ := strings.Cut(callback.Data, ":")
-	if kind == "upd" {
+	switch kind {
+	case "upd":
 		c.handleUpdateCallback(ctx, callback, nonce, answer)
+		return
+	case "st":
+		c.handleStatusCallback(ctx, callback, nonce, answer)
+		return
+	case "lg":
+		c.handleLogCallback(ctx, callback, nonce, answer)
+		return
+	case "mu":
+		c.handleMuteCallback(ctx, callback, nonce, answer)
+		return
+	case "rg":
+		c.handleIncidentCallback(ctx, callback, nonce, answer)
+		return
+	case "ic":
+		c.handleIncidentAction(ctx, callback, nonce, answer)
 		return
 	}
 	c.mu.Lock()
@@ -589,50 +645,27 @@ func capitalize(text string) string {
 
 func (c *telegramControl) helpText() string {
 	var text strings.Builder
-	text.WriteString("<b>Управление Heroku</b>\n")
+	text.WriteString("<b>Управление Heroku</b>\nПишите словами — слэш не нужен:\n")
+	text.WriteString("\n• «статус» — как бот и сервер, с кнопками действий")
+	text.WriteString("\n• «покажи логи», «логи 30», «логи updates» — записи журнала")
+	text.WriteString("\n• «ошибки», «что упало» — ошибки, сгруппированные по причинам")
+	text.WriteString("\n• «найди таймаут» — поиск по всему журналу")
+	text.WriteString("\n• «запусти», «перезапусти», «останови»")
+	if c.settings().Confirm {
+		text.WriteString(" (перезапуск и остановка — с подтверждением: кнопкой или словом «да»)")
+	}
+	text.WriteString("\n• «обнови» — проверить новую версию панели")
+	text.WriteString("\n• «тишина на час», «до утра», «включи уведомления»")
+	text.WriteString("\n\nИ обычные команды: ")
+	var names []string
 	for _, command := range telegramCommands {
 		if command.Name == "app" && c.webAppURL() == "" {
 			continue
 		}
-		fmt.Fprintf(&text, "\n/%s — %s", command.Name, html.EscapeString(strings.ToLower(command.Description[:1])+command.Description[1:]))
-		if command.Confirm && c.settings().Confirm {
-			text.WriteString(" (с подтверждением)")
-		}
+		names = append(names, "/"+command.Name)
 	}
-	return text.String()
-}
-
-// statusText — короткая сводка: процесс, ресурсы сервера и автовосстановление.
-func (c *telegramControl) statusText() string {
-	var text strings.Builder
-	pid := c.s.bot.PID()
-	if pid != 0 {
-		fmt.Fprintf(&text, "🟢 <b>Бот работает</b>\nPID %d · %s", pid, html.EscapeString(botproc.Uptime(pid)))
-	} else {
-		text.WriteString("🔴 <b>Бот остановлен</b>")
-	}
-	c.s.systemMu.RLock()
-	system := c.s.latestSystem
-	c.s.systemMu.RUnlock()
-	if system.Supported && !system.SampledAt.IsZero() {
-		fmt.Fprintf(&text, "\n\nCPU %.0f%% · память %.0f%% · диск %.0f%%", system.CPUPercent,
-			hostPercent(system.MemoryUsed, system.MemoryTotal), hostPercent(system.DiskUsed, system.DiskTotal))
-	}
-	if c.s.operations != nil {
-		state := "выключено"
-		if c.s.operations.watchdogSettings().Enabled {
-			state = "включено"
-			if c.s.watchdog.snapshot().State == "suspended" {
-				state = "приостановлено — бот падал раз за разом"
-			}
-		}
-		text.WriteString("\nАвтовосстановление: " + state)
-	}
-	footer := "hrk-console " + currentVersion().Version
-	if host, err := os.Hostname(); err == nil {
-		footer = host + " · " + footer
-	}
-	text.WriteString("\n<i>" + html.EscapeString(footer) + "</i>")
+	text.WriteString(strings.Join(names, " "))
+	text.WriteString("\n<i>В группе обращайтесь по имени бота: «@имя статус».</i>")
 	return text.String()
 }
 
