@@ -59,7 +59,6 @@ async function mockAdmin(page, telegram) {
       "/api/admin/overview": { users: [], invites: [], bot: { running: true, pid: 1 } },
       "/api/admin/audit": { events: [] },
       "/api/admin/backups": { backups: [] },
-      "/api/admin/config/history": { history: [] },
       "/api/admin/security": { rateLimiter: {}, features: {} },
       "/api/admin/watchdog": { settings: { enabled: true, timeoutSeconds: 180 }, status: { state: "healthy" } },
     };

@@ -42,13 +42,6 @@ async function mockAdmin(page) {
           size: 2048,
         })),
       },
-      "/api/admin/config/history": {
-        history: Array.from({ length: 30 }, (_, index) => ({
-          name: `config-2026-10-10-${index}.json`,
-          createdAt: "2026-10-10T09:00:00Z",
-          size: 1024,
-        })),
-      },
       "/api/admin/config": {
         configured: {
           api_id: true,
@@ -154,12 +147,14 @@ for (const width of [390, 1440])
         .locator("#backup-list")
         .evaluate((el) => el.getBoundingClientRect().height);
       expect(listHeight).toBeLessThanOrEqual(410);
+      // Вкладок две: стрелка с последней возвращает к первой.
       await page.locator("#history-tab-backups").press("ArrowRight");
-      await expect(page.locator("#history-config")).toBeVisible();
-      await expect(page.locator("#history-tab-config")).toBeFocused();
+      await expect(page.locator("#history-audit")).toBeVisible();
+      await expect(page.locator("#history-tab-audit")).toBeFocused();
+      await page.locator("#history-tab-backups").click();
       await page.reload();
       await expect(page.locator("#admin-history")).toBeVisible();
-      await expect(page.locator("#history-config")).toBeVisible();
+      await expect(page.locator("#history-backups")).toBeVisible();
       expect(errors).toEqual([]);
     });
   }

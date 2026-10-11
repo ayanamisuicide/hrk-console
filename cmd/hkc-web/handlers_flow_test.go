@@ -200,7 +200,7 @@ func TestBackupHandlersOverHTTP(t *testing.T) {
 	}
 }
 
-// Настройки бота: удаление ключа, история версий, отказ на неизвестный ключ.
+// Настройки бота: удаление ключа и отказ на неизвестный ключ.
 func TestConfigDeleteAndHistoryOverHTTP(t *testing.T) {
 	f := newFlowServer(t)
 	if err := os.WriteFile(f.configPath(), []byte(`{"api_id": 1, "app_name": "bot"}`), 0o600); err != nil {
@@ -213,12 +213,6 @@ func TestConfigDeleteAndHistoryOverHTTP(t *testing.T) {
 	if strings.Contains(string(data), "app_name") {
 		t.Fatalf("ключ не удалён: %s", data)
 	}
-	history := f.do(t, flowRequest{method: "GET", path: "/api/admin/config/history", admin: true})
-	want(t, "история", history, http.StatusOK)
-	if got, _ := decode(t, history)["history"].([]any); len(got) != 1 {
-		t.Fatalf("история после удаления: %s", history.Body.String())
-	}
-	want(t, "история без токена", f.do(t, flowRequest{method: "GET", path: "/api/admin/config/history"}), http.StatusUnauthorized)
 }
 
 // Бот: состояние, неизвестное действие и защита административных действий. Запуск и остановка

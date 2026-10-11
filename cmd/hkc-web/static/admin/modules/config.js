@@ -1,4 +1,4 @@
-// Проверка настроек без раскрытия секретов, история версий и резервные копии доступа.
+// Проверка настроек без раскрытия секретов и резервные копии доступа.
 // Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
 // Подписки вызываются точкой входа после заполнения состояния страницы.
 export function createConfig(ctx) {
@@ -47,79 +47,6 @@ export function createConfig(ctx) {
     }
   }
 
-  // Рисует версии настроек, сравнение ключей и подтверждаемое восстановление.
-  function renderConfigHistory(history) {
-    const signature = JSON.stringify(history);
-    if (signature === ctx.configHistorySignature) return;
-    ctx.configHistorySignature = signature;
-    const list = ctx.$("#config-history-list");
-    list.replaceChildren();
-    ctx.$("#config-history-empty").hidden = history.length !== 0;
-    for (const version of history) {
-      const row = document.createElement("div");
-      row.className = "backup-row";
-      const info = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = ctx.formatDate(version.createdAt);
-      const detail = document.createElement("small");
-      detail.textContent = `${version.name} · ${(version.size / 1024).toFixed(1)} КБ`;
-      info.append(title, detail);
-      const actions = document.createElement("span");
-      actions.className = "row-actions";
-      const inspect = document.createElement("button");
-      inspect.className = "compact";
-      inspect.textContent = "Сравнить";
-      inspect.addEventListener("click", async () => {
-        try {
-          const diff = await ctx.adminRequest(
-            `/api/admin/config/history/${encodeURIComponent(version.name)}/diff`,
-          );
-          const labels = {
-            added: "будет добавлен",
-            removed: "будет удалён",
-            changed: "будет изменён",
-          };
-          ctx.showNotice(
-            diff.changes?.length
-              ? diff.changes
-                  .map(
-                    (item) =>
-                      `${item.key}: ${labels[item.change] || item.change}`,
-                  )
-                  .join("\n")
-              : "Отличий от текущей конфигурации нет",
-          );
-        } catch (error) {
-          ctx.showNotice(error.message, "error");
-        }
-      });
-      const restore = document.createElement("button");
-      restore.className = "compact";
-      restore.textContent = "Восстановить";
-      restore.addEventListener("click", async () => {
-        if (
-          !(await ctx.confirmAction(
-            "Восстановить конфигурацию?",
-            `Текущая конфигурация сначала будет сохранена. После восстановления ${version.name} перезапустите бота.`,
-          ))
-        )
-          return;
-        try {
-          const result = await ctx.adminRequest(
-            `/api/admin/config/history/${encodeURIComponent(version.name)}/restore`,
-            { method: "POST" },
-          );
-          ctx.showNotice(result.message);
-          await ctx.refresh();
-        } catch (error) {
-          ctx.showNotice(error.message, "error");
-        }
-      });
-      actions.append(inspect, restore);
-      row.append(info, actions);
-      list.append(row);
-    }
-  }
   // Показывает только заполненность параметров и подключает удаление с подтверждением; секретные значения не
   // запрашиваются.
   function renderConfig(data) {
@@ -252,7 +179,6 @@ export function createConfig(ctx) {
 
   return {
     renderBackups,
-    renderConfigHistory,
     renderConfig,
     configPayload,
     previewConfig,

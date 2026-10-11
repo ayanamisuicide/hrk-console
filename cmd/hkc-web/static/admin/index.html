@@ -502,17 +502,7 @@
                 aria-selected="false"
                 tabindex="-1"
               >
-                Копии доступа</button
-              ><button
-                id="history-tab-config"
-                role="tab"
-                type="button"
-                data-history-tab="config"
-                aria-controls="history-config"
-                aria-selected="false"
-                tabindex="-1"
-              >
-                Снимки настроек
+                Копии доступа
               </button>
             </div>
             <section
@@ -585,29 +575,6 @@
               </p>
               <div id="backup-list" class="backup-list"></div>
               <p id="backup-empty" class="empty" hidden>Копий пока нет.</p>
-            </section>
-            <section
-              id="history-config"
-              class="card admin-section"
-              role="tabpanel"
-              aria-labelledby="history-tab-config"
-              hidden
-            >
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">Версии конфигурации</span>
-                  <h2>Снимки настроек</h2>
-                </div>
-                <span class="muted">До 50 версий</span>
-              </div>
-              <p class="backup-note">
-                Автоматические снимки перед изменениями. Сравнение показывает
-                изменённые ключи без их значений.
-              </p>
-              <div id="config-history-list" class="backup-list"></div>
-              <p id="config-history-empty" class="empty" hidden>
-                Снимков конфигурации пока нет.
-              </p>
             </section>
           </section>
 

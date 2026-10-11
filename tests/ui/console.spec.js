@@ -315,9 +315,7 @@ test("админка настраивает автоматическое вос�
           ? { events: [] }
           : path === "/api/admin/backups"
             ? { backups: [] }
-            : path === "/api/admin/config/history"
-              ? { history: [] }
-              : path === "/api/admin/security"
+            : path === "/api/admin/security"
                 ? { rateLimiter: {}, features: {} }
                 : path === "/api/admin/watchdog"
                   ? { settings, status: { state: settings.enabled ? "waiting" : "disabled", message: "Процесс бота остановлен.", remainingSeconds: settings.enabled ? 120 : 0, attempts: 2, lastAttempt: "2026-10-10T09:00:00Z", lastResult: "Heroku запущен заново." } }
@@ -370,9 +368,7 @@ test("настройки проверяются предварительно б�
           ? { events: [] }
           : path === "/api/admin/backups"
             ? { backups: [] }
-            : path === "/api/admin/config/history"
-              ? { history: [] }
-              : path === "/api/admin/security"
+            : path === "/api/admin/security"
                 ? { rateLimiter: {}, features: {} }
                 : path === "/api/admin/watchdog"
                   ? { settings: { enabled: true, timeoutSeconds: 180 }, status: { state: "healthy" } }

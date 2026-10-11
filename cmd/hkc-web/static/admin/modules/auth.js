@@ -40,7 +40,6 @@ export function createAuth(ctx) {
         data,
         audit,
         backups,
-        configHistory,
         security,
         watchdog,
         alerts,
@@ -50,7 +49,6 @@ export function createAuth(ctx) {
         ctx.adminRequest("/api/admin/overview"),
         ctx.adminRequest("/api/admin/audit"),
         ctx.adminRequest("/api/admin/backups"),
-        ctx.adminRequest("/api/admin/config/history"),
         ctx.adminRequest("/api/admin/security"),
         ctx.adminRequest("/api/admin/watchdog"),
         // Уведомления необязательны: ошибка этого запроса не должна ломать остальную админку.
@@ -70,7 +68,6 @@ export function createAuth(ctx) {
       ctx.renderInvites(data.invites);
       ctx.renderAudit(audit.events || []);
       ctx.renderBackups(backups.backups || []);
-      ctx.renderConfigHistory(configHistory.history || []);
       ctx.renderSecurity(security);
       ctx.renderWatchdog(watchdog);
       ctx.renderAlerts(alerts);

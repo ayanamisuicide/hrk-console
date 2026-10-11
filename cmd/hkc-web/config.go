@@ -225,8 +225,7 @@ func (s *server) adminConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"configured": configured, "path": s.configPath()})
 }
 
-// updateConfig сначала сохраняет предыдущую версию, затем меняет только переданные параметры под одной
-// блокировкой.
+// updateConfig меняет только переданные параметры под одной блокировкой.
 func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -239,9 +238,6 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Lock()
 	values, err := s.readConfigLocked()
-	if err == nil {
-		err = s.snapshotConfigLocked()
-	}
 	if err == nil {
 		for key, value := range encoded {
 			values[key] = value
@@ -257,7 +253,7 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, actionResponse{OK: true, Message: "настройки сохранены; для применения перезапустите бота"})
 }
 
-// deleteConfigKey сохраняет предыдущую версию перед удалением разрешённого параметра.
+// deleteConfigKey удаляет разрешённый параметр.
 func (s *server) deleteConfigKey(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
@@ -270,9 +266,6 @@ func (s *server) deleteConfigKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Lock()
 	values, err := s.readConfigLocked()
-	if err == nil {
-		err = s.snapshotConfigLocked()
-	}
 	if err == nil {
 		delete(values, key)
 		err = s.writeConfigLocked(values)

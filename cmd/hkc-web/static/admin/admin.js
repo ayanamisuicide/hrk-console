@@ -41,7 +41,6 @@ ctx.invitesSignature = "";
 
 ctx.backupsSignature = "";
 
-ctx.configHistorySignature = "";
 
 ctx.securitySignature = "";
 

@@ -24,7 +24,7 @@ export function createNavigation(ctx) {
     history: [
       "05 / ИСТОРИЯ",
       "История и восстановление",
-      "События, резервные копии доступа и версии настроек.",
+      "События и резервные копии доступа.",
     ],
     updates: [
       "06 / ОБНОВЛЕНИЯ",
@@ -51,7 +51,7 @@ export function createNavigation(ctx) {
   }
 
   function setHistoryTab(tab, focus = false) {
-    if (!["audit", "backups", "config"].includes(tab)) tab = "audit";
+    if (!["audit", "backups"].includes(tab)) tab = "audit";
     document.querySelectorAll("[data-history-tab]").forEach((button) => {
       const active = button.dataset.historyTab === tab;
       button.setAttribute("aria-selected", String(active));
