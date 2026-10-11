@@ -172,6 +172,25 @@ test("закладки сохраняются и показываются отд
   await expect(page.locator("#log .jr-message")).toHaveText("b");
 });
 
+test("«Очистить» скрывает записи до текущего момента, файл не меняется, чип возвращает всё", async ({ page }) => {
+  const api = await openJournal(page, [line(0), line(1, "ERROR", "Core", "ошибка")]);
+  await expect(page.locator("#log .jr-card")).toHaveCount(2);
+  await page.locator("#clear-log").click();
+  await expect(page.locator("#log .jr-card")).toHaveCount(0);
+  await expect(page.locator(".log-empty")).toContainText("Экран очищен");
+  await expect(page.locator("#query-chips")).toContainText("очищено");
+  // Очистка запоминается между перезагрузками страницы.
+  await page.reload();
+  await page.locator('[data-view="logs"]').click();
+  await expect(page.locator("#query-chips")).toContainText("очищено");
+  await expect(page.locator("#log .jr-card")).toHaveCount(0);
+  // Запросы к серверу несут нижнюю границу времени, а не удаляют данные.
+  expect(api.calls.some((call) => call.startsWith("/api/logs/entries") && call.includes("from="))).toBe(true);
+  await page.locator("#query-chips .jr-chip button").click();
+  await expect(page.locator("#query-chips .jr-chip")).toHaveCount(0);
+  await expect(page.locator("#log .jr-card")).toHaveCount(2);
+});
+
 test("страница журнала не уходит за ширину экрана на телефоне", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await openJournal(page, [line(0), line(1, "ERROR", "updates", "длинное сообщение ".repeat(12))]);

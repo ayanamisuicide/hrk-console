@@ -11,6 +11,7 @@ const WINDOW_MS = 6 * 3600 * 1000;
 const BUCKET_MS = 5 * 60 * 1000;
 const LEVEL_LABEL = { ALL: "все", INFO: "инфо", WARNING: "предупреждения", ERROR: "ошибки" };
 const BOOKMARKS_KEY = "hkc-log-bookmarks-v2";
+const CLEARED_KEY = "hkc-log-cleared-at";
 
 export function createJournal(ctx) {
   const S = {
@@ -18,6 +19,7 @@ export function createJournal(ctx) {
     module: "",
     text: "",
     range: null, // { from, to|null } — null у to означает «до сейчас»
+    clearedAt: 0, // «Очистить»: записи старше этого момента скрыты, файл не меняется
     live: true,
     bookmarksMode: false,
     entries: [],
@@ -42,6 +44,7 @@ export function createJournal(ctx) {
   let statsTimer = 0;
   let restartsAt = 0;
   let statsBusy = false;
+  let statsAgain = false;
 
   const $ = (selector) => ctx.$(selector);
   const el = (tag, cls, text) => {
@@ -66,6 +69,16 @@ export function createJournal(ctx) {
     return p;
   }
 
+  // Нижняя граница показа: выбранный диапазон и момент очистки, что позже.
+  const lowerBound = () => Math.max(S.range ? Math.floor(S.range.from) : 0, S.clearedAt);
+
+  // Добавляет к запросу временные границы.
+  function applyRange(p) {
+    const from = lowerBound();
+    if (from) p.set("from", String(from));
+    if (S.range && S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
+  }
+
   function entryText(e) {
     return `${e.message}\n${e.module}\n${(e.trace || []).join("\n")}`.toLowerCase();
   }
@@ -80,8 +93,8 @@ export function createJournal(ctx) {
   }
 
   function inRange(e) {
-    if (!S.range) return true;
-    return e.ts >= S.range.from && (S.range.to == null || e.ts <= S.range.to);
+    if (e.ts < lowerBound()) return false;
+    return !S.range || S.range.to == null || e.ts <= S.range.to;
   }
 
   const entryKey = (e) => `${e.ts}|${e.id}`;
@@ -249,6 +262,9 @@ export function createJournal(ctx) {
     if (S.bookmarksMode) {
       title.textContent = "Закладок пока нет";
       detail.textContent = "Отметьте звёздочкой запись в ленте — она появится здесь.";
+    } else if (S.clearedAt && !S.text && !S.module && S.level === "ALL" && !S.range) {
+      title.textContent = "Экран очищен";
+      detail.textContent = "Новые записи появятся здесь автоматически. Файл журнала не изменён.";
     } else if (hasFilters()) {
       title.textContent = "Ничего не найдено";
       detail.textContent = "Измените запрос или выберите другой диапазон на шкале.";
@@ -260,7 +276,7 @@ export function createJournal(ctx) {
     return box;
   }
 
-  const hasFilters = () => S.level !== "ALL" || S.module || S.text || S.range;
+  const hasFilters = () => S.level !== "ALL" || S.module || S.text || S.range || S.clearedAt;
 
   // Полная перерисовка: только при смене запроса, когда лента всё равно заменяется целиком.
   function renderAll() {
@@ -361,10 +377,7 @@ export function createJournal(ctx) {
       } else {
         const p = baseParams();
         p.set("limit", String(PAGE));
-        if (S.range) {
-          p.set("from", String(Math.floor(S.range.from)));
-          if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
-        }
+        applyRange(p);
         const data = await ctx.request(`/api/logs/entries?${p}`);
         if (seq !== S.seq) return;
         S.entries = data.entries || [];
@@ -396,10 +409,7 @@ export function createJournal(ctx) {
       p.set("limit", String(PAGE));
       p.set("before", String(oldest));
       p.set("skip", String(skip));
-      if (S.range) {
-        p.set("from", String(Math.floor(S.range.from)));
-        if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
-      }
+      applyRange(p);
       const data = await ctx.request(`/api/logs/entries?${p}`);
       if (seq !== S.seq) return;
       const older = data.entries || [];
@@ -481,8 +491,8 @@ export function createJournal(ctx) {
       const last = S.entries.at(-1);
       const p = baseParams();
       p.set("limit", "500");
-      if (last) p.set("from", String(last.ts));
-      else if (S.range) p.set("from", String(Math.floor(S.range.from)));
+      if (last) p.set("from", String(Math.max(last.ts, S.clearedAt)));
+      else applyRange(p);
       const data = await ctx.request(`/api/logs/entries?${p}`);
       if (seq !== S.seq) return;
       const fetched = data.entries || [];
@@ -583,13 +593,26 @@ export function createJournal(ctx) {
     refreshRestarts();
   }
 
+  // Обновляет шкалу. Если запрос изменился, пока ответ был в пути, устаревший ответ отбрасывается
+  // и запрос повторяется: иначе шкала держала бы данные прежнего фильтра до следующего опроса.
   async function refreshStats() {
-    if (!S.timeline || statsBusy) return;
+    if (!S.timeline) return;
+    if (statsBusy) {
+      statsAgain = true;
+      return;
+    }
     statsBusy = true;
+    const p = baseParams();
+    p.set("bucket", String(BUCKET_MS));
+    const key = p.toString();
     try {
-      const p = baseParams();
-      p.set("bucket", String(BUCKET_MS));
-      const stats = await ctx.request(`/api/logs/stats?${p}`);
+      const stats = await ctx.request(`/api/logs/stats?${key}`);
+      const fresh = baseParams();
+      fresh.set("bucket", String(BUCKET_MS));
+      if (fresh.toString() !== key) {
+        statsAgain = true;
+        return;
+      }
       S.timeline.setStats(stats);
       S.modules = Object.entries(stats.modules || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       renderQuick();
@@ -597,6 +620,10 @@ export function createJournal(ctx) {
       /* Шкала необязательна: лента работает без неё. */
     } finally {
       statsBusy = false;
+      if (statsAgain) {
+        statsAgain = false;
+        refreshStats();
+      }
     }
   }
 
@@ -702,6 +729,9 @@ export function createJournal(ctx) {
     if (S.range) {
       const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
       chip("время", `${t(S.range.from)}–${S.range.to == null ? "сейчас" : t(S.range.to)}`, () => (S.range = null));
+    }
+    if (S.clearedAt) {
+      chip("очищено", `до ${new Date(S.clearedAt).toTimeString().slice(0, 5)}`, () => setCleared(0));
     }
     document.querySelectorAll(".filter-chip").forEach((button) => {
       const active = button.dataset.level === S.level;
@@ -812,6 +842,20 @@ export function createJournal(ctx) {
     markSelected();
   }
 
+  /* ---------- Очистка экрана ---------- */
+
+  // Скрывает записи старше момента at (0 — показать всё). Файл журнала на сервере не меняется.
+  function setCleared(at) {
+    S.clearedAt = at;
+    try {
+      if (at) localStorage.setItem(CLEARED_KEY, String(at));
+      else localStorage.removeItem(CLEARED_KEY);
+    } catch (_) {
+      /* Без хранилища очистка действует до перезагрузки страницы. */
+    }
+    queryChanged();
+  }
+
   /* ---------- Режимы, закладки, экспорт ---------- */
 
   function syncModeButtons() {
@@ -840,10 +884,7 @@ export function createJournal(ctx) {
       for (let page = 0; page < 40; page++) {
         const p = baseParams();
         p.set("limit", "500");
-        if (S.range) {
-          p.set("from", String(Math.floor(S.range.from)));
-          if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
-        }
+        applyRange(p);
         if (before) {
           p.set("before", String(before));
           p.set("skip", String(skip));
@@ -984,6 +1025,15 @@ export function createJournal(ctx) {
       /* Повреждённые закладки игнорируются. */
     }
 
+    try {
+      S.clearedAt = Number(localStorage.getItem(CLEARED_KEY)) || 0;
+    } catch (_) {
+      /* Без хранилища журнал показывается целиком. */
+    }
+    $("#clear-log").addEventListener("click", () => {
+      setCleared(clock());
+      ctx.showNotice("Экран очищен — файл журнала не изменён");
+    });
     dom.input.addEventListener("input", () => onInput(false));
     dom.input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -992,6 +1042,7 @@ export function createJournal(ctx) {
       } else if (event.key === "Backspace" && !dom.input.value) {
         // Пустое поле: Backspace снимает последний чип, как в привычных строках поиска.
         if (S.range) S.range = null;
+        else if (S.clearedAt) setCleared(0);
         else if (S.module) S.module = "";
         else if (S.level !== "ALL") S.level = "ALL";
         else return;
