@@ -58,6 +58,15 @@ export function parseTrace(lines) {
   return { ok, blocks, summary: last ? last.exception.raw : "" };
 }
 
+// Где упало: «updates.py:88 в fetch» — последний кадр своего кода (или любой последний).
+export function traceOrigin(lines) {
+  const frames = parseTrace(lines).blocks.flatMap((b) => b.frames);
+  const frame = [...frames].reverse().find((f) => f.own) || frames.at(-1);
+  if (!frame) return "";
+  const base = frame.file.split(/[\\/]/).pop();
+  return `${base}:${frame.line}${frame.func ? ` в ${frame.func}` : ""}`;
+}
+
 // Короткая подпись для сложенного traceback: «ValueError: плохо».
 export function traceSummary(lines) {
   const parsed = parseTrace(lines);

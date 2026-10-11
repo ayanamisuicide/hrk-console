@@ -770,10 +770,10 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   position: relative;
   display: grid;
   flex: none;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 2px 14px;
-  padding: 10px 14px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 12px;
+  padding: 11px 14px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--border-strong);
   border-radius: 10px;
@@ -791,12 +791,12 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
   background: var(--accent-soft);
 }
 .jr-card[data-level="WARNING"] {
-  border-left-color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border));
 }
 .jr-card[data-level="ERROR"],
 .jr-card[data-level="CRITICAL"] {
-  border-left-color: var(--bad);
-  background: linear-gradient(90deg, var(--bad-soft), transparent 40%), var(--surface);
+  border-color: color-mix(in srgb, var(--bad) 50%, var(--border));
+  background: linear-gradient(90deg, var(--bad-soft), transparent 55%), var(--surface);
 }
 .jr-card[data-level="DEBUG"] {
   border-left-color: transparent;
@@ -822,13 +822,121 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
 .no-time .jr-time {
   display: none;
 }
-.no-time .jr-card {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
 .jr-body {
   min-width: 0;
-  font: 12.5px/1.55 var(--mono);
+  padding-top: 5px;
+  font: 13.5px/1.5 var(--font);
   overflow-wrap: anywhere;
+}
+.jr-card[data-level="ERROR"] .jr-message,
+.jr-card[data-level="CRITICAL"] .jr-message,
+.jr-card[data-level="WARNING"] .jr-message {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.jr-where {
+  margin-top: 2px;
+  color: var(--text-3);
+  font: 12px var(--mono);
+}
+/* Плитка уровня: форма и цвет читаются раньше текста. */
+.jr-ico {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+.jr-ico svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jr-ico.err {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.jr-ico.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-card[data-level="INFO"] .jr-ico,
+.jr-card[data-level="DEBUG"] .jr-ico {
+  width: 26px;
+  height: 26px;
+  margin: 4px 4px 0;
+  border-radius: 7px;
+}
+.jr-card[data-level="INFO"] .jr-ico svg,
+.jr-card[data-level="DEBUG"] .jr-ico svg {
+  width: 15px;
+  height: 15px;
+}
+/* Сводка над шкалой: четыре плитки, три из них — быстрые фильтры. */
+.jr-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.jr-tile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  align-content: center;
+  gap: 0 9px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+}
+button.jr-tile:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.jr-tile > span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.jr-tile b {
+  order: -1;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-tile small {
+  flex-basis: 100%;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.jr-tile small:empty {
+  display: none;
+}
+.jr-tile.err b {
+  color: var(--bad);
+}
+.jr-tile.warn b {
+  color: var(--warn);
+}
+.jr-tile.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .jr-message mark {
   border-radius: 3px;
@@ -1239,17 +1347,15 @@ button[aria-pressed="true"]:not(.segmented button):not(.mods-legend button) {
     box-shadow: var(--shadow-lg);
   }
   .jr-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .jr-card .jr-time {
-    grid-column: 1;
+    grid-template-columns: 34px minmax(0, 1fr);
   }
   .jr-card .jr-meta {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 2;
+    flex-wrap: wrap;
   }
-  .jr-card .jr-body {
-    grid-column: 1 / -1;
+  .jr-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 /* На телефоне снизу закреплена навигация (68px): шторка встаёт над ней, а не под неё. */

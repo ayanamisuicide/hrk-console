@@ -376,8 +376,10 @@ test("переходы между ошибками: стрелки, клавиш
   await openJournal(page, lines);
   const navMessage = page.locator("#log .jr-card.nav .jr-message");
   // Итоги по окну на шкале.
-  await expect(page.locator("#tl-info .jr-tl-e")).toHaveText("3 ошибки");
-  await expect(page.locator("#tl-info .jr-tl-w")).toHaveText("1 предупреждение");
+  await expect(page.locator('#jr-stats [data-tile="err"] b')).toHaveText("3");
+  await expect(page.locator('#jr-stats [data-tile="warn"] b')).toHaveText("1");
+  await expect(page.locator('#jr-stats [data-tile="total"] b')).toHaveText("6");
+  await expect(page.locator('#jr-stats [data-tile="mod"] b')).toHaveText("net");
 
   // От середины ленты: «назад» берёт ближайшую выше, повторное — ещё выше, «]» возвращает.
   await page.locator("#err-prev").click();

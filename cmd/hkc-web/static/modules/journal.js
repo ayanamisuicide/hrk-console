@@ -3,7 +3,7 @@
 // постранично назад, новые записи добавляются потоком SSE. Исходный файл бота не изменяется.
 // Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
 import { createLogTimeline } from "./log-timeline.js";
-import { renderTrace, traceSummary } from "./log-trace.js";
+import { renderTrace, traceOrigin, traceSummary } from "./log-trace.js";
 
 const PAGE = 200;
 // В памяти и в DOM держится ограниченное число записей; это не лимит файла на сервере.
@@ -36,7 +36,8 @@ export function createJournal(ctx) {
     opened: false,
     modules: [],
     timeline: null,
-    buckets: [], // последняя сводка шкалы: по ней считаются итоги и переходы между ошибками
+    buckets: [], // последняя сводка шкалы: по ней считаются переходы между ошибками
+    tiles: { buckets: [] }, // сводка для плиток: без фильтра по уровню, иначе «Ошибки» обнулили бы «Предупреждения»
     bookmarks: [],
     lastDay: "",
   };
@@ -184,15 +185,16 @@ export function createJournal(ctx) {
       card.classList.add("fresh");
       card.addEventListener("animationend", () => card.classList.remove("fresh"), { once: true });
     }
+    card.append(levelIcon(e.level));
     const time = el("time", "jr-time", hms(e));
     time.addEventListener("pointerenter", () => (time.title = `${e.time} · ${ago(e.ts)}`));
-    card.append(time);
     const body = el("div", "jr-body");
-    const level = el("span", `jr-level ${e.level}`, e.level === "INFO" || e.level === "DEBUG" ? "" : e.level === "WARNING" ? "WARN" : e.level);
     const message = el("span", "jr-message");
     highlight(message, e.message);
-    body.append(level, message);
+    body.append(message);
     if (e.trace?.length) {
+      const origin = traceOrigin(e.trace);
+      if (origin) body.append(el("div", "jr-where", origin));
       const trace = el("details", "jr-trace");
       const reason = traceSummary(e.trace);
       const summary = el("summary");
@@ -223,7 +225,7 @@ export function createJournal(ctx) {
     }
     card.append(body);
     const meta = el("div", "jr-meta");
-    meta.append(el("span", "jr-rep"));
+    meta.append(time, el("span", "jr-rep"));
     if (e.module) {
       const module = el("button", "jr-module", e.module);
       module.type = "button";
@@ -260,6 +262,30 @@ export function createJournal(ctx) {
       mark.setAttribute("aria-pressed", "true");
     } else mark.setAttribute("aria-pressed", "false");
     return card;
+  }
+
+  const SVG = "http://www.w3.org/2000/svg";
+  const ICON_PATHS = {
+    err: ["M12 3.5 2.8 19.5h18.4z", "M12 10v4.2", "M12 17.2v.01"],
+    warn: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 7.5V12l3 2"],
+    info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 11v5", "M12 8v.01"],
+  };
+
+  // Плитка слева в карточке: форма и цвет сразу говорят об уровне, не читая текста.
+  function levelIcon(level) {
+    const kind = level === "ERROR" || level === "CRITICAL" ? "err" : level === "WARNING" ? "warn" : "info";
+    const tile = el("span", `jr-ico ${kind}`);
+    tile.title = level;
+    tile.setAttribute("aria-hidden", "true");
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    for (const d of ICON_PATHS[kind]) {
+      const path = document.createElementNS(SVG, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    tile.append(svg);
+    return tile;
   }
 
   // Цвет точки у имени модуля: один модуль всегда одного оттенка, соседние различимы с первого взгляда.
@@ -664,8 +690,25 @@ export function createJournal(ctx) {
       }
       S.timeline.setStats(stats);
       S.buckets = stats.buckets || [];
-      renderTimelineInfo();
       S.modules = Object.entries(stats.modules || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      // Плиткам нужны все уровни: при фильтре «Ошибки» счётчик предупреждений не должен падать в ноль.
+      S.tiles = { buckets: S.buckets, modules: S.modules };
+      const levelAtStart = S.level;
+      if (S.level !== "ALL") {
+        const all = baseParams();
+        all.delete("level");
+        all.set("bucket", String(BUCKET_MS));
+        try {
+          const wide = await ctx.request(`/api/logs/stats?${all}`);
+          if (S.level === levelAtStart) {
+            S.tiles = { buckets: wide.buckets || [], modules: Object.entries(wide.modules || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])) };
+          }
+        } catch (_) {
+          /* Без второго запроса плитки покажут числа отфильтрованной выборки. */
+        }
+      }
+      renderTimelineInfo();
+      renderStats();
       renderQuick();
     } catch (_) {
       /* Шкала необязательна: лента работает без неё. */
@@ -791,6 +834,7 @@ export function createJournal(ctx) {
     });
     $("#tl-reset").hidden = !S.range;
     renderTimelineInfo();
+    renderStats();
     dom.moduleSelect.value = S.module;
     $("#preset-delete").disabled = !$("#preset-select").value;
   }
@@ -808,15 +852,38 @@ export function createJournal(ctx) {
       from = S.range.from - BUCKET_MS;
       to = S.range.to ?? Infinity;
     } else info.append("Последние 6 часов");
+    S.tileRange = { from, to };
+  }
+
+  // Итоги окна или выбранного диапазона для плиток сверху.
+  function renderStats() {
+    const box = $("#jr-stats");
+    if (!box) return;
+    const { from = -Infinity, to = Infinity } = S.tileRange || {};
     let errors = 0;
     let warnings = 0;
-    for (const b of S.buckets) {
+    let total = 0;
+    for (const b of S.tiles.buckets) {
       if (b.t < from || b.t > to) continue;
       errors += b.err;
       warnings += b.warn;
+      total += b.err + b.warn + b.info;
     }
-    if (errors) info.append(" · ", el("b", "jr-tl-e", `${errors} ${plural(errors, "ошибка", "ошибки", "ошибок")}`));
-    if (warnings) info.append(" · ", el("b", "jr-tl-w", `${warnings} ${plural(warnings, "предупреждение", "предупреждения", "предупреждений")}`));
+    const set = (name, value, sub = "") => {
+      const tile = box.querySelector(`[data-tile="${name}"]`);
+      tile.querySelector("b").textContent = value;
+      const small = tile.querySelector("small");
+      if (small) small.textContent = sub;
+      return tile;
+    };
+    set("err", errors).classList.toggle("on", S.level === "ERROR");
+    set("warn", warnings).classList.toggle("on", S.level === "WARNING");
+    set("total", total);
+    const top = (S.tiles.modules || S.modules)[0];
+    const mod = set("mod", top ? top[0] : "—", top ? `${top[1]} ${plural(top[1], "запись", "записи", "записей")}` : "");
+    mod.dataset.module = top ? top[0] : "";
+    mod.classList.toggle("on", !!top && S.module === top[0]);
+    mod.disabled = !top;
   }
 
   /* ---------- Переходы между ошибками ---------- */
@@ -1193,6 +1260,13 @@ export function createJournal(ctx) {
       queryChanged();
     });
     $("#export-logs").addEventListener("click", exportLogs);
+    // Плитки сводки — быстрые фильтры; повторное нажатие снимает фильтр.
+    $('#jr-stats [data-tile="err"]').addEventListener("click", () => setQuery({ level: S.level === "ERROR" ? "ALL" : "ERROR" }));
+    $('#jr-stats [data-tile="warn"]').addEventListener("click", () => setQuery({ level: S.level === "WARNING" ? "ALL" : "WARNING" }));
+    $('#jr-stats [data-tile="mod"]').addEventListener("click", (event) => {
+      const name = event.currentTarget.dataset.module;
+      if (name) setQuery({ module: S.module === name ? "" : name });
+    });
     $("#err-prev").addEventListener("click", () => jumpError(-1));
     $("#err-next").addEventListener("click", () => jumpError(1));
     $("#tl-now").addEventListener("click", jumpNow);
