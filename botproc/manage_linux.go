@@ -61,6 +61,8 @@ func (m *Manager) Start() StartResult {
 	if venv == "" {
 		return StartResult{Err: fmt.Errorf("виртуальное окружение .venv или venv не найдено")}
 	}
+	// Вывод прошлого запуска сохраняется рядом: после падения видно, чем бот закончил.
+	_ = os.Rename(m.StartupLog, m.StartupLog+".1")
 	out, err := os.Create(m.StartupLog)
 	if err != nil {
 		return StartResult{Err: err}

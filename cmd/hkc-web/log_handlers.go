@@ -140,11 +140,12 @@ func (s *server) logEntries(w http.ResponseWriter, r *http.Request) {
 	if parsed, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && parsed > 0 && parsed <= 500 {
 		q.Limit = parsed
 	}
+	q.Hide = s.hideFor(r)
 	q.BeforeTS = queryInt64(r.URL.Query().Get("before"))
 	if skip, err := strconv.Atoi(r.URL.Query().Get("skip")); err == nil && skip > 0 {
 		q.BeforeSkip = skip
 	}
-	entries, more := logfeed.Search(s.bot.LogFile, q)
+	entries, more := logfeed.Search(s.journal(), q)
 	if entries == nil {
 		entries = []logfeed.Entry{}
 	}
@@ -156,6 +157,7 @@ func (s *server) logEntries(w http.ResponseWriter, r *http.Request) {
 func (s *server) logStats(w http.ResponseWriter, r *http.Request) {
 	q := logQuery(r)
 	q.Mask = s.logMask(r)
+	q.Hide = s.hideFor(r)
 	to, from := q.To, q.From
 	if to == 0 {
 		to = time.Now().UnixMilli()
@@ -177,7 +179,7 @@ func (s *server) logStats(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UnixMilli()
 	from = from / bucket * bucket
 	to = (to + bucket - 1) / bucket * bucket
-	stats := logfeed.Collect(s.bot.LogFile, from, to, bucket, q)
+	stats := logfeed.Collect(s.journal(), from, to, bucket, q)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"buckets": stats.Buckets, "modules": stats.Modules, "total": stats.Total,
 		"bucketMs": bucket, "now": now,
@@ -199,7 +201,7 @@ func (s *server) logContext(w http.ResponseWriter, r *http.Request) {
 		n = parsed
 	}
 	older, newer := count(v.Get("before"), n), count(v.Get("after"), n)
-	entries, index, ok := logfeed.AroundN(s.bot.LogFile, queryInt64(v.Get("ts")), v.Get("id"), older, newer)
+	entries, index, ok := logfeed.AroundN(s.journal(), queryInt64(v.Get("ts")), v.Get("id"), older, newer)
 	if !ok {
 		http.Error(w, "запись не найдена: возможно, файл уже ротирован", http.StatusNotFound)
 		return
@@ -231,7 +233,7 @@ func (s *server) logProblems(w http.ResponseWriter, r *http.Request) {
 	if to > 0 {
 		to1 = to + 1 // to в запросе включительно, как у /api/logs/entries
 	}
-	problems := logfeed.Problems(s.bot.LogFile, from, to1, q, limit)
+	problems := logfeed.Problems(s.journal(), from, to1, q, limit)
 	for i := range problems {
 		last := []logfeed.Entry{problems[i].Last}
 		maskEntries(last, mask)
@@ -272,12 +274,24 @@ func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 	mask := s.logMask(r)
+	// Запись, скрытая правилом журнала, уходит с пометкой hidden: браузер покажет её, только если
+	// включён показ скрытых. Правила читаются на каждую запись — их можно менять, не переподключаясь.
 	sendEntry := func(e logfeed.Entry) {
+		hidden := false
+		if hide := s.logRules.hider(); hide != nil {
+			hidden = hide(e)
+		}
 		maskEntries([]logfeed.Entry{e}, mask)
-		payload, _ := json.Marshal(e)
+		payload, _ := json.Marshal(struct {
+			logfeed.Entry
+			Hidden bool `json:"hidden,omitempty"`
+		}{e, hidden})
 		fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
+	// Журнал панели (вывод процесса, действия, события) пишет сама панель: его записи приходят сразу.
+	panel, unsubscribe := s.panelLog.subscribe()
+	defer unsubscribe()
 	sendState()
 
 	ticker := time.NewTicker(15 * time.Second)
@@ -303,6 +317,8 @@ func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 			if e, done := group.Flush(); done {
 				sendEntry(e)
 			}
+		case e := <-panel:
+			sendEntry(e)
 		case <-ticker.C:
 			sendState()
 		}

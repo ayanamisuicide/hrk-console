@@ -53,6 +53,10 @@ type server struct {
 	botActionMu  sync.Mutex
 	watchdog     watchdogMonitor
 	telegram     *telegramControl
+	// panelLog — журнал панели (вывод процесса, действия, события); logRules — правила
+	// журнала: скрыть шумные записи, уведомить о повторяющейся ошибке.
+	panelLog *panelJournal
+	logRules *logRuleStore
 }
 
 // statusResponse — Состояние бота для браузера; поля JSON сохраняют контракт API.
@@ -138,8 +142,14 @@ func main() {
 	s.sessions.persistTo(filepath.Join(s.dataDir, "sessions.json"))
 	s.wsl = detectWSL()
 	s.timeline = &eventTimeline{}
+	s.panelLog = newPanelJournal(filepath.Join(s.dataDir, panelJournalName))
+	s.logRules = openLogRules(filepath.Join(s.dataDir, "log-rules.json"))
+	s.audit.onAdd = s.recordPanelAction
 	s.alerts = newAlertDispatcher(os.Getenv, s.operations.alertSettings)
-	s.alerts.record = s.timeline.add
+	s.alerts.record = func(event alertEvent) {
+		s.timeline.add(event)
+		s.recordPanelEvent(event)
+	}
 	s.notifier = newStateNotifier(s.alerts)
 	s.notifier.observe(s.bot.PID() != 0)
 	if channels := s.alerts.channels(); s.alerts.active() {
@@ -153,6 +163,9 @@ func main() {
 	go s.runModuleAlerts(context.Background())
 	go s.prober.run(context.Background())
 	go s.runWatchdog(context.Background())
+	go s.runProcessOutput(context.Background())
+	go s.runLogArchive(nil)
+	go s.runLogRuleAlerts(context.Background())
 	telegramConfig := readTelegramConfig(os.Getenv)
 	for _, issue := range []string{telegramConfig.AdminsIssue, telegramConfig.WebAppIssue} {
 		if issue != "" {

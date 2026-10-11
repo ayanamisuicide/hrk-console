@@ -16,6 +16,8 @@ const QUICK_MODULES = 4;
 // Окружение записи: сколько соседей грузить сразу и сколько добавлять кнопками «Раньше» и «Позже».
 const CONTEXT_STEP = 20;
 const CONTEXT_MAX = 200;
+// Подписи модулей журнала панели в карточках; фильтр по-прежнему module:process и module:panel.
+const SOURCE_LABELS = { process: "вывод процесса", panel: "панель" };
 const CLEARED_KEY = "hkc-log-cleared-at";
 
 export function createJournal(ctx) {
@@ -52,6 +54,10 @@ export function createJournal(ctx) {
     fromProblems: false, // запись открыта из списка частых ошибок: в панели есть «назад»
     problemsLevel: "ERROR",
     pendingEntry: null, // запись из ссылки: откроется после первой загрузки
+    selectedEntry: null,
+    rules: [], // правила журнала: скрыть группу записей, уведомить о повторах
+    showHidden: false, // показать записи, скрытые правилами
+    levels: null, // уровни журнала модулей, заданные из панели
   };
   let dom = null;
   let reloadTimer = 0;
@@ -80,6 +86,7 @@ export function createJournal(ctx) {
     if (S.level !== "ALL") p.set("level", S.level);
     if (S.module) p.set("module", S.module);
     if (S.text) p.set("q", S.text);
+    if (S.showHidden) p.set("hidden", "1");
     return p;
   }
 
@@ -191,6 +198,8 @@ export function createJournal(ctx) {
     const e = group.entries[0];
     const card = el("div", "jr-card");
     card.dataset.level = e.level;
+    // Записи журнала панели: вывод процесса бота и действия и события самой панели.
+    if (e.module === "process" || e.module === "panel") card.dataset.source = e.module;
     card.tabIndex = 0;
     card._group = group;
     if (fresh && motionOk()) {
@@ -239,7 +248,7 @@ export function createJournal(ctx) {
     const meta = el("div", "jr-meta");
     meta.append(time, el("span", "jr-rep"));
     if (e.module) {
-      const module = el("button", "jr-module", e.module);
+      const module = el("button", "jr-module", SOURCE_LABELS[e.module] || e.module);
       module.type = "button";
       module.style.setProperty("--mh", String(moduleHue(e.module)));
       module.title = "Показать только этот модуль";
@@ -559,6 +568,8 @@ export function createJournal(ctx) {
       return;
     }
     if (S.bookmarksMode) return;
+    // Запись, скрытая правилом журнала, не попадает ни в ленту, ни на шкалу, пока скрытые не показаны.
+    if (e.hidden && !S.showHidden) return;
     if (matchesBase(e)) S.timeline?.bump(e.ts, e.level);
     if (!matchesBase(e) || !inRange(e)) return;
     if (!S.live) {
@@ -670,6 +681,9 @@ export function createJournal(ctx) {
   // Первая загрузка после входа.
   async function loadHistory() {
     S.opened = true;
+    loadRules();
+    loadLevels();
+    loadArchive();
     await reload();
     startTimeline();
     await openPendingEntry();
@@ -1031,6 +1045,7 @@ export function createJournal(ctx) {
 
   function openDrawer(e, { fromProblems = false } = {}) {
     S.selected = entryKey(e);
+    S.selectedEntry = e;
     S.fromProblems = fromProblems;
     markSelected();
     showDrawer("entry");
@@ -1053,9 +1068,15 @@ export function createJournal(ctx) {
       toggleBookmark(e);
       openDrawer(e, { fromProblems });
     });
+    if (canControl() && e.ts) {
+      act("Скрыть такие", async () => {
+        if (await saveRule({ ts: e.ts, id: e.id, hide: true }, "Такие записи скрыты. Показать их — кнопка «Скрытые» под поиском")) closeDrawer();
+      });
+    }
     drawer.append(drawerHead(`${e.module || "Запись"} · ${hms(e)}`, fromProblems), full);
     if (e.trace?.length) drawer.append(renderTrace(e.trace));
     drawer.append(kv, actions);
+    if (e.module && e.module !== "panel" && e.module !== "process") drawer.append(levelSection(e.module));
     const list = el("div", "jr-ctx");
     drawer.append(el("div", "jr-ctx-title", "Окружение"), list);
     writeUrl();
@@ -1170,7 +1191,9 @@ export function createJournal(ctx) {
     const note = el("div", "jr-prob-note", `Одинаковые записи за ${span}; числа в тексте не в счёт. Клик показывает их в ленте.`);
     const list = el("div", "jr-prob");
     list.append(el("div", "jr-ctx-note", "Загрузка…"));
-    drawer.append(tabs, note, list);
+    drawer.append(tabs, note);
+    if (S.rules.length) drawer.append(rulesList());
+    drawer.append(list);
     const p = new URLSearchParams({ level: S.problemsLevel, from: String(from), limit: "30" });
     if (to) p.set("to", String(to));
     const level = S.problemsLevel;
@@ -1209,15 +1232,18 @@ export function createJournal(ctx) {
     }
     const first = new Date(problem.first).toTimeString().slice(0, 5);
     meta.append(`последняя ${ago(e.ts)}${problem.count > 1 ? ` · первая в ${first}` : ""}`);
-    body.append(meta);
-    const open = el("button", "jr-link", "Последняя ›");
+    const rules = ruleControls(problem);
+    body.append(meta, rules);
+    const open = el("button", "jr-link jr-prob-open", "Последняя ›");
     open.type = "button";
     open.title = "Открыть последнюю запись";
     open.addEventListener("click", (event) => {
       event.stopPropagation();
       openDrawer(e, { fromProblems: true });
     });
-    row.append(count, body, open);
+    // «Последняя» стоит в одной строке с действиями правил, перед формой уведомления.
+    rules.insertBefore(open, rules.querySelector(".jr-rule-form"));
+    row.append(count, body);
     const show = () => {
       // Ровно эти записи: уровень, модуль и устойчивая часть сообщения. Диапазон не трогаем.
       setQuery({ level: e.level === "WARNING" ? "WARNING" : "ERROR", module: e.module || "", text: problem.query || "" });
@@ -1233,6 +1259,242 @@ export function createJournal(ctx) {
       }
     });
     return row;
+  }
+
+  /* ---------- Правила, уровни модулей, архив ---------- */
+
+  const canControl = () => ctx.role !== "viewer";
+  const ruleFor = (key) => S.rules.find((rule) => rule.key === key);
+  const hiddenRules = () => S.rules.filter((rule) => rule.hide);
+  const LEVEL_LABELS = { DEBUG: "подробно", INFO: "обычно", WARNING: "только предупреждения", ERROR: "только ошибки" };
+
+  async function postJSON(path, body) {
+    return ctx.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }
+
+  async function loadRules() {
+    try {
+      const data = await ctx.request("/api/logs/rules");
+      S.rules = data.rules || [];
+    } catch (_) {
+      /* Без правил лента показывается целиком. */
+    }
+    renderControls();
+  }
+
+  async function loadLevels() {
+    try {
+      S.levels = await ctx.request("/api/logs/levels");
+    } catch (_) {
+      S.levels = { available: false, reason: "Уровни недоступны", levels: [] };
+    }
+    renderControls();
+  }
+
+  async function loadArchive() {
+    try {
+      const data = await ctx.request("/api/logs/archive");
+      const span = $("#archive-span");
+      if (data.enabled && data.firstTs) {
+        const since = new Date(data.firstTs).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+        span.textContent = `· история с ${since}`;
+        span.title = `Сжатый архив журнала: ${data.files} ${plural(data.files, "копия", "копии", "копий")}, ${(data.bytes / 1048576).toFixed(1)} МБ из ${Math.round(data.limitBytes / 1048576)} МБ, не старше ${data.limitDays} дн.`;
+        span.hidden = false;
+      } else span.hidden = true;
+    } catch (_) {
+      /* Подпись об архиве необязательна. */
+    }
+  }
+
+  // Сохраняет правило группы и перечитывает ленту: скрытое пропадает из записей и счётчиков сразу.
+  async function saveRule(body, notice) {
+    try {
+      const data = await postJSON("/api/logs/rules", body);
+      S.rules = data.rules || [];
+      renderControls();
+      if (notice) ctx.showNotice(notice);
+      queryChanged();
+      return data.rule;
+    } catch (error) {
+      ctx.showNotice(error.message, "error");
+      return null;
+    }
+  }
+
+  async function removeRule(rule) {
+    try {
+      const data = await ctx.request(`/api/logs/rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" });
+      S.rules = data.rules || [];
+      renderControls();
+      queryChanged();
+    } catch (error) {
+      ctx.showNotice(error.message, "error");
+    }
+  }
+
+  async function setLevel(logger, level, minutes) {
+    try {
+      const result = await postJSON("/api/logs/levels", { logger, level, minutes });
+      ctx.showNotice(result.message);
+    } catch (error) {
+      ctx.showNotice(error.message, "error");
+    }
+    await loadLevels();
+    // Мост в процессе бота применяет уровень раз в секунду: через пару секунд видно «применён».
+    setTimeout(loadLevels, 1600);
+  }
+
+  const untilText = (until) => (until ? `до ${new Date(until * 1000).toTimeString().slice(0, 5)}` : "до отмены");
+
+  // Под фильтрами: переключатель «Скрытые» и строка переопределённых уровней модулей.
+  function renderControls() {
+    const toggle = $("#hidden-toggle");
+    const hidden = hiddenRules();
+    toggle.hidden = hidden.length === 0 && !S.showHidden;
+    toggle.textContent = `${S.showHidden ? "Скрытые показаны" : "Скрытые"} · ${hidden.length}`;
+    toggle.setAttribute("aria-pressed", String(S.showHidden));
+    toggle.title = hidden.length
+      ? `Правила скрывают: ${hidden.map((rule) => `${rule.module || "—"}: ${rule.label}`).join("; ")}`
+      : "Скрывающих правил нет";
+    const row = $("#jr-levels");
+    row.replaceChildren();
+    const levels = S.levels?.levels || [];
+    if (levels.length) {
+      row.append(el("span", "jr-levels-title", "Уровни модулей"));
+      for (const item of levels) {
+        const chip = el("span", `jr-level-chip${item.applied ? "" : " pending"}`);
+        chip.title = item.applied ? "Применён в процессе бота" : S.levels.reason || "Ждёт применения в процессе бота";
+        chip.append(el("b", "", item.logger), document.createTextNode(` ${LEVEL_LABELS[item.level] || item.level} · ${untilText(item.until)}`));
+        if (canControl()) {
+          const x = el("button", "", "×");
+          x.type = "button";
+          x.setAttribute("aria-label", `Вернуть уровень ${item.logger} по умолчанию`);
+          x.addEventListener("click", () => setLevel(item.logger, "", 0));
+          chip.append(x);
+        }
+        row.append(chip);
+      }
+      if (!S.levels.available && S.levels.reason) row.append(el("span", "jr-levels-note", S.levels.reason));
+    }
+    row.hidden = !levels.length;
+  }
+
+  // Блок «Уровень журнала модуля» в деталях записи: подробнее на время или тише до отмены.
+  function levelSection(module) {
+    const box = el("div", "jr-lvl");
+    box.append(el("div", "jr-ctx-title", "Уровень журнала модуля"));
+    const current = (S.levels?.levels || []).find((item) => item.logger === module);
+    box.append(el("p", "jr-lvl-note", current
+      ? `${module}: ${LEVEL_LABELS[current.level] || current.level} · ${untilText(current.until)}${current.applied ? "" : " · ждёт применения"}`
+      : `${module} пишет в журнал как настроено в боте. Можно включить подробный журнал на время или приглушить шум.`));
+    if (!canControl()) return box;
+    const level = el("select");
+    level.setAttribute("aria-label", "Уровень");
+    for (const [value, label] of [["DEBUG", "Подробно (DEBUG)"], ["INFO", "Обычно (INFO)"], ["WARNING", "Только предупреждения"], ["ERROR", "Только ошибки"]]) level.add(new Option(label, value));
+    level.value = current?.level || "DEBUG";
+    const span = el("select");
+    span.setAttribute("aria-label", "Срок");
+    for (const [value, label] of [["15", "на 15 минут"], ["60", "на час"], ["1440", "на сутки"], ["0", "до отмены"]]) span.add(new Option(label, value));
+    const apply = el("button", "compact", "Применить");
+    apply.type = "button";
+    apply.addEventListener("click", () => setLevel(module, level.value, Number(span.value)).then(() => S.selected && reopenSelected()));
+    const row = el("div", "jr-lvl-row");
+    row.append(level, span, apply);
+    if (current) {
+      const reset = el("button", "compact", "По умолчанию");
+      reset.type = "button";
+      reset.addEventListener("click", () => setLevel(module, "", 0).then(() => S.selected && reopenSelected()));
+      row.append(reset);
+    }
+    box.append(row);
+    if (S.levels && !S.levels.available && S.levels.reason) box.append(el("p", "jr-lvl-note warn", S.levels.reason));
+    return box;
+  }
+
+  // Перерисовывает открытую запись (после смены уровня или правила).
+  function reopenSelected() {
+    const entry = S.selectedEntry;
+    if (entry && S.drawerMode === "entry") openDrawer(entry, { fromProblems: S.fromProblems });
+  }
+
+  // Строка правил в «Частых ошибках»: скрыть или показать группу и уведомлять о повторах.
+  function ruleControls(problem) {
+    const box = el("div", "jr-rule");
+    const rule = ruleFor(problem.key);
+    if (rule?.hide) box.append(el("span", "jr-rule-badge", "скрыто"));
+    if (rule?.notify) box.append(el("span", "jr-rule-badge bell", `уведомлять: ${rule.notify.count} за ${rule.notify.minutes} мин`));
+    if (!canControl()) return box;
+    const hide = el("button", "jr-link", rule?.hide ? "Показать" : "Скрыть");
+    hide.type = "button";
+    hide.title = rule?.hide ? "Вернуть такие записи в ленту и счётчики" : "Убрать такие записи из ленты, счётчиков и Telegram";
+    hide.addEventListener("click", (event) => {
+      event.stopPropagation();
+      saveRule({ key: problem.key, hide: !rule?.hide, notify: rule?.notify || null }, rule?.hide ? "Записи снова видны" : "Такие записи скрыты. Показать их — кнопка «Скрытые» под поиском").then(() => S.drawerMode === "problems" && openProblems());
+    });
+    const bell = el("button", "jr-link", rule?.notify ? "Уведомления…" : "Уведомлять…");
+    bell.type = "button";
+    bell.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = box.querySelector(".jr-rule-form");
+      if (open) open.remove();
+      else box.append(notifyForm(problem, rule));
+    });
+    box.append(hide, bell);
+    return box;
+  }
+
+  // Все правила журнала — в том числе для групп, которых нет в текущем окне.
+  function rulesList() {
+    const box = el("details", "jr-rules");
+    box.append(el("summary", "", `Правила журнала · ${S.rules.length}`));
+    for (const rule of S.rules) {
+      const row = el("div", "jr-rules-row");
+      const text = el("span", "jr-rules-text");
+      text.append(el("b", "", rule.module || "—"), document.createTextNode(` ${rule.label}`));
+      const badges = [rule.hide ? "скрыто" : "", rule.notify ? `уведомлять: ${rule.notify.count} за ${rule.notify.minutes} мин` : ""].filter(Boolean).join(" · ");
+      row.append(text, el("small", "", badges));
+      if (canControl()) {
+        const x = el("button", "jr-x", "×");
+        x.type = "button";
+        x.title = "Удалить правило";
+        x.setAttribute("aria-label", "Удалить правило");
+        x.addEventListener("click", () => removeRule(rule).then(() => openProblems()));
+        row.append(x);
+      }
+      box.append(row);
+    }
+    return box;
+  }
+
+  function notifyForm(problem, rule) {
+    const form = el("form", "jr-rule-form");
+    form.addEventListener("click", (event) => event.stopPropagation());
+    const count = el("input");
+    count.type = "number";
+    count.min = "1";
+    count.max = "1000";
+    count.value = String(rule?.notify?.count || 5);
+    count.setAttribute("aria-label", "Сколько раз");
+    const minutes = el("input");
+    minutes.type = "number";
+    minutes.min = "1";
+    minutes.max = "1440";
+    minutes.value = String(rule?.notify?.minutes || 10);
+    minutes.setAttribute("aria-label", "За сколько минут");
+    const save = el("button", "compact primary", "Сохранить");
+    save.type = "submit";
+    form.append("Если повторится", count, "раз за", minutes, "мин", save);
+    if (rule?.notify) {
+      const off = el("button", "compact", "Выключить");
+      off.type = "button";
+      off.addEventListener("click", () => saveRule({ key: problem.key, hide: !!rule.hide, notify: null }, "Уведомление выключено").then(() => openProblems()));
+      form.append(off);
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveRule({ key: problem.key, hide: !!rule?.hide, notify: { count: Number(count.value), minutes: Number(minutes.value) } }, "Уведомление включено: придёт туда же, куда остальные уведомления панели").then(() => openProblems());
+    });
+    return form;
   }
 
   /* ---------- Адрес страницы ---------- */
@@ -1278,6 +1540,7 @@ export function createJournal(ctx) {
     const to = Number(p.get("to")) || 0;
     S.range = from ? { from, to: to > from ? to : null } : null;
     S.bookmarksMode = false;
+    S.showHidden = p.get("hidden") === "1";
     S.live = !S.range || S.range.to == null;
     S.pendingEntry = null;
     const entry = (p.get("entry") || "").match(/^(\d+)~(.+)$/);
@@ -1589,6 +1852,11 @@ export function createJournal(ctx) {
       if (name) setQuery({ module: S.module === name ? "" : name });
     });
     $("#problems-open").addEventListener("click", () => (S.drawerMode === "problems" ? closeDrawer() : openProblems()));
+    $("#hidden-toggle").addEventListener("click", () => {
+      S.showHidden = !S.showHidden;
+      renderControls();
+      queryChanged();
+    });
     dom.backdrop.addEventListener("click", closeDrawer);
     $("#jr-expand").addEventListener("click", () => {
       S.compactHold = true;
@@ -1661,7 +1929,11 @@ export function createJournal(ctx) {
     statsTimer = setInterval(() => {
       if (!ctx.authenticated || ctx.currentView !== "logs" || document.hidden) return;
       refreshStats();
-      if (Date.now() - restartsAt > 60000) refreshRestarts();
+      if (S.levels?.levels?.length) loadLevels();
+      if (Date.now() - restartsAt > 60000) {
+        refreshRestarts();
+        loadArchive();
+      }
     }, 10000);
   }
 

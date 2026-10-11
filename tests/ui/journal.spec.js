@@ -8,11 +8,11 @@ test.afterEach(async ({ page }) => {
 });
 
 // Подменяет API панели. Возвращает управление фикстурой журнала и потоком.
-async function openJournal(page, lines, { stats, stream } = {}) {
+async function openJournal(page, lines, { stats, stream, role = "operator", levelsAvailable = true } = {}) {
   const errors = [];
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
-  const api = createJournalApi(lines);
+  const api = createJournalApi(lines, { levelsAvailable });
   await page.route("**/api/**", async (route) => {
     const url = route.request().url();
     const path = new URL(url).pathname;
@@ -25,12 +25,12 @@ async function openJournal(page, lines, { stats, stream } = {}) {
       api.calls.push(`${path}`);
       return route.fulfill({ contentType: "application/json", body: JSON.stringify(stats(api)) });
     }
-    const journal = api.handle(url);
+    const journal = api.handle(url, { method: route.request().method(), body: route.request().postData() });
     if (journal !== undefined)
       return route.fulfill({ status: journal === null ? 404 : 200, contentType: "application/json", body: JSON.stringify(journal ?? {}) });
     const data =
       path === "/api/auth/me"
-        ? { username: "tester", role: "operator" }
+        ? { username: "tester", role }
         : path === "/api/status"
           ? { running: true, pid: 1, uptime: "1ч", logReady: true }
           : {};
@@ -445,7 +445,7 @@ test("частые ошибки: группы со счётчиком, клик 
   await expect(rows).toHaveCount(2);
 
   // «Последняя» открывает запись, «‹ Частые ошибки» возвращает список.
-  await rows.first().locator(".jr-link").click();
+  await rows.first().locator(".jr-prob-open").click();
   await expect(page.locator("#log-drawer .jr-full")).toContainText("через 13 с");
   await page.locator("#log-drawer .jr-back").click();
   await expect(rows).toHaveCount(2);
@@ -583,4 +583,95 @@ test("шторка на телефоне: заголовок виден, зат�
   await page.mouse.click(195, 40);
   await expect(page.locator("#log-drawer")).toBeHidden();
   await expect(page.locator("#log-backdrop")).toBeHidden();
+});
+
+test("правила: «Скрыть» убирает группу из ленты, «Скрытые» показывает её, правило удаляется из списка", async ({ page }) => {
+  const api = await openJournal(page, recentLines(Date.now()));
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  await expect(page.locator("#hidden-toggle")).toBeHidden();
+  await page.locator("#problems-open").click();
+  const timeouts = page.locator("#log-drawer .jr-prob-row", { hasText: "таймаут" });
+  await timeouts.locator(".jr-rule .jr-link", { hasText: "Скрыть" }).click();
+  await expect(page.locator("#log .jr-card", { hasText: "таймаут" })).toHaveCount(0);
+  await expect(page.locator("#hidden-toggle")).toHaveText("Скрытые · 1");
+  await expect(timeouts.locator(".jr-rule-badge")).toHaveText("скрыто");
+  await expect(page.locator('#jr-stats [data-tile="err"] b')).toHaveText("1");
+
+  await page.locator("#hidden-toggle").click();
+  await expect(page.locator("#log .jr-card", { hasText: "таймаут" })).toHaveCount(4);
+  await expect(page).toHaveURL(/hidden=1/);
+  await page.locator("#hidden-toggle").click();
+  await expect(page.locator("#log .jr-card", { hasText: "таймаут" })).toHaveCount(0);
+
+  // Уведомление для той же группы, затем удаление правила целиком из списка правил.
+  await timeouts.locator(".jr-rule .jr-link", { hasText: "Уведомл" }).click();
+  await timeouts.locator(".jr-rule-form input").first().fill("3");
+  await timeouts.locator(".jr-rule-form button", { hasText: "Сохранить" }).click();
+  await expect(timeouts.locator(".jr-rule-badge.bell")).toContainText("3 за 10 мин");
+  expect(api.rules[0]).toMatchObject({ hide: true, notify: { count: 3, minutes: 10 } });
+  await page.locator("#log-drawer .jr-rules summary").click();
+  await page.locator("#log-drawer .jr-rules-row .jr-x").click();
+  await expect(page.locator("#log-drawer .jr-rules")).toHaveCount(0);
+  await expect(page.locator("#log .jr-card", { hasText: "таймаут" })).toHaveCount(4);
+  await expect(page.locator("#hidden-toggle")).toBeHidden();
+});
+
+test("«Скрыть такие» в деталях записи и пометка hidden у записи из потока", async ({ page }) => {
+  const now = Date.now();
+  const lines = recentLines(now);
+  const fresh = { id: "s1", ts: now - 1000, time: localStamp(now - 1000), level: "WARNING", module: "net", message: "медленный ответ", hidden: true };
+  await openJournal(page, lines, { stream: () => `event: state\ndata: {"alive":true}\n\ndata: ${JSON.stringify(fresh)}\n\n` });
+  await expect(page.locator("#log .jr-card").first()).toBeVisible();
+  // Запись из потока с пометкой hidden не появляется в ленте.
+  await page.waitForTimeout(300);
+  await expect(page.locator("#log .jr-card", { hasText: "медленный ответ" })).toHaveCount(1);
+  await page.locator("#log .jr-card", { hasText: "медленный ответ" }).click();
+  await page.locator("#log-drawer .jr-acts button", { hasText: "Скрыть такие" }).click();
+  await expect(page.locator("#log-drawer")).toBeHidden();
+  await expect(page.locator("#log .jr-card", { hasText: "медленный ответ" })).toHaveCount(0);
+  await expect(page.locator("#hidden-toggle")).toHaveText("Скрытые · 1");
+});
+
+test("уровень журнала модуля: применить из деталей, строка уровней, снятие; недоступный мост объясняется", async ({ page }) => {
+  await openJournal(page, recentLines(Date.now()), { levelsAvailable: false });
+  await page.locator("#log .jr-card", { hasText: "медленный ответ" }).click();
+  const section = page.locator("#log-drawer .jr-lvl");
+  await expect(section).toContainText("net пишет в журнал как настроено в боте");
+  await expect(section.locator(".jr-lvl-note.warn")).toContainText("перезапустите бота");
+  await section.locator("select").first().selectOption("WARNING");
+  await section.locator("select").nth(1).selectOption("60");
+  await section.locator("button", { hasText: "Применить" }).click();
+  const chip = page.locator("#jr-levels .jr-level-chip");
+  await expect(chip).toContainText("net только предупреждения · до");
+  await expect(page.locator("#log-drawer .jr-lvl-note").first()).toContainText("только предупреждения");
+  await chip.locator("button").click();
+  await expect(page.locator("#jr-levels")).toBeHidden();
+});
+
+test("наблюдатель видит правила и уровни, но не меняет их", async ({ page }) => {
+  await openJournal(page, recentLines(Date.now()), { role: "viewer" });
+  await page.locator("#log .jr-card", { hasText: "медленный ответ" }).click();
+  await expect(page.locator("#log-drawer .jr-acts button", { hasText: "Скрыть такие" })).toHaveCount(0);
+  await expect(page.locator("#log-drawer .jr-lvl select")).toHaveCount(0);
+  await page.locator("#problems-open").click();
+  await expect(page.locator("#log-drawer .jr-prob-row").first()).toBeVisible();
+  await expect(page.locator("#log-drawer .jr-rule .jr-link", { hasText: "Скрыть" })).toHaveCount(0);
+});
+
+test("записи журнала панели: вывод процесса и действия панели отмечены, архив подписан", async ({ page }) => {
+  const now = Date.now();
+  await openJournal(page, [
+    `${localStamp(now - 120e3)} [INFO] panel: Перезапуск бота · anya`,
+    `${localStamp(now - 60e3)} [ERROR] process: RuntimeError: Event loop is closed`,
+    "Traceback (most recent call last):",
+    '  File "/opt/heroku/heroku/main.py", line 9, in main',
+    "RuntimeError: Event loop is closed",
+  ]);
+  const process = page.locator('#log .jr-card[data-source="process"]');
+  await expect(process.locator(".jr-module")).toHaveText("вывод процесса");
+  await expect(process.locator(".jr-where")).toHaveText("main.py:9 в main");
+  await expect(page.locator('#log .jr-card[data-source="panel"] .jr-module')).toHaveText("панель");
+  await page.locator('#log .jr-card[data-source="process"] .jr-module').click();
+  await expect(page.locator("#query-chips")).toContainText("module:process");
+  await expect(page.locator("#archive-span")).toContainText("история с");
 });

@@ -88,6 +88,41 @@ class BridgeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["loopAt"], heartbeat)
         self.assertGreater(data["sampledAt"] - data["loopAt"], 180)
 
+    async def test_log_levels_from_panel_apply_expire_and_restore(self):
+        import logging
+        quiet, loud = logging.getLogger("hkc.test.quiet"), logging.getLogger("hkc.test.loud")
+        quiet.setLevel(logging.NOTSET)
+        loud.setLevel(logging.WARNING)
+        now = 1_000_000.0
+        pathlib.Path(self.monitor.levels_path).write_text(json.dumps({"levels": {
+            "hkc.test.quiet": {"level": "WARNING", "until": 0},
+            "hkc.test.loud": {"level": "debug", "until": now + 60},
+            "": {"level": "ERROR"},
+            "hkc.test.bad": {"level": "LOUD"},
+        }}), encoding="utf-8")
+        with patch("hkc_modules_bridge.time.time", return_value=now):
+            self.monitor.apply_levels()
+            self.monitor.write()
+        self.assertEqual(quiet.level, logging.WARNING)
+        self.assertEqual(loud.level, logging.DEBUG)
+        data = json.loads(pathlib.Path(self.monitor.path).read_text(encoding="utf-8"))
+        self.assertIn("levels", data["features"])
+        self.assertEqual(sorted(data["logLevels"]), ["hkc.test.loud", "hkc.test.quiet"])
+        # Бот сам перезаписал уровень — следующий проход возвращает заданный панелью.
+        quiet.setLevel(logging.INFO)
+        with patch("hkc_modules_bridge.time.time", return_value=now + 1):
+            self.monitor.apply_levels()
+        self.assertEqual(quiet.level, logging.WARNING)
+        # Срок вышел — исходный уровень возвращается.
+        with patch("hkc_modules_bridge.time.time", return_value=now + 61):
+            self.monitor.apply_levels()
+        self.assertEqual(loud.level, logging.WARNING)
+        # Файл удалён — снимаются все переопределения.
+        os.remove(self.monitor.levels_path)
+        self.monitor.apply_levels()
+        self.assertEqual(quiet.level, logging.NOTSET)
+        self.assertEqual(self.monitor.levels_applied, {})
+
     async def test_expected_external_download_failure_and_success(self):
         manager = self.manager
         class LoaderMod:

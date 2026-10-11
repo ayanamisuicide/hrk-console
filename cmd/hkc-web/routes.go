@@ -73,6 +73,12 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/logs/stats", s.authorize(s.logStats))
 	mux.HandleFunc("GET /api/logs/context", s.authorize(s.logContext))
 	mux.HandleFunc("GET /api/logs/problems", s.authorize(s.logProblems))
+	mux.HandleFunc("GET /api/logs/rules", s.authorize(s.listLogRules))
+	mux.HandleFunc("POST /api/logs/rules", s.authorizeControl(s.saveLogRule))
+	mux.HandleFunc("DELETE /api/logs/rules/{id}", s.authorizeControl(s.deleteLogRule))
+	mux.HandleFunc("GET /api/logs/levels", s.authorize(s.listLogLevels))
+	mux.HandleFunc("POST /api/logs/levels", s.authorizeControl(s.setLogLevel))
+	mux.HandleFunc("GET /api/logs/archive", s.authorize(s.logArchive))
 	mux.HandleFunc("GET /api/logs/stream", s.authorize(s.logStream))
 	mux.HandleFunc("POST /api/bot/{action}", s.authorizeControl(s.action))
 

@@ -25,8 +25,11 @@ type modulesSnapshot struct {
 	SampledAt float64       `json:"sampledAt"`
 	LoopAt    float64       `json:"loopAt"`
 	Modules   []moduleEntry `json:"modules"`
-	Status    string        `json:"status"`
-	Message   string        `json:"message"`
+	// Features и LogLevels пишет мост: что он умеет и какие уровни логгеров сейчас применены.
+	Features  []string                   `json:"features,omitempty"`
+	LogLevels map[string]logLevelSetting `json:"logLevels,omitempty"`
+	Status    string                     `json:"status"`
+	Message   string                     `json:"message"`
 }
 
 // Снимок принадлежит конкретному процессу: старые зелёные статусы после рестарта

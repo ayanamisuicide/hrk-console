@@ -1,6 +1,7 @@
 package logfeed
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"strings"
@@ -15,21 +16,38 @@ const reverseBlock = 256 * 1024
 // процесс. Записи приходят без ID: его считает тот, кому запись понадобилась (см. seal).
 // Строки записи — срезы одного блока: кто оставляет запись себе, копирует её через detach,
 // иначе блок остаётся в памяти. Результат совпадает с прямым разбором в обратном порядке.
+// Сжатая копия из архива (.gz) распаковывается в память целиком и читается так же.
 func eachEntryBackwards(path string, block int, yield func(Entry) bool) {
+	if strings.HasSuffix(path, ".gz") {
+		data, err := readArchive(path)
+		if err != nil {
+			return
+		}
+		entriesBackwardsAt(bytes.NewReader(data), int64(len(data)), block, yield)
+		return
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	if err != nil || info.Size() == 0 {
+	if err != nil {
+		return
+	}
+	entriesBackwardsAt(f, info.Size(), block, yield)
+}
+
+// entriesBackwardsAt — разбор с конца для любого источника с произвольным доступом.
+func entriesBackwardsAt(f io.ReaderAt, size int64, block int, yield func(Entry) bool) {
+	if size == 0 {
 		return
 	}
 	if block <= 0 {
 		block = reverseBlock
 	}
 	var (
-		pos   = info.Size()
+		pos   = size
 		carry []byte   // начало строки, которая продолжается в предыдущем блоке
 		cont  []string // продолжения записи в обратном порядке
 		buf   = make([]byte, block)

@@ -213,6 +213,9 @@ type Query struct {
 	BeforeSkip int
 	Limit      int
 
+	// Hide, если задан, исключает записи, скрытые правилами журнала.
+	Hide func(Entry) bool
+
 	// Mask, если задан, прячет секреты в тексте записи. Поиск по Text тогда видит только то,
 	// что видит читатель: иначе подбор подстроки по «есть ли совпадение» раскрыл бы скрытое.
 	Mask func(string) string
@@ -245,6 +248,9 @@ func (q Query) Match(e Entry) bool {
 // модуль — так считается список модулей для выбора.
 func (q Query) matchSoft(e Entry, withModule bool) bool {
 	if len(q.Levels) > 0 && !levelIn(q.Levels, e.Level) {
+		return false
+	}
+	if q.Hide != nil && q.Hide(e) {
 		return false
 	}
 	if withModule && q.Module != "" && e.Module != q.Module {
@@ -329,35 +335,32 @@ func levelIn(levels []string, level string) bool {
 }
 
 // Search возвращает до Limit записей, подходящих под условия, в хронологическом
-// порядке, и признак того, что более старые тоже есть. Читает файлы от новых к
+// порядке, и признак того, что более старые тоже есть. Читает журнал от новых записей к
 // старым и останавливается, набрав нужное число.
-func Search(path string, q Query) (entries []Entry, hasMore bool) {
+func Search(j Journal, q Query) (entries []Entry, hasMore bool) {
 	if q.Limit <= 0 {
 		q.Limit = 200
 	}
 	q = q.prepare()
 	skip := q.BeforeSkip
-	files := Files(path)
-	for i := len(files) - 1; i >= 0 && len(entries) <= q.Limit; i-- {
-		eachEntryBackwards(files[i], 0, func(e Entry) bool {
-			if q.BeforeTS > 0 {
-				if e.TS > q.BeforeTS {
-					return true
-				}
-				if e.TS == q.BeforeTS && skip > 0 && q.Match(e) {
-					skip--
-					return true
-				}
-			}
-			if !q.Match(e) {
+	j.backwards(func(e Entry) bool {
+		if q.BeforeTS > 0 {
+			if e.TS > q.BeforeTS {
 				return true
 			}
-			e.detach()
-			e.seal()
-			entries = append(entries, e)
-			return len(entries) <= q.Limit
-		})
-	}
+			if e.TS == q.BeforeTS && skip > 0 && q.Match(e) {
+				skip--
+				return true
+			}
+		}
+		if !q.Match(e) {
+			return true
+		}
+		e.detach()
+		e.seal()
+		entries = append(entries, e)
+		return len(entries) <= q.Limit
+	})
 	if len(entries) > q.Limit {
 		hasMore = true
 		entries = entries[:q.Limit]
@@ -386,7 +389,7 @@ type Stats struct {
 // Collect считает записи по интервалам bucketMs. Уровень, модуль и текст из q
 // учитываются, границы времени задаются from и to. Список модулей строится без
 // фильтра по модулю, чтобы выбор не сужался после первого клика.
-func Collect(path string, from, to, bucketMs int64, q Query) Stats {
+func Collect(j Journal, from, to, bucketMs int64, q Query) Stats {
 	if bucketMs <= 0 || to <= from {
 		return Stats{Buckets: []Bucket{}, Modules: map[string]int{}}
 	}
@@ -396,99 +399,91 @@ func Collect(path string, from, to, bucketMs int64, q Query) Stats {
 		st.Buckets[i].T = from + int64(i)*bucketMs
 	}
 	q = q.prepare()
-	files := Files(path)
-	for i := len(files) - 1; i >= 0; i-- {
-		older := false
-		eachEntryBackwards(files[i], 0, func(e Entry) bool {
-			if e.TS < from && e.TS > 0 {
-				older = true
-				return false
-			}
-			if e.TS >= to || e.TS < from || !q.matchSoft(e, false) {
-				return true
-			}
-			if e.Module != "" {
-				if _, known := st.Modules[e.Module]; !known {
-					e.Module = strings.Clone(e.Module)
-				}
-				st.Modules[e.Module]++
-			}
-			if q.Module != "" && e.Module != q.Module {
-				return true
-			}
-			b := &st.Buckets[(e.TS-from)/bucketMs]
-			switch e.Level {
-			case "ERROR", "CRITICAL":
-				b.Err++
-			case "WARNING":
-				b.Warn++
-			default:
-				b.Info++
-			}
-			st.Total++
-			return true
-		})
-		if older {
-			break
+	j.backwards(func(e Entry) bool {
+		if e.TS < from && e.TS > 0 {
+			return false
 		}
-	}
+		if e.TS >= to || e.TS < from || !q.matchSoft(e, false) {
+			return true
+		}
+		if e.Module != "" {
+			if _, known := st.Modules[e.Module]; !known {
+				e.Module = strings.Clone(e.Module)
+			}
+			st.Modules[e.Module]++
+		}
+		if q.Module != "" && e.Module != q.Module {
+			return true
+		}
+		b := &st.Buckets[(e.TS-from)/bucketMs]
+		switch e.Level {
+		case "ERROR", "CRITICAL":
+			b.Err++
+		case "WARNING":
+			b.Warn++
+		default:
+			b.Info++
+		}
+		st.Total++
+		return true
+	})
 	return st
 }
 
-// Around возвращает запись и до n соседей с каждой стороны из того же файла.
-// Запись ищется по времени и ID. index — позиция записи в результате.
-func Around(path string, ts int64, id string, n int) (entries []Entry, index int, ok bool) {
-	return AroundN(path, ts, id, n, n)
+// Around возвращает запись и до n соседей с каждой стороны. Запись ищется по времени и ID.
+// index — позиция записи в результате.
+func Around(j Journal, ts int64, id string, n int) (entries []Entry, index int, ok bool) {
+	return AroundN(j, ts, id, n, n)
 }
 
-// AroundN — то же, что Around, но число соседей задаётся отдельно: older записей
-// до найденной и newer после неё. Так окружение листается в одну сторону.
-func AroundN(path string, ts int64, id string, older, newer int) (entries []Entry, index int, ok bool) {
-	files := Files(path)
-	for i := len(files) - 1; i >= 0; i-- {
-		var after, before []Entry // after — окно из newer записей новее найденной, в порядке чтения
-		var target Entry
-		found := false
-		eachEntryBackwards(files[i], 0, func(e Entry) bool {
-			if found {
-				before = append(before, e)
-				return len(before) < older
-			}
-			if e.TS == ts {
-				e.seal()
-				if e.ID == id {
-					target, found = e, true
-					return older > 0
-				}
-			}
-			if newer > 0 {
-				after = append(after, e)
-				if len(after) > newer {
-					after = after[1:]
-				}
-			}
-			return true
-		})
-		if !found {
-			continue
+// AroundN — то же, что Around, но число соседей задаётся отдельно: older записей до найденной
+// и newer после неё. Так окружение листается в одну сторону.
+func AroundN(j Journal, ts int64, id string, older, newer int) (entries []Entry, index int, ok bool) {
+	var after, before []Entry // after — окно из newer записей новее найденной, в порядке чтения
+	var target Entry
+	found := false
+	j.backwards(func(e Entry) bool {
+		if found {
+			e.detach()
+			e.seal()
+			before = append(before, e)
+			return len(before) < older
 		}
-		out := make([]Entry, 0, len(before)+1+len(after))
-		for j := len(before) - 1; j >= 0; j-- {
-			before[j].detach()
-			before[j].seal()
-			out = append(out, before[j])
+		if e.TS == ts {
+			e.seal()
+			if e.ID == id {
+				e.detach()
+				target, found = e, true
+				return older > 0
+			}
 		}
-		index = len(out)
-		target.detach()
-		out = append(out, target)
-		for j := len(after) - 1; j >= 0; j-- {
-			after[j].detach()
-			after[j].seal()
-			out = append(out, after[j])
+		// Запись старше искомой: дальше её уже не найти.
+		if e.TS > 0 && ts > 0 && e.TS < ts {
+			return false
 		}
-		return out, index, true
+		if newer > 0 {
+			after = append(after, e)
+			if len(after) > newer {
+				after = after[1:]
+			}
+		}
+		return true
+	})
+	if !found {
+		return nil, 0, false
 	}
-	return nil, 0, false
+	out := make([]Entry, 0, len(before)+1+len(after))
+	for i := len(before) - 1; i >= 0; i-- {
+		out = append(out, before[i])
+	}
+	index = len(out)
+	out = append(out, target)
+	for i := len(after) - 1; i >= 0; i-- {
+		after[i].detach()
+		after[i].seal()
+		out = append(out, after[i])
+	}
+	return out, index, true
 }
 
 // Problem — повторяющаяся ошибка: записи одного модуля с одинаковым сообщением (числа
@@ -499,6 +494,9 @@ type Problem struct {
 	Last  Entry `json:"last"`  // самая свежая запись группы
 	// Query — устойчивая часть сообщения: по ней строка поиска находит записи группы.
 	Query string `json:"query"`
+	// Key — подпись группы (ProblemKey): по ней правила журнала скрывают такие записи или
+	// уведомляют о них.
+	Key string `json:"key"`
 }
 
 // maxProblemGroups ограничивает память при потоке разных ошибок: новые группы сверх
@@ -508,44 +506,36 @@ const maxProblemGroups = 2000
 // Problems собирает повторяющиеся записи за окно [from, to) и возвращает до limit
 // групп, самые частые первыми (при равенстве — более свежие). Уровень, модуль и текст
 // берутся из q; без уровня считаются ошибки (ERROR и CRITICAL).
-func Problems(path string, from, to int64, q Query, limit int) []Problem {
+func Problems(j Journal, from, to int64, q Query, limit int) []Problem {
 	if len(q.Levels) == 0 {
 		q.Levels = []string{"ERROR"}
 	}
 	q = q.prepare()
 	groups := map[string]*Problem{}
 	var order []*Problem
-	files := Files(path)
-	for i := len(files) - 1; i >= 0; i-- {
-		older := false
-		eachEntryBackwards(files[i], 0, func(e Entry) bool {
-			if e.TS < from && e.TS > 0 {
-				older = true
-				return false
-			}
-			if (to > 0 && e.TS >= to) || e.TS < from || !q.matchSoft(e, true) {
-				return true
-			}
-			key := ProblemKey(e)
-			if p, known := groups[key]; known {
-				p.Count++
-				p.First = e.TS
-				return true
-			}
-			if len(groups) >= maxProblemGroups {
-				return true
-			}
-			e.detach()
-			e.seal()
-			p := &Problem{Count: 1, First: e.TS, Last: e}
-			groups[key] = p
-			order = append(order, p)
-			return true
-		})
-		if older {
-			break
+	j.backwards(func(e Entry) bool {
+		if e.TS < from && e.TS > 0 {
+			return false
 		}
-	}
+		if (to > 0 && e.TS >= to) || e.TS < from || !q.matchSoft(e, true) {
+			return true
+		}
+		key := ProblemKey(e)
+		if p, known := groups[key]; known {
+			p.Count++
+			p.First = e.TS
+			return true
+		}
+		if len(groups) >= maxProblemGroups {
+			return true
+		}
+		e.detach()
+		e.seal()
+		p := &Problem{Count: 1, First: e.TS, Last: e, Key: key}
+		groups[key] = p
+		order = append(order, p)
+		return true
+	})
 	sort.SliceStable(order, func(a, b int) bool {
 		if order[a].Count != order[b].Count {
 			return order[a].Count > order[b].Count

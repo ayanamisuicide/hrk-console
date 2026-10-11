@@ -103,7 +103,7 @@ func sampleFiles(t *testing.T) string {
 func TestSearchAcrossRotationAndFilters(t *testing.T) {
 	base := sampleFiles(t)
 
-	all, more := Search(base, Query{Limit: 100})
+	all, more := Search(Path(base), Query{Limit: 100})
 	if len(all) != 8 || more {
 		t.Fatalf("всего записей %d (more=%v), ожидали 8", len(all), more)
 	}
@@ -111,21 +111,21 @@ func TestSearchAcrossRotationAndFilters(t *testing.T) {
 		t.Errorf("первой должна идти запись из ротации: %v", all[0])
 	}
 
-	errs, _ := Search(base, Query{Levels: []string{"ERROR"}, Limit: 100})
+	errs, _ := Search(Path(base), Query{Levels: []string{"ERROR"}, Limit: 100})
 	if len(errs) != 3 { // ERROR из ротации, ERROR и CRITICAL
 		t.Errorf("ошибок %d, ожидали 3: %v", len(errs), errs)
 	}
-	byModule, _ := Search(base, Query{Module: "net", Limit: 100})
+	byModule, _ := Search(Path(base), Query{Module: "net", Limit: 100})
 	if len(byModule) != 1 {
 		t.Errorf("по модулю net: %v", byModule)
 	}
 	// Поиск заглядывает и в traceback.
-	inTrace, _ := Search(base, Query{Text: `x.py`, Limit: 100})
+	inTrace, _ := Search(Path(base), Query{Text: `x.py`, Limit: 100})
 	if len(inTrace) != 1 || inTrace[0].Message != "failed" {
 		t.Errorf("поиск по traceback: %v", inTrace)
 	}
 	from, _ := time.ParseInLocation(timeLayout, "2026-10-03 10:00:01", time.Local)
-	ranged, _ := Search(base, Query{From: from.UnixMilli(), To: from.UnixMilli() + 1000, Limit: 100})
+	ranged, _ := Search(Path(base), Query{From: from.UnixMilli(), To: from.UnixMilli() + 1000, Limit: 100})
 	if len(ranged) != 2 {
 		t.Errorf("диапазон времени: %v", ranged)
 	}
@@ -138,7 +138,7 @@ func TestSearchPagesBackwardWithSameSecond(t *testing.T) {
 	var collected []Entry
 	q := Query{Limit: 2}
 	for page := 0; page < 10; page++ {
-		got, more := Search(base, q)
+		got, more := Search(Path(base), q)
 		if len(got) == 0 {
 			break
 		}
@@ -155,7 +155,7 @@ func TestSearchPagesBackwardWithSameSecond(t *testing.T) {
 			break
 		}
 	}
-	all, _ := Search(base, Query{Limit: 100})
+	all, _ := Search(Path(base), Query{Limit: 100})
 	if len(collected) != len(all) {
 		t.Fatalf("собрано %d записей постранично, ожидали %d", len(collected), len(all))
 	}
@@ -170,7 +170,7 @@ func TestSearchPagesBackwardWithSameSecond(t *testing.T) {
 func TestCollectBucketsAndModules(t *testing.T) {
 	base := sampleFiles(t)
 	from, _ := time.ParseInLocation(timeLayout, "2026-10-03 10:00:00", time.Local)
-	st := Collect(base, from.UnixMilli(), from.UnixMilli()+4000, 2000, Query{})
+	st := Collect(Path(base), from.UnixMilli(), from.UnixMilli()+4000, 2000, Query{})
 	if len(st.Buckets) != 2 {
 		t.Fatalf("корзин %d", len(st.Buckets))
 	}
@@ -181,7 +181,7 @@ func TestCollectBucketsAndModules(t *testing.T) {
 		t.Errorf("итог %d, модули %v", st.Total, st.Modules)
 	}
 	// Фильтр по модулю сужает корзины, но не список модулей.
-	narrow := Collect(base, from.UnixMilli(), from.UnixMilli()+4000, 2000, Query{Module: "net"})
+	narrow := Collect(Path(base), from.UnixMilli(), from.UnixMilli()+4000, 2000, Query{Module: "net"})
 	if narrow.Total != 1 || len(narrow.Modules) != 3 {
 		t.Errorf("с фильтром модуля: %+v", narrow)
 	}
@@ -190,13 +190,13 @@ func TestCollectBucketsAndModules(t *testing.T) {
 // TestAround проверяет соседей записи.
 func TestAround(t *testing.T) {
 	base := sampleFiles(t)
-	all, _ := Search(base, Query{Limit: 100})
+	all, _ := Search(Path(base), Query{Limit: 100})
 	target := all[5] // failed
-	around, idx, ok := Around(base, target.TS, target.ID, 2)
+	around, idx, ok := Around(Path(base), target.TS, target.ID, 2)
 	if !ok || around[idx].ID != target.ID || len(around) != 5 {
 		t.Fatalf("Around: ok=%v idx=%d len=%d", ok, idx, len(around))
 	}
-	if _, _, ok := Around(base, 1, "нет", 2); ok {
+	if _, _, ok := Around(Path(base), 1, "нет", 2); ok {
 		t.Error("несуществующая запись не должна находиться")
 	}
 }
@@ -204,13 +204,13 @@ func TestAround(t *testing.T) {
 // TestAroundNPagesOneSide проверяет, что соседей до и после можно запросить отдельно.
 func TestAroundNPagesOneSide(t *testing.T) {
 	base := sampleFiles(t)
-	all, _ := Search(base, Query{Limit: 100})
+	all, _ := Search(Path(base), Query{Limit: 100})
 	target := all[5]
-	around, idx, ok := AroundN(base, target.TS, target.ID, 3, 0)
+	around, idx, ok := AroundN(Path(base), target.TS, target.ID, 3, 0)
 	if !ok || idx != 3 || len(around) != 4 || around[idx].ID != target.ID {
 		t.Fatalf("только ранние: ok=%v idx=%d len=%d", ok, idx, len(around))
 	}
-	around, idx, ok = AroundN(base, target.TS, target.ID, 0, 1)
+	around, idx, ok = AroundN(Path(base), target.TS, target.ID, 0, 1)
 	if !ok || idx != 0 || len(around) != 2 {
 		t.Fatalf("только поздние: ok=%v idx=%d len=%d", ok, idx, len(around))
 	}
@@ -241,7 +241,7 @@ func TestProblemsGroupsRepeats(t *testing.T) {
 		t.Fatal(err)
 	}
 	from, _ := time.ParseInLocation(timeLayout, "2026-10-03 10:00:00", time.Local)
-	got := Problems(path, from.UnixMilli(), 0, Query{}, 10)
+	got := Problems(Path(path), from.UnixMilli(), 0, Query{}, 10)
 	if len(got) != 3 {
 		t.Fatalf("групп %d, ожидали 3: %+v", len(got), got)
 	}
@@ -253,15 +253,15 @@ func TestProblemsGroupsRepeats(t *testing.T) {
 		t.Errorf("при равном счёте свежие первыми: %+v", got[1:])
 	}
 	// Окно отсекает старые записи, уровень WARNING выбирается явно.
-	late := Problems(path, from.UnixMilli()+15000, 0, Query{}, 10)
+	late := Problems(Path(path), from.UnixMilli()+15000, 0, Query{}, 10)
 	if len(late) != 3 || late[0].Count != 1 {
 		t.Errorf("окно: %+v", late)
 	}
-	warn := Problems(path, from.UnixMilli(), 0, Query{Levels: []string{"WARNING"}}, 10)
+	warn := Problems(Path(path), from.UnixMilli(), 0, Query{Levels: []string{"WARNING"}}, 10)
 	if len(warn) != 1 || warn[0].Last.Module != "net" {
 		t.Errorf("предупреждения: %+v", warn)
 	}
-	if one := Problems(path, from.UnixMilli(), 0, Query{}, 1); len(one) != 1 {
+	if one := Problems(Path(path), from.UnixMilli(), 0, Query{}, 1); len(one) != 1 {
 		t.Errorf("limit: %d", len(one))
 	}
 }

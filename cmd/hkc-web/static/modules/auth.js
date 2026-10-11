@@ -48,6 +48,7 @@ export function createAuth(ctx) {
       const me = await ctx.request("/api/auth/me");
       ctx.authenticated = true;
       ctx.$("#username").textContent = me.username;
+      ctx.role = me.role;
       const viewer = me.role === "viewer";
       document.querySelectorAll("[data-action]").forEach((button) => {
         if (viewer) {

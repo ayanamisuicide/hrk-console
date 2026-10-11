@@ -29,6 +29,8 @@ type auditEvent struct {
 type auditStore struct {
 	mu   sync.Mutex
 	path string
+	// onAdd вызывается после записи события: действия с ботом и панелью попадают и в журнал.
+	onAdd func(auditEvent)
 }
 
 const auditRetention = 1000
@@ -38,6 +40,16 @@ func newAuditStore(path string) *auditStore { return &auditStore{path: path} }
 
 // add добавляет событие в JSONL под блокировкой и при необходимости оставляет последние записи.
 func (a *auditStore) add(event auditEvent) error {
+	if err := a.write(event); err != nil {
+		return err
+	}
+	if a.onAdd != nil {
+		a.onAdd(event)
+	}
+	return nil
+}
+
+func (a *auditStore) write(event auditEvent) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(a.path), 0o700); err != nil {

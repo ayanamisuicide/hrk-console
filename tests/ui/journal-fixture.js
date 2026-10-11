@@ -24,12 +24,19 @@ const defaultLines = [
   "2026-10-03 10:00:02 [ERROR] Core: retry failed",
 ];
 
-// Возвращает обработчик для маршрутов /api/logs/*: (url) => объект ответа или null.
-function createJournalApi(lines = defaultLines, { now = Date.now() } = {}) {
+// Подпись группы, как у сервера в упрощённом виде: модуль, сообщение без чисел, конец traceback.
+const groupKey = (e) => `${e.module}|${e.message.replace(/\d+([.,:]\d+)*/g, "#")}|${(e.trace || []).at(-1) || ""}`;
+
+// Возвращает обработчик для маршрутов /api/logs/*: (url, { method, body }) => объект ответа или null.
+function createJournalApi(lines = defaultLines, { now = Date.now(), levelsAvailable = true } = {}) {
   const entries = parseEntries(lines);
   const calls = [];
+  const rules = [];
+  const levels = new Map();
+  const hidden = (e) => rules.some((rule) => rule.hide && rule.key === groupKey(e));
 
   function match(e, p) {
+    if (p.get("hidden") !== "1" && hidden(e)) return false;
     const levels = (p.get("level") || "").split(",").filter(Boolean);
     if (levels.length && !levels.some((l) => l === e.level || (l === "ERROR" && e.level === "CRITICAL"))) return false;
     if (p.get("module") && e.module !== p.get("module")) return false;
@@ -38,9 +45,38 @@ function createJournalApi(lines = defaultLines, { now = Date.now() } = {}) {
     return true;
   }
 
-  function handle(url) {
+  function handle(url, { method = "GET", body = null } = {}) {
     const { pathname, searchParams: p } = new URL(url);
-    calls.push(`${pathname}?${p}`);
+    calls.push(`${method === "GET" ? "" : `${method} `}${pathname}?${p}`);
+    const input = body ? JSON.parse(body) : {};
+    if (pathname === "/api/logs/rules" && method === "POST") {
+      const sample = input.key ? entries.find((e) => groupKey(e) === input.key) : entries.find((e) => e.ts === input.ts && e.id === input.id);
+      if (!sample) return null;
+      const key = groupKey(sample);
+      let rule = rules.find((item) => item.key === key);
+      if (!rule) {
+        rule = { id: `r${rules.length + 1}`, key, module: sample.module, label: sample.message, level: sample.level };
+        rules.push(rule);
+      }
+      rule.hide = !!input.hide;
+      rule.notify = input.notify || null;
+      if (!rule.hide && !rule.notify) rules.splice(rules.indexOf(rule), 1);
+      return { rule, rules };
+    }
+    if (pathname.startsWith("/api/logs/rules/") && method === "DELETE") {
+      const at = rules.findIndex((rule) => rule.id === pathname.split("/").pop());
+      if (at >= 0) rules.splice(at, 1);
+      return { rules };
+    }
+    if (pathname === "/api/logs/rules") return { rules };
+    if (pathname === "/api/logs/levels" && method === "POST") {
+      if (input.level) levels.set(input.logger, { logger: input.logger, level: input.level, until: input.minutes ? Math.floor(now / 1000) + input.minutes * 60 : 0, applied: true });
+      else levels.delete(input.logger);
+      return { ok: true, message: `${input.logger} → ${input.level || "по умолчанию"}` };
+    }
+    if (pathname === "/api/logs/levels")
+      return { available: levelsAvailable, reason: levelsAvailable ? "" : "Мост в процессе бота устарел: перезапустите бота из панели.", levels: [...levels.values()] };
+    if (pathname === "/api/logs/archive") return { enabled: true, files: 3, bytes: 4 << 20, firstTs: now - 9 * 86400e3, limitBytes: 300 << 20, limitDays: 30 };
     if (pathname === "/api/logs/entries") {
       const limit = Number(p.get("limit")) || 200;
       const from = Number(p.get("from")) || 0;
@@ -100,12 +136,12 @@ function createJournalApi(lines = defaultLines, { now = Date.now() } = {}) {
         const e = entries[i];
         if (e.ts < from || (to && e.ts > to)) continue;
         if (!levels.some((l) => l === e.level || (l === "ERROR" && e.level === "CRITICAL"))) continue;
-        const key = `${e.module}|${e.message.replace(/\d+([.,:]\d+)*/g, "#")}|${(e.trace || []).at(-1) || ""}`;
+        const key = groupKey(e);
         const g = groups.get(key);
         if (g) {
           g.count++;
           g.first = e.ts;
-        } else groups.set(key, { count: 1, first: e.ts, last: e, query: e.message.split(/\d/)[0].trim() });
+        } else groups.set(key, { count: 1, first: e.ts, last: e, key, query: e.message.split(/\d/)[0].trim() });
       }
       const problems = [...groups.values()].sort((a, b) => b.count - a.count || b.last.ts - a.last.ts);
       return { problems, from, to };
@@ -113,7 +149,7 @@ function createJournalApi(lines = defaultLines, { now = Date.now() } = {}) {
     return undefined;
   }
 
-  return { entries, calls, handle };
+  return { entries, calls, rules, levels, handle };
 }
 
 module.exports = { createJournalApi, parseEntries, defaultLines };

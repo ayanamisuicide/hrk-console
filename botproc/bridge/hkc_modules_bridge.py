@@ -6,6 +6,7 @@ import hashlib
 import importlib.abc
 import importlib.machinery
 import json
+import logging
 import os
 import sys
 import threading
@@ -23,6 +24,13 @@ class Monitor:
         self.installing = contextvars.ContextVar("hkc_installing", default=None)
         self.loop_at = 0
         self.loops = set()
+        # Уровни журнала, заданные из панели: файл управления, исходные уровни логгеров и
+        # действующие сейчас переопределения (с ними панель сверяет, что уровень применён).
+        self.levels_path = os.path.join(root, ".hkc-log-levels.json")
+        self.levels_mtime = None
+        self.levels_desired = {}
+        self.levels_original = {}
+        self.levels_applied = {}
 
     def observe_loop(self):
         loop = asyncio.get_running_loop()
@@ -49,7 +57,49 @@ class Monitor:
         with self.lock:
             return dict(schema=1, pid=os.getpid(), session=self.session,
                         sampledAt=time.time(), loopAt=self.loop_at,
+                        features=["levels"], logLevels=dict(self.levels_applied),
                         modules=[dict(row) for row in self.rows.values()])
+
+    def apply_levels(self):
+        """Применяет уровни логгеров из файла панели и снимает истёкшие.
+
+        Уровень ставится каждый проход: бот при запуске сам задаёт уровни некоторых логгеров
+        (herokutl, aiohttp), и разовая установка была бы перезаписана. Снятое переопределение
+        возвращает логгеру уровень, который был до панели.
+        """
+        try:
+            mtime = os.stat(self.levels_path).st_mtime_ns
+        except OSError:
+            mtime = None
+        if mtime != self.levels_mtime:
+            desired = {}
+            if mtime is not None:
+                try:
+                    with open(self.levels_path, encoding="utf-8") as handle:
+                        data = json.load(handle)
+                    for name, item in (data.get("levels") or {}).items():
+                        level = str(item.get("level", "")).upper()
+                        if isinstance(name, str) and name and level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+                            desired[name] = dict(level=level, until=float(item.get("until") or 0))
+                except (OSError, ValueError, AttributeError, TypeError):
+                    return  # файл пишется прямо сейчас — прочитаем на следующем проходе
+            self.levels_mtime = mtime
+            self.levels_desired = desired
+        now = time.time()
+        active = {name: item for name, item in self.levels_desired.items()
+                  if not item["until"] or item["until"] > now}
+        for name in list(self.levels_original):
+            if name not in active:
+                logging.getLogger(name).setLevel(self.levels_original.pop(name))
+        for name, item in active.items():
+            logger = logging.getLogger(name)
+            if name not in self.levels_original:
+                self.levels_original[name] = logger.level
+            value = getattr(logging, item["level"])
+            if logger.level != value:
+                logger.setLevel(value)
+        with self.lock:
+            self.levels_applied = active
 
     def write(self):
         # Замена атомарна: HTTP-сервер никогда не читает половину JSON.
@@ -61,6 +111,10 @@ class Monitor:
 
     def heartbeat(self):
         while True:
+            try:
+                self.apply_levels()
+            except Exception:  # noqa: BLE001 — уровни необязательны, наблюдение важнее
+                pass
             try:
                 self.write()
             except OSError:

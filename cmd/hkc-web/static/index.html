@@ -249,6 +249,7 @@
           <div class="jr-top">
             <span id="stream-state" hidden><i></i> подключение к потоку</span>
             <span class="line-count"><b id="line-count">0</b> записей</span>
+            <span id="archive-span" class="line-count" hidden></span>
             <div class="log-actions">
               <div class="segmented" role="group" aria-label="Режим журнала">
                 <button id="mode-live" type="button" aria-pressed="true">Поток</button>
@@ -292,7 +293,9 @@
                 <button id="preset-save" class="compact" type="button">Сохранить текущий</button>
               </div>
             </details>
+            <button id="hidden-toggle" class="jr-toggle" type="button" aria-pressed="false" hidden>Скрытые · 0</button>
           </div>
+          <div id="jr-levels" class="jr-levels" hidden></div>
           <section class="jr-timeline" aria-label="Шкала событий">
             <div class="jr-tl-head">
               <span id="tl-info">Последние 6 часов</span>

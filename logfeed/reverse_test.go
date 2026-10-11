@@ -139,7 +139,7 @@ func BenchmarkSearchLatest(b *testing.B) {
 	path := bigLog(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Search(path, Query{Limit: 200})
+		Search(Path(path), Query{Limit: 200})
 	}
 }
 
@@ -147,7 +147,7 @@ func BenchmarkSearchRareText(b *testing.B) {
 	path := bigLog(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Search(path, Query{Text: "редкое", Limit: 200})
+		Search(Path(path), Query{Text: "редкое", Limit: 200})
 	}
 }
 

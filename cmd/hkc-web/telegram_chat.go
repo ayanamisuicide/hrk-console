@@ -142,7 +142,7 @@ func (c *telegramControl) recentProblems() (errs, warns int, noisy []string) {
 	}
 	now := c.now()
 	from, to := now.Add(-time.Hour).UnixMilli(), now.UnixMilli()+1
-	all := logfeed.Collect(c.s.bot.LogFile, from, to, to-from, logfeed.Query{})
+	all := logfeed.Collect(c.s.journal(), from, to, to-from, logfeed.Query{Hide: c.s.logRules.hider()})
 	for _, b := range all.Buckets {
 		errs += b.Err
 		warns += b.Warn
@@ -150,7 +150,7 @@ func (c *telegramControl) recentProblems() (errs, warns int, noisy []string) {
 	if errs+warns == 0 {
 		return 0, 0, nil
 	}
-	problem := logfeed.Collect(c.s.bot.LogFile, from, to, to-from, logfeed.Query{Levels: []string{"WARNING", "ERROR"}})
+	problem := logfeed.Collect(c.s.journal(), from, to, to-from, logfeed.Query{Levels: []string{"WARNING", "ERROR"}, Hide: c.s.logRules.hider()})
 	for _, name := range topModuleNames(problem.Modules, 3) {
 		noisy = append(noisy, fmt.Sprintf("%s ×%d", shortModule(name), problem.Modules[name]))
 	}

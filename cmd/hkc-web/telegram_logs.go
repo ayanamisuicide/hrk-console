@@ -128,7 +128,7 @@ func (c *telegramControl) viewByNonce(nonce string) (*logView, bool) {
 // («логи updates») превращаются в фильтр по модулю.
 func (c *telegramControl) knownModules() []string {
 	now := c.now()
-	stats := logfeed.Collect(c.s.bot.LogFile, now.Add(-6*time.Hour).UnixMilli(), now.UnixMilli()+1, int64(7*time.Hour/time.Millisecond), logfeed.Query{})
+	stats := logfeed.Collect(c.s.journal(), now.Add(-6*time.Hour).UnixMilli(), now.UnixMilli()+1, int64(7*time.Hour/time.Millisecond), logfeed.Query{Hide: c.s.logRules.hider()})
 	names := make([]string, 0, len(stats.Modules))
 	for name := range stats.Modules {
 		names = append(names, name)
@@ -350,7 +350,9 @@ func (c *telegramControl) renderLogView(nonce string, v *logView) (string, map[s
 
 func (c *telegramControl) renderEntries(nonce string, v *logView, now time.Time) (string, map[string]any) {
 	q := v.query(now)
-	entries, more := logfeed.Search(c.s.bot.LogFile, q)
+	// Записи, скрытые правилами журнала, не попадают и в чат.
+	q.Hide = c.s.logRules.hider()
+	entries, more := logfeed.Search(c.s.journal(), q)
 	title := "📜 <b>Журнал</b>"
 	if v.mode == "search" {
 		title = "🔎 <b>«" + html.EscapeString(clip(v.text, 40)) + "»</b>"
@@ -408,7 +410,9 @@ func (c *telegramControl) renderErrors(nonce string, v *logView, now time.Time) 
 	q.Levels = []string{"ERROR"}
 	q.Limit = 400
 	q.BeforeTS, q.BeforeSkip = 0, 0
-	entries, _ := logfeed.Search(c.s.bot.LogFile, q)
+	// Записи, скрытые правилами журнала, не попадают и в чат.
+	q.Hide = c.s.logRules.hider()
+	entries, _ := logfeed.Search(c.s.journal(), q)
 	window := "за " + describeSince(since)
 	if v.from > 0 {
 		window = fmt.Sprintf("%s–%s", time.UnixMilli(v.from).Format("15:04"), time.UnixMilli(v.to).Format("15:04"))
@@ -522,7 +526,9 @@ func (c *telegramControl) logFile(v *logView) (string, []byte) {
 	if v.mode == "errors" {
 		q.Levels = []string{"ERROR"}
 	}
-	entries, more := logfeed.Search(c.s.bot.LogFile, q)
+	// Записи, скрытые правилами журнала, не попадают и в чат.
+	q.Hide = c.s.logRules.hider()
+	entries, more := logfeed.Search(c.s.journal(), q)
 	var out strings.Builder
 	fmt.Fprintf(&out, "# hrk-console · журнал %s · записей: %d%s\n# Секреты в тексте скрыты автоматически, но список шаблонов неполный — проверьте перед пересылкой.\n\n",
 		c.now().Format("2006-01-02 15:04:05"), len(entries), map[bool]string{true: " (самые новые; есть более старые)", false: ""}[more])

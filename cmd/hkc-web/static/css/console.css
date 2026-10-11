@@ -1450,10 +1450,178 @@ button.jr-tile:hover:not(:disabled) {
   background: hsl(var(--mh, 215) 62% 58%);
   content: "";
 }
-.jr-prob-row > .jr-link {
-  grid-column: 2;
-  justify-self: start;
+.jr-rule .jr-prob-open {
+  margin-left: auto;
+}
+/* Записи журнала панели: вывод процесса — моноширинно, как в терминале; действия и события
+   панели — с акцентной плиткой, чтобы отличались от записей бота. */
+.jr-card[data-source="process"] .jr-message {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.jr-card[data-source="panel"] .jr-ico {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-card[data-source="panel"]:not([data-level="ERROR"]):not([data-level="WARNING"]) {
+  border-left-color: var(--accent);
+}
+/* «Скрытые» — переключатель показа записей, скрытых правилами. */
+.jr-toggle {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-toggle[hidden] {
+  display: none;
+}
+/* Строка уровней модулей, заданных из панели. */
+.jr-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.jr-levels[hidden],
+.logs-view.compact .jr-levels {
+  display: none;
+}
+.jr-levels-title {
+  color: var(--text-3);
+}
+.jr-levels-note {
+  color: var(--warn);
+}
+.jr-level-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-level-chip.pending {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-level-chip b {
+  font: 500 12px var(--mono);
+}
+.jr-level-chip button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+/* Блок уровня модуля в деталях записи. */
+.jr-lvl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jr-lvl-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-lvl-note.warn {
+  color: var(--warn);
+}
+.jr-lvl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jr-lvl-row select {
+  width: auto;
+  min-height: 30px;
+  font-size: 12.5px;
+}
+/* Правила группы в «Частых ошибках». */
+.jr-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
   margin-left: -8px;
+}
+.jr-rule-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.jr-rule-badge.bell {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-rule-form {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0 8px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-rule-form input[type="number"] {
+  flex: 0 0 72px;
+  width: 72px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+.jr-rules {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.jr-rules summary {
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.jr-rules-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.jr-rules-row:first-of-type {
+  margin-top: 8px;
+}
+.jr-rules-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+.jr-rules-text b {
+  font: 500 12px var(--mono);
+}
+.jr-rules-row small {
+  grid-column: 1;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.jr-rules-row .jr-x {
+  grid-row: 1 / span 2;
+  grid-column: 2;
 }
 /* Затемнение позади шторки: только на узком экране, клик закрывает панель. */
 .jr-backdrop {
