@@ -38,33 +38,15 @@ export function createIncidents(ctx) {
         action.textContent = "Открыть этот интервал в журнале →";
         card.append(meta, title, context, action);
         card.addEventListener("click", () => {
-          const start = new Date(incident.start.replace(" ", "T"));
-          const end = new Date(incident.end.replace(" ", "T"));
-          const localValue = (date) =>
-            `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-          ctx.$("#time-from").value = localValue(
-            new Date(start.getTime() - 120000),
-          );
-          ctx.$("#time-to").value = localValue(
-            new Date(end.getTime() + 120000),
-          );
-          ctx.$("#module-filter").value = incident.module;
-          ctx.activeLevel = "ALL";
-          ctx.bookmarksOnly = false;
-          ctx.$("#bookmarks-only").setAttribute("aria-pressed", "false");
-          document
-            .querySelectorAll(".filter-chip")
-            .forEach((item) =>
-              item.classList.toggle("active", item.dataset.level === "ALL"),
-            );
-          ctx.setView("logs");
-          ctx.renderLines();
-          document.querySelector(".log-advanced").open = true;
-          ctx.logEl
-            .querySelector(
-              '.line[data-level="ERROR"], .line[data-level="CRITICAL"]',
-            )
-            ?.scrollIntoView({ block: "center", behavior: "auto" });
+          // Время происшествия задано в часовом поясе сервера, как и записи журнала.
+          const start = new Date(incident.start.replace(" ", "T")).getTime();
+          const end = new Date(incident.end.replace(" ", "T")).getTime();
+          ctx.openJournal({
+            module: incident.module,
+            from: start - 120000,
+            to: end + 120000,
+            focusError: true,
+          });
         });
         container.append(card);
       }

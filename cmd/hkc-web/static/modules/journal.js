@@ -1,434 +1,1076 @@
-// История и поток журнала, фильтры, закладки и экспорт. Исходный файл бота не изменяется.
+// Журнал: лента записей, строка запроса с фильтрами, шкала событий и панель деталей.
+// Записи приходят с сервера уже собранными (traceback внутри записи), история читается
+// постранично назад, новые записи добавляются потоком SSE. Исходный файл бота не изменяется.
 // Фабрика возвращает функции раздела; состояние и зависимости берёт из ctx.
-// Подписки вызываются точкой входа после заполнения состояния страницы.
+import { createLogTimeline } from "./log-timeline.js";
+
+const PAGE = 200;
+// В памяти и в DOM держится ограниченное число записей; это не лимит файла на сервере.
+const MAX_ENTRIES = 2500;
+const WINDOW_MS = 6 * 3600 * 1000;
+const BUCKET_MS = 5 * 60 * 1000;
+const LEVEL_LABEL = { ALL: "все", INFO: "инфо", WARNING: "предупреждения", ERROR: "ошибки" };
+const BOOKMARKS_KEY = "hkc-log-bookmarks-v2";
+
 export function createJournal(ctx) {
-  // Вычисляет короткий стабильный отпечаток строки для закладок. Это не криптографический хеш; совпадающие
-  // строки имеют один ключ.
-  function lineKey(raw) {
-    let hash = 2166136261;
-    for (let i = 0; i < raw.length; i++)
-      hash = Math.imul(hash ^ raw.charCodeAt(i), 16777619);
-    return (hash >>> 0).toString(36);
+  const S = {
+    level: "ALL",
+    module: "",
+    text: "",
+    range: null, // { from, to|null } — null у to означает «до сейчас»
+    live: true,
+    bookmarksMode: false,
+    entries: [],
+    groups: [],
+    hasOlder: false,
+    seq: 0,
+    loadingOlder: false,
+    stick: true,
+    missed: 0,
+    selected: null,
+    syncing: false,
+    buffer: [],
+    online: false,
+    opened: false,
+    modules: [],
+    timeline: null,
+    bookmarks: [],
+    lastDay: "",
+  };
+  let dom = null;
+  let reloadTimer = 0;
+  let statsTimer = 0;
+  let restartsAt = 0;
+  let statsBusy = false;
+
+  const $ = (selector) => ctx.$(selector);
+  const el = (tag, cls, text) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  };
+  const motionOk = () =>
+    !(window.prefersReducedMotion?.() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) &&
+    document.visibilityState === "visible";
+  const clock = () => (S.timeline ? S.timeline.now() : Date.now());
+
+  /* ---------- Условия отбора ---------- */
+
+  // Параметры запроса к серверу без временного диапазона: его добавляет вызывающий.
+  function baseParams() {
+    const p = new URLSearchParams();
+    if (S.level !== "ALL") p.set("level", S.level);
+    if (S.module) p.set("module", S.module);
+    if (S.text) p.set("q", S.text);
+    return p;
   }
 
-  // Извлекает модуль из стандартного префикса журнала; продолжение сообщения даёт пустую строку.
-  function lineModule(raw) {
-    return (
-      raw.match(
-        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[A-Z]+\] ([^:]+):/,
-      )?.[1] || ""
-    );
+  function entryText(e) {
+    return `${e.message}\n${e.module}\n${(e.trace || []).join("\n")}`.toLowerCase();
   }
 
-  // Проверяет модуль и локальные границы времени; строки без даты не проходят временной фильтр.
-  // owner — модуль последней строки с префиксом: продолжения (traceback) принадлежат ему.
-  function matchesAdvanced(raw, owner = "") {
-    const module = ctx.$("#module-filter").value;
-    if (module && (ctx.lineModule(raw) || owner) !== module) return false;
-    const match = raw.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
-    const from = ctx.$("#time-from").value;
-    const to = ctx.$("#time-to").value;
-    if (from || to) {
-      if (!match) return false;
-      const stamp = `${match[1]}T${match[2]}`;
-      if (from && stamp < from) return false;
-      if (to && stamp > `${to}:59`) return false;
-    }
+  // Повторяет серверный отбор для записей из потока и закладок.
+  function matchesBase(e) {
+    if (S.level === "ERROR" && e.level !== "ERROR" && e.level !== "CRITICAL") return false;
+    if ((S.level === "WARNING" || S.level === "INFO") && e.level !== S.level) return false;
+    if (S.module && e.module !== S.module) return false;
+    if (S.text && !entryText(e).includes(S.text.toLowerCase())) return false;
     return true;
   }
 
-  // Перестраивает список модулей из загруженных строк, сохраняя допустимый выбор.
-  function refreshModuleOptions() {
-    const select = ctx.$("#module-filter");
-    const selected = select.value;
-    const modules = [
-      ...new Set(ctx.allLines.map(ctx.lineModule).filter(Boolean)),
-    ].sort();
-    select.replaceChildren(new Option("Все модули", ""));
-    for (const module of modules) select.add(new Option(module, module));
-    if (modules.includes(selected)) select.value = selected;
+  function inRange(e) {
+    if (!S.range) return true;
+    return e.ts >= S.range.from && (S.range.to == null || e.ts <= S.range.to);
   }
 
-  // Перестраивает сохранённые фильтры и доступность удаления выбранного набора.
-  function refreshPresetOptions() {
-    const select = ctx.$("#preset-select");
-    const selected = select.value;
-    select.replaceChildren(new Option("Выберите", ""));
-    for (const name of Object.keys(ctx.savedFilters).sort())
-      select.add(new Option(name, name));
-    if (ctx.savedFilters[selected]) select.value = selected;
-    ctx.$("#preset-delete").disabled = !select.value;
-  }
+  const entryKey = (e) => `${e.ts}|${e.id}`;
 
-  // Извлекает уровень журнала; строки без уровня относятся к OTHER.
-  function lineLevel(raw) {
-    return raw.match(/\[([A-Z]+)\]/)?.[1] || "OTHER";
-  }
+  /* ---------- Группировка и карточки ---------- */
 
-  // Проверяет выбранный уровень; фильтр ERROR включает также CRITICAL.
-  function matchesLevel(raw) {
-    if (ctx.activeLevel === "ALL") return true;
-    const level = ctx.lineLevel(raw);
-    return ctx.activeLevel === "ERROR"
-      ? level === "ERROR" || level === "CRITICAL"
-      : level === ctx.activeLevel;
-  }
+  // Подряд идущие одинаковые записи без traceback показываются одной карточкой с счётчиком.
+  const groupKey = (e) => (e.trace?.length ? null : `${e.level}\u0000${e.module}\u0000${e.message}`);
 
-  // Применяет все фильтры к истории и заменяет видимую ленту одним фрагментом DOM.
-  function renderLines() {
-    const query = ctx.filterInput.value.trim().toLowerCase();
-    let owner = "";
-    const visible = ctx.allLines.filter(
-      (line) =>
-        ((owner = ctx.lineModule(line) || owner), ctx.matchesLevel(line)) &&
-        ctx.matchesAdvanced(line, owner) &&
-        (!query || line.toLowerCase().includes(query)) &&
-        (!ctx.bookmarksOnly || ctx.bookmarks.has(ctx.lineKey(line))),
-    );
-    const fragment = document.createDocumentFragment();
-    for (const raw of visible) fragment.append(ctx.createLine(raw));
-    if (!visible.length) fragment.append(ctx.createLogEmpty());
-    ctx.logEl.replaceChildren(fragment);
-    ctx.animateValue(ctx.$("#line-count"), visible.length);
-    ctx.$("#export-logs").disabled = visible.length === 0;
-    ctx.$("#clear").disabled =
-      ctx.allLines.length === 0 && ctx.pausedLines.length === 0;
-    if (ctx.autoscroll.checked) ctx.logEl.scrollTop = ctx.logEl.scrollHeight;
-  }
-
-  // Создаёт разное пояснение для пустого журнала, пустого поиска и ручной очистки экрана.
-  function createLogEmpty() {
-    const state = document.createElement("div");
-    state.className = "log-empty";
-    const icon = document.createElement("span");
-    icon.textContent = ctx.logClearedByUser ? "✓" : "⌁";
-    const title = document.createElement("strong");
-    const detail = document.createElement("small");
-    if (ctx.logClearedByUser) {
-      title.textContent = "Журнал очищен";
-      detail.textContent = "Новые события появятся здесь автоматически.";
-    } else if (ctx.allLines.length) {
-      title.textContent = "Ничего не найдено";
-      detail.textContent = "Измените поиск или выбранные фильтры.";
-    } else {
-      title.textContent = "Событий пока нет";
-      detail.textContent =
-        "Поток подключён — новые записи появятся автоматически.";
+  function buildGroups(entries) {
+    const groups = [];
+    for (const e of entries) {
+      const last = groups.at(-1);
+      const key = groupKey(e);
+      if (last && key && last.key === key) last.entries.push(e);
+      else groups.push({ key, entries: [e], node: null });
     }
-    state.append(icon, title, detail);
-    return state;
+    return groups;
   }
-  // Разбирает стандартную строку в безопасные текстовые элементы, добавляет закладку и анимацию только нового
-  // события.
-  function createLine(raw, live = false) {
-    const row = document.createElement("div");
-    const motionReduced =
-      window.prefersReducedMotion?.() ??
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const animateArrival =
-      live && !motionReduced && document.visibilityState === "visible";
-    row.className = `line${animateArrival ? " live" : ""}`;
-    if (animateArrival)
-      row.addEventListener("animationend", (event) => {
-        if (event.target === row && !event.pseudoElement)
-          row.classList.remove("live");
+
+  const dayOf = (e) => (e.time || "").slice(0, 10);
+  const hms = (e) => (e.time || "").slice(11, 19);
+
+  function dayLabel(day) {
+    const date = new Date(`${day}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return day || "Без даты";
+    return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  }
+
+  // Вставляет текст с подсветкой найденного фрагмента; без innerHTML, поэтому безопасно.
+  function highlight(parent, text) {
+    const query = S.text;
+    const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
+    if (at < 0) {
+      parent.textContent = text;
+      return;
+    }
+    parent.append(text.slice(0, at), el("mark", "", text.slice(at, at + query.length)), text.slice(at + query.length));
+  }
+
+  const isMarked = (e) => S.bookmarks.some((item) => entryKey(item) === entryKey(e));
+
+  function toggleBookmark(e) {
+    const at = S.bookmarks.findIndex((item) => entryKey(item) === entryKey(e));
+    if (at >= 0) S.bookmarks.splice(at, 1);
+    else S.bookmarks.push({ ...e });
+    S.bookmarks = S.bookmarks.slice(-200);
+    try {
+      localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(S.bookmarks));
+    } catch (_) {
+      /* Без хранилища закладки живут до перезагрузки страницы. */
+    }
+    if (S.bookmarksMode) reload();
+    else refreshMarks();
+  }
+
+  function refreshMarks() {
+    dom.feed.querySelectorAll(".jr-card").forEach((card) => {
+      const group = card._group;
+      const marked = group.entries.some(isMarked);
+      const button = card.querySelector(".jr-mark");
+      button.textContent = marked ? "★" : "☆";
+      button.setAttribute("aria-pressed", String(marked));
+    });
+  }
+
+  function updateCard(group) {
+    const card = group.node;
+    const first = group.entries[0];
+    const last = group.entries.at(-1);
+    const rep = card.querySelector(".jr-rep");
+    if (group.entries.length > 1) {
+      const minutes = Math.max(1, Math.round((last.ts - first.ts) / 60000));
+      rep.textContent = `×${group.entries.length} за ${minutes} мин`;
+      rep.hidden = false;
+    } else rep.hidden = true;
+  }
+
+  function createCard(group, fresh) {
+    const e = group.entries[0];
+    const card = el("div", "jr-card");
+    card.dataset.level = e.level;
+    card.tabIndex = 0;
+    card._group = group;
+    if (fresh && motionOk()) {
+      card.classList.add("fresh");
+      card.addEventListener("animationend", () => card.classList.remove("fresh"), { once: true });
+    }
+    card.append(el("time", "jr-time", hms(e)));
+    const body = el("div", "jr-body");
+    const level = el("span", `jr-level ${e.level}`, e.level === "INFO" || e.level === "DEBUG" ? "" : e.level === "WARNING" ? "WARN" : e.level);
+    const message = el("span", "jr-message");
+    highlight(message, e.message);
+    body.append(level, message);
+    if (e.trace?.length) {
+      const trace = el("details", "jr-trace");
+      trace.append(el("summary", "", `Traceback · ${e.trace.length} ${plural(e.trace.length, "строка", "строки", "строк")}`));
+      trace.append(el("pre", "", e.trace.join("\n")));
+      // Если искомое найдено только в traceback, раскрываем его сразу.
+      if (S.text && !e.message.toLowerCase().includes(S.text.toLowerCase()) && e.trace.join("\n").toLowerCase().includes(S.text.toLowerCase())) trace.open = true;
+      trace.addEventListener("click", (event) => event.stopPropagation());
+      body.append(trace);
+    }
+    card.append(body);
+    const meta = el("div", "jr-meta");
+    meta.append(el("span", "jr-rep"));
+    if (e.module) {
+      const module = el("button", "jr-module", e.module);
+      module.type = "button";
+      module.title = "Показать только этот модуль";
+      module.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setQuery({ module: e.module });
       });
-    const match = raw.match(
-      /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^:]+):\s?(.*)$/,
-    );
-    if (!match) {
-      row.classList.add("continuation");
-      row.textContent = raw;
-      return row;
+      meta.append(module);
     }
-    const [, date, time, level, module, message] = match;
-    row.dataset.level = level;
-    if (ctx.timestamps.checked) {
-      const timeEl = document.createElement("time");
-      timeEl.dateTime = `${date}T${time}`;
-      timeEl.textContent = time;
-      row.append(timeEl);
-    }
-    const levelEl = document.createElement("span");
-    levelEl.className = "level";
-    levelEl.textContent = level;
-    const moduleEl = document.createElement("span");
-    moduleEl.className = "module";
-    moduleEl.textContent = module;
-    const messageEl = document.createElement("span");
-    messageEl.className = "message";
-    messageEl.textContent = message;
-    const mark = document.createElement("button");
+    const mark = el("button", "jr-mark", "☆");
     mark.type = "button";
-    mark.className = "line-bookmark";
-    mark.textContent = ctx.bookmarks.has(ctx.lineKey(raw)) ? "★" : "☆";
-    mark.title = "Отметить строку";
-    mark.setAttribute("aria-label", "Отметить строку");
-    mark.setAttribute(
-      "aria-pressed",
-      String(ctx.bookmarks.has(ctx.lineKey(raw))),
-    );
-    mark.addEventListener("click", () => {
-      const key = ctx.lineKey(raw);
-      if (ctx.bookmarks.has(key)) ctx.bookmarks.delete(key);
-      else ctx.bookmarks.add(key);
-      localStorage.setItem(
-        "hkc-log-bookmarks",
-        JSON.stringify([...ctx.bookmarks].slice(-500)),
-      );
-      mark.textContent = ctx.bookmarks.has(key) ? "★" : "☆";
-      mark.setAttribute("aria-pressed", String(ctx.bookmarks.has(key)));
-      if (ctx.bookmarksOnly) ctx.renderLines();
+    mark.title = "В закладки";
+    mark.setAttribute("aria-label", "В закладки");
+    mark.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleBookmark(e);
     });
-    row.append(levelEl, moduleEl, messageEl, mark);
-    return row;
-  }
-  // При паузе накапливает строки отдельно; иначе добавляет событие, ограничивает историю и учитывает текущие
-  // фильтры.
-  function appendLiveLine(raw) {
-    if (ctx.streamPaused) {
-      ctx.pausedLines.push(raw);
-      ctx.$("#pause-stream").innerHTML =
-        `<span>▶</span> Продолжить · ${ctx.pausedLines.length}`;
-      ctx.$("#clear").disabled = false;
-      return;
-    }
-    ctx.logClearedByUser = false;
-    ctx.allLines.push(raw);
-    ctx.$("#clear").disabled = false;
-    const module = ctx.lineModule(raw);
-    if (
-      module &&
-      ![...ctx.$("#module-filter").options].some(
-        (option) => option.value === module,
-      )
-    )
-      ctx.$("#module-filter").add(new Option(module, module));
-    let trimmed = false;
-    if (ctx.allLines.length > ctx.maxLines) {
-      ctx.allLines.splice(0, ctx.allLines.length - ctx.maxLines);
-      trimmed = true;
-    }
-    const query = ctx.filterInput.value.trim().toLowerCase();
-    if (trimmed && query) {
-      ctx.renderLines();
-      return;
-    }
-    if (trimmed && ctx.logEl.firstChild) ctx.logEl.firstChild.remove();
-    // Владелец продолжения — ближайшая предыдущая строка с префиксом модуля.
-    let owner = ctx.lineModule(raw);
-    for (let i = ctx.allLines.length - 2; !owner && i >= Math.max(0, ctx.allLines.length - 200); i--)
-      owner = ctx.lineModule(ctx.allLines[i]);
-    if (
-      !ctx.matchesLevel(raw) ||
-      !ctx.matchesAdvanced(raw, owner) ||
-      (query && !raw.toLowerCase().includes(query)) ||
-      (ctx.bookmarksOnly && !ctx.bookmarks.has(ctx.lineKey(raw)))
-    ) {
-      if (ctx.logEl.querySelector(".log-empty")) ctx.renderLines();
-      return;
-    }
-    ctx.logEl.querySelector(".log-empty")?.remove();
-    ctx.logEl.append(ctx.createLine(raw, true));
-    const visibleCount = ctx.logEl.querySelectorAll(".line").length;
-    ctx.animateValue(ctx.$("#line-count"), visibleCount);
-    ctx.$("#export-logs").disabled = false;
-    ctx.$("#clear").disabled = false;
-    if (ctx.autoscroll.checked) ctx.logEl.scrollTop = ctx.logEl.scrollHeight;
-  }
-
-  // Получает начальный хвост журнала, обновляет модули и рисует ленту.
-  async function loadHistory() {
-    const data = await ctx.request("/api/logs?limit=800");
-    ctx.logClearedByUser = false;
-    ctx.allLines = data.lines || [];
-    ctx.refreshModuleOptions();
-    ctx.renderLines();
-  }
-
-  // Закрывает прежний EventSource и подключает SSE; автоматическое переподключение выполняет браузер.
-  function connectStream() {
-    if (ctx.stream) ctx.stream.close();
-    ctx.stream = new EventSource("/api/events");
-    ctx.stream.onopen = () => {
-      ctx.$("#stream-state").innerHTML = "<i></i> поток подключён";
-      ctx.$("#stream-state").classList.add("online");
-    };
-    ctx.stream.onmessage = (event) => {
-      ctx.appendLiveLine(JSON.parse(event.data));
-    };
-    ctx.stream.onerror = () => {
-      ctx.$("#stream-state").innerHTML = "<i></i> переподключение…";
-      ctx.$("#stream-state").classList.remove("online");
-    };
-  }
-  // Меняет фильтр уровня и активную кнопку, затем заново рисует строки.
-  function bindFilterChip() {
-    document.querySelectorAll(".filter-chip").forEach((button) => {
-      button.addEventListener("click", () => {
-        ctx.activeLevel = button.dataset.level;
-        document
-          .querySelectorAll(".filter-chip")
-          .forEach((item) => item.classList.toggle("active", item === button));
-        ctx.renderLines();
-      });
-    });
-  }
-
-  // Приостанавливает только показ, а не соединение; при продолжении переносит накопленные строки в ленту.
-  function bindPauseStream() {
-    ctx.$("#pause-stream").addEventListener("click", () => {
-      ctx.streamPaused = !ctx.streamPaused;
-      ctx.$("#pause-stream").classList.toggle("active", ctx.streamPaused);
-      if (!ctx.streamPaused) {
-        const queued = ctx.pausedLines.splice(0);
-        ctx.$("#pause-stream").innerHTML = "<span>Ⅱ</span> Пауза";
-        queued.forEach(ctx.appendLiveLine);
-      } else {
-        ctx.$("#pause-stream").innerHTML = "<span>▶</span> Продолжить";
+    meta.append(mark);
+    card.append(meta);
+    card.addEventListener("click", () => openDrawer(group.entries[0]));
+    card.addEventListener("keydown", (event) => {
+      if (event.target === card && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        openDrawer(group.entries[0]);
       }
     });
+    group.node = card;
+    updateCard(group);
+    if (S.selected && group.entries.some((item) => entryKey(item) === S.selected)) card.classList.add("selected");
+    if (group.entries.some(isMarked)) {
+      mark.textContent = "★";
+      mark.setAttribute("aria-pressed", "true");
+    } else mark.setAttribute("aria-pressed", "false");
+    return card;
   }
 
-  // Переключает показ только отмеченных строк и синхронизирует aria-pressed.
-  function bindBookmarksOnly() {
-    ctx.$("#bookmarks-only").addEventListener("click", (event) => {
-      ctx.bookmarksOnly = !ctx.bookmarksOnly;
-      event.currentTarget.setAttribute(
-        "aria-pressed",
-        String(ctx.bookmarksOnly),
-      );
-      ctx.renderLines();
-    });
+  function plural(n, one, few, many) {
+    const m10 = n % 10;
+    const m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
   }
-  // Скачивает видимые по текущим фильтрам строки как текст; временный URL освобождается после запуска
-  // скачивания.
-  function bindExportLogs() {
-    ctx.$("#export-logs").addEventListener("click", () => {
-      const query = ctx.filterInput.value.trim().toLowerCase();
-      const lines = ctx.allLines.filter(
-        (line) =>
-          ctx.matchesLevel(line) &&
-          ctx.matchesAdvanced(line) &&
-          (!query || line.toLowerCase().includes(query)) &&
-          (!ctx.bookmarksOnly || ctx.bookmarks.has(ctx.lineKey(line))),
-      );
-      const blob = new Blob([lines.join("\n") + "\n"], {
-        type: "text/plain;charset=utf-8",
+
+  function daySeparator(day) {
+    const sep = el("div", "jr-day", dayLabel(day));
+    sep.dataset.day = day;
+    return sep;
+  }
+
+  /* ---------- Отрисовка ленты ---------- */
+
+  function emptyState() {
+    const box = el("div", "log-empty");
+    const icon = el("span", "", S.bookmarksMode ? "☆" : S.entries.length || hasFilters() ? "⌕" : "⌁");
+    const title = el("strong");
+    const detail = el("small");
+    if (S.bookmarksMode) {
+      title.textContent = "Закладок пока нет";
+      detail.textContent = "Отметьте звёздочкой запись в ленте — она появится здесь.";
+    } else if (hasFilters()) {
+      title.textContent = "Ничего не найдено";
+      detail.textContent = "Измените запрос или выберите другой диапазон на шкале.";
+    } else {
+      title.textContent = "Событий пока нет";
+      detail.textContent = "Поток подключён — новые записи появятся автоматически.";
+    }
+    box.append(icon, title, detail);
+    return box;
+  }
+
+  const hasFilters = () => S.level !== "ALL" || S.module || S.text || S.range;
+
+  // Полная перерисовка: только при смене запроса, когда лента всё равно заменяется целиком.
+  function renderAll() {
+    S.groups = buildGroups(S.entries);
+    const fragment = document.createDocumentFragment();
+    let day = "";
+    for (const group of S.groups) {
+      const d = dayOf(group.entries[0]);
+      if (d !== day) {
+        day = d;
+        fragment.append(daySeparator(d));
+      }
+      fragment.append(createCard(group, false));
+    }
+    S.lastDay = day;
+    if (!S.groups.length) fragment.append(emptyState());
+    dom.feed.replaceChildren(fragment);
+    updateCount();
+    if (S.stick) dom.feed.scrollTop = dom.feed.scrollHeight;
+  }
+
+  function updateCount() {
+    $("#line-count").textContent = `${S.entries.length}${S.hasOlder ? "+" : ""}`;
+    $("#export-logs").disabled = S.entries.length === 0;
+  }
+
+  // Добавляет одну живую запись без перерисовки ленты.
+  function appendEntry(e) {
+    S.entries.push(e);
+    if (S.entries.length > MAX_ENTRIES) {
+      const dropped = S.entries.splice(0, S.entries.length - MAX_ENTRIES);
+      S.hasOlder = true;
+      dropFromTop(dropped.length);
+    }
+    dom.feed.querySelector(".log-empty")?.remove();
+    const last = S.groups.at(-1);
+    const key = groupKey(e);
+    if (last && key && last.key === key) {
+      last.entries.push(e);
+      updateCard(last);
+    } else {
+      const group = { key, entries: [e], node: null };
+      S.groups.push(group);
+      const d = dayOf(e);
+      if (d !== S.lastDay) {
+        S.lastDay = d;
+        dom.feed.append(daySeparator(d));
+      }
+      dom.feed.append(createCard(group, true));
+    }
+    updateCount();
+    if (S.stick && ctx.autoscroll?.checked !== false) dom.feed.scrollTop = dom.feed.scrollHeight;
+    else {
+      S.missed++;
+      showPill();
+    }
+  }
+
+  // Убирает из начала ленты карточки, чьи записи вытеснены из памяти.
+  function dropFromTop(count) {
+    let left = count;
+    while (left > 0 && S.groups.length) {
+      const group = S.groups[0];
+      if (group.entries.length > left) {
+        group.entries.splice(0, left);
+        updateCard(group);
+        return;
+      }
+      left -= group.entries.length;
+      S.groups.shift();
+      const prev = group.node.previousElementSibling;
+      const next = group.node.nextElementSibling;
+      group.node.remove();
+      // Разделитель дня без карточек под ним не нужен.
+      if (prev?.classList.contains("jr-day") && !next?.classList.contains("jr-card")) prev.remove();
+    }
+  }
+
+  function showPill() {
+    const text = S.live ? `${S.missed} новых ↓` : `${S.missed} новых — вернуться к потоку`;
+    dom.pill.textContent = text;
+    dom.pill.hidden = S.missed === 0;
+  }
+
+  /* ---------- Загрузка ---------- */
+
+  async function reload() {
+    const seq = ++S.seq;
+    S.syncing = true;
+    S.buffer = [];
+    S.missed = 0;
+    dom.pill.hidden = true;
+    S.stick = true;
+    try {
+      if (S.bookmarksMode) {
+        S.entries = S.bookmarks.filter((e) => matchesBase(e) && inRange(e)).sort((a, b) => a.ts - b.ts);
+        S.hasOlder = false;
+      } else {
+        const p = baseParams();
+        p.set("limit", String(PAGE));
+        if (S.range) {
+          p.set("from", String(Math.floor(S.range.from)));
+          if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
+        }
+        const data = await ctx.request(`/api/logs/entries?${p}`);
+        if (seq !== S.seq) return;
+        S.entries = data.entries || [];
+        S.hasOlder = !!data.hasMore;
+      }
+      renderAll();
+      refreshStats();
+    } catch (error) {
+      if (seq === S.seq) {
+        dom.feed.replaceChildren(el("div", "log-empty", `Не удалось загрузить журнал: ${error.message}`));
+      }
+    } finally {
+      if (seq === S.seq) {
+        S.syncing = false;
+        drainBuffer();
+      }
+    }
+  }
+
+  // Подгружает более старые записи при прокрутке к началу и не сбивает положение.
+  async function loadOlder() {
+    if (S.loadingOlder || !S.hasOlder || S.bookmarksMode || !S.entries.length || S.entries.length >= MAX_ENTRIES) return;
+    S.loadingOlder = true;
+    const seq = S.seq;
+    try {
+      const oldest = S.entries[0].ts;
+      const skip = S.entries.filter((e) => e.ts === oldest).length;
+      const p = baseParams();
+      p.set("limit", String(PAGE));
+      p.set("before", String(oldest));
+      p.set("skip", String(skip));
+      if (S.range) {
+        p.set("from", String(Math.floor(S.range.from)));
+        if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
+      }
+      const data = await ctx.request(`/api/logs/entries?${p}`);
+      if (seq !== S.seq) return;
+      const older = data.entries || [];
+      S.hasOlder = !!data.hasMore;
+      if (!older.length) {
+        updateCount();
+        return;
+      }
+      prependEntries(older);
+    } catch (_) {
+      /* Следующая прокрутка повторит попытку. */
+    } finally {
+      S.loadingOlder = false;
+    }
+  }
+
+  function prependEntries(older) {
+    const feed = dom.feed;
+    const before = feed.scrollHeight - feed.scrollTop;
+    S.entries = older.concat(S.entries);
+    const fresh = buildGroups(older);
+    const first = S.groups[0];
+    const tail = fresh.at(-1);
+    // Одинаковые записи на стыке страниц остаются одной карточкой.
+    if (first && tail && tail.key && tail.key === first.key) {
+      first.entries = tail.entries.concat(first.entries);
+      fresh.pop();
+      updateCard(first);
+    }
+    const fragment = document.createDocumentFragment();
+    let day = "";
+    for (const group of fresh) {
+      const d = dayOf(group.entries[0]);
+      if (d !== day) {
+        day = d;
+        fragment.append(daySeparator(d));
+      }
+      fragment.append(createCard(group, false));
+    }
+    // Разделитель дня на стыке дублировался бы.
+    const firstNode = feed.querySelector(".jr-day, .jr-card");
+    if (firstNode?.classList.contains("jr-day") && firstNode.dataset.day === day) firstNode.remove();
+    feed.prepend(fragment);
+    S.groups = fresh.concat(S.groups);
+    updateCount();
+    feed.scrollTop = feed.scrollHeight - before;
+  }
+
+  /* ---------- Поток ---------- */
+
+  function drainBuffer() {
+    const queued = S.buffer.splice(0);
+    for (const e of queued) ingest(e);
+  }
+
+  // Принимает запись из потока; во время синхронизации записи ждут в буфере.
+  function ingest(e) {
+    if (S.syncing) {
+      S.buffer.push(e);
+      return;
+    }
+    if (S.bookmarksMode) return;
+    if (matchesBase(e)) S.timeline?.bump(e.ts, e.level);
+    if (!matchesBase(e) || !inRange(e)) return;
+    if (!S.live) {
+      S.missed++;
+      showPill();
+      return;
+    }
+    appendEntry(e);
+  }
+
+  // Догоняет записи, пришедшие между загрузкой истории и подключением потока (или за время обрыва).
+  async function catchUp() {
+    if (S.bookmarksMode || !S.live || (S.range && S.range.to != null)) return;
+    const seq = ++S.seq;
+    S.syncing = true;
+    try {
+      const last = S.entries.at(-1);
+      const p = baseParams();
+      p.set("limit", "500");
+      if (last) p.set("from", String(last.ts));
+      else if (S.range) p.set("from", String(Math.floor(S.range.from)));
+      const data = await ctx.request(`/api/logs/entries?${p}`);
+      if (seq !== S.seq) return;
+      const fetched = data.entries || [];
+      if (!last) {
+        S.entries = fetched;
+        S.hasOlder = !!data.hasMore;
+        renderAll();
+      } else {
+        const known = S.entries.filter((e) => e.ts === last.ts).length;
+        let skipped = 0;
+        for (const e of fetched) {
+          if (e.ts < last.ts) continue;
+          if (e.ts === last.ts && skipped < known) {
+            skipped++;
+            continue;
+          }
+          appendEntry(e);
+        }
+      }
+      // Поток подключился раньше запроса: его начало уже вошло в ответ. Ищем наибольшее
+      // совпадение хвоста ответа с началом буфера и отбрасываем его, чтобы не показать дважды.
+      const queued = S.buffer.filter(matchesBase);
+      let overlap = Math.min(queued.length, fetched.length);
+      for (; overlap > 0; overlap--) {
+        let same = true;
+        for (let i = 0; i < overlap && same; i++) same = entryKey(fetched[fetched.length - overlap + i]) === entryKey(queued[i]);
+        if (same) break;
+      }
+      S.buffer = S.buffer.filter(matchesBase).slice(overlap);
+    } catch (_) {
+      /* Следующее переподключение повторит догонку. */
+    } finally {
+      if (seq === S.seq) {
+        S.syncing = false;
+        drainBuffer();
+      }
+    }
+  }
+
+  function setStreamState(text, online) {
+    S.online = online;
+    const node = $("#stream-state");
+    node.replaceChildren(el("i"), document.createTextNode(` ${text}`));
+    node.classList.toggle("online", online);
+  }
+
+  // Закрывает прежний EventSource и подключает новый; переподключение выполняет браузер.
+  function connectStream() {
+    if (ctx.stream) ctx.stream.close();
+    const stream = new EventSource("/api/logs/stream");
+    ctx.stream = stream;
+    let errored = false;
+    stream.onopen = () => {
+      setStreamState(S.live ? "поток подключён" : "архив · поток идёт в фоне", true);
+      catchUp();
+      errored = false;
+    };
+    stream.onmessage = (event) => {
+      try {
+        ingest(JSON.parse(event.data));
+      } catch (_) {
+        /* Повреждённое событие пропускается, поток остаётся. */
+      }
+    };
+    stream.addEventListener("state", (event) => {
+      try {
+        const state = JSON.parse(event.data);
+        if (!state.alive) setStreamState(`файл журнала недоступен${state.reason ? `: ${state.reason}` : ""}`, false);
+        else if (!S.online || errored) setStreamState(S.live ? "поток подключён" : "архив · поток идёт в фоне", true);
+      } catch (_) {
+        /* Служебное событие не обязательно. */
+      }
+    });
+    stream.onerror = () => {
+      errored = true;
+      setStreamState("переподключение…", false);
+    };
+  }
+
+  // Первая загрузка после входа.
+  async function loadHistory() {
+    S.opened = true;
+    await reload();
+    startTimeline();
+  }
+
+  /* ---------- Шкала ---------- */
+
+  function startTimeline() {
+    if (S.timeline) return;
+    S.timeline = createLogTimeline($("#timeline"), {
+      windowMs: WINDOW_MS,
+      bucketMs: BUCKET_MS,
+      onSelect: (range) => selectRange(range),
+    });
+    S.timeline.setSelection(S.range ? [S.range.from, S.range.to ?? clock()] : null);
+    refreshStats();
+    refreshRestarts();
+  }
+
+  async function refreshStats() {
+    if (!S.timeline || statsBusy) return;
+    statsBusy = true;
+    try {
+      const p = baseParams();
+      p.set("bucket", String(BUCKET_MS));
+      const stats = await ctx.request(`/api/logs/stats?${p}`);
+      S.timeline.setStats(stats);
+      S.modules = Object.entries(stats.modules || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      renderQuick();
+    } catch (_) {
+      /* Шкала необязательна: лента работает без неё. */
+    } finally {
+      statsBusy = false;
+    }
+  }
+
+  async function refreshRestarts() {
+    if (!S.timeline) return;
+    restartsAt = Date.now();
+    try {
+      const history = await ctx.request("/api/system/history?range=24h");
+      const cutoff = clock() - WINDOW_MS;
+      S.timeline.setMarkers((history.restarts || []).map((value) => Date.parse(value)).filter((t) => t > cutoff));
+    } catch (_) {
+      /* Отметки перезапусков необязательны. */
+    }
+  }
+
+  function selectRange([from, to]) {
+    const open = to >= clock() - BUCKET_MS / 2;
+    S.range = { from: Math.floor(from), to: open ? null : Math.ceil(to) };
+    if (!open) S.live = false;
+    syncModeButtons();
+    queryChanged();
+  }
+
+  function setPresetRange(minutes) {
+    if (!minutes) S.range = null;
+    else S.range = { from: clock() - minutes * 60000, to: null };
+    queryChanged();
+  }
+
+  /* ---------- Запрос и чипы ---------- */
+
+  // Применяет изменения запроса и перезагружает ленту; быстрые правки (ввод) откладываются.
+  function queryChanged(delay = 0) {
+    renderChips();
+    S.timeline?.setSelection(S.range ? [S.range.from, S.range.to ?? clock()] : null);
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(reload, delay);
+  }
+
+  // Меняет часть запроса и синхронизирует поле ввода, чипы и ленту.
+  function setQuery(patch, { reloadNow = true } = {}) {
+    if ("level" in patch) S.level = patch.level;
+    if ("module" in patch) S.module = patch.module;
+    if ("text" in patch) {
+      S.text = patch.text;
+      dom.input.value = patch.text;
+    }
+    if ("range" in patch) S.range = patch.range;
+    if (reloadNow) queryChanged();
+    else renderChips();
+  }
+
+  // Разбирает введённое: level:error и module:name уходят в чипы, остальное — текст поиска.
+  function parseInput(raw, final) {
+    const rest = [];
+    let level = S.level;
+    let module = S.module;
+    const tokens = raw.match(/"[^"]*"|\S+/g) || [];
+    tokens.forEach((token, index) => {
+      const m = token.match(/^(level|module):(.+)$/i);
+      const complete = final || index < tokens.length - 1 || /\s$/.test(raw);
+      if (m && complete) {
+        if (m[1].toLowerCase() === "level") {
+          const v = m[2].toLowerCase();
+          level = v.startsWith("err") ? "ERROR" : v.startsWith("warn") ? "WARNING" : v.startsWith("info") ? "INFO" : "ALL";
+        } else module = m[2];
+      } else rest.push(token.replace(/^"|"$/g, ""));
+    });
+    return { level, module, text: rest.join(" ") };
+  }
+
+  function onInput(final) {
+    const parsed = parseInput(dom.input.value, final);
+    const structural = parsed.level !== S.level || parsed.module !== S.module;
+    const textChanged = parsed.text !== S.text;
+    if (!structural && !textChanged) return;
+    S.level = parsed.level;
+    S.module = parsed.module;
+    S.text = parsed.text;
+    if (structural) dom.input.value = parsed.text;
+    queryChanged(final || structural ? 0 : 260);
+  }
+
+  function renderChips() {
+    const box = $("#query-chips");
+    box.replaceChildren();
+    const chip = (name, value, clear) => {
+      const node = el("span", "jr-chip");
+      node.append(el("b", "", `${name}:`), document.createTextNode(value));
+      const x = el("button", "", "×");
+      x.type = "button";
+      x.setAttribute("aria-label", `Убрать фильтр ${name}`);
+      x.addEventListener("click", (event) => {
+        event.preventDefault();
+        clear();
+        queryChanged();
       });
+      node.append(x);
+      box.append(node);
+    };
+    if (S.level !== "ALL") chip("level", S.level.toLowerCase(), () => (S.level = "ALL"));
+    if (S.module) chip("module", S.module, () => (S.module = ""));
+    if (S.range) {
+      const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
+      chip("время", `${t(S.range.from)}–${S.range.to == null ? "сейчас" : t(S.range.to)}`, () => (S.range = null));
+    }
+    document.querySelectorAll(".filter-chip").forEach((button) => {
+      const active = button.dataset.level === S.level;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    $("#tl-reset").hidden = !S.range;
+    const info = $("#tl-info");
+    if (S.range) {
+      const t = (ms) => new Date(ms).toTimeString().slice(0, 5);
+      info.textContent = `Диапазон ${t(S.range.from)} — ${S.range.to == null ? "сейчас" : t(S.range.to)}`;
+    } else info.textContent = "Последние 6 часов";
+    dom.moduleSelect.value = S.module;
+    $("#preset-delete").disabled = !$("#preset-select").value;
+  }
+
+  // Быстрые фильтры: самые шумные модули кнопками, остальные в списке.
+  function renderQuick() {
+    const box = $("#module-chips");
+    box.replaceChildren();
+    for (const [name] of S.modules.slice(0, 5)) {
+      const button = el("button", "jr-pill-btn", name);
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(S.module === name));
+      button.addEventListener("click", () => setQuery({ module: S.module === name ? "" : name }));
+      box.append(button);
+    }
+    const select = dom.moduleSelect;
+    select.replaceChildren(new Option("Все модули", ""));
+    for (const [name] of S.modules) select.add(new Option(name, name));
+    if (S.module && !S.modules.some(([name]) => name === S.module)) select.add(new Option(S.module, S.module));
+    select.value = S.module;
+  }
+
+  /* ---------- Панель деталей ---------- */
+
+  async function openDrawer(e) {
+    S.selected = entryKey(e);
+    markSelected();
+    const drawer = dom.drawer;
+    drawer.hidden = false;
+    drawer.replaceChildren();
+    const head = el("div", "jr-dh");
+    head.append(el("strong", "", `${e.module || "Запись"} · ${hms(e)}`));
+    const close = el("button", "jr-x", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Закрыть панель");
+    close.addEventListener("click", closeDrawer);
+    head.append(close);
+    const full = el("pre", "jr-full", rawText(e));
+    const kv = el("dl", "jr-kv");
+    for (const [k, v] of [["Время", e.time], ["Уровень", e.level], ["Модуль", e.module || "—"]]) kv.append(el("dt", "", k), el("dd", "", v));
+    const actions = el("div", "jr-acts");
+    const act = (label, fn) => {
+      const b = el("button", "compact", label);
+      b.type = "button";
+      b.addEventListener("click", fn);
+      actions.append(b);
+    };
+    act("Копировать", async () => {
+      try {
+        await navigator.clipboard.writeText(rawText(e));
+        ctx.showNotice("Запись скопирована");
+      } catch (_) {
+        ctx.showNotice("Не удалось скопировать", "error");
+      }
+    });
+    if (e.module) act(`Только ${e.module}`, () => setQuery({ module: e.module }));
+    act(isMarked(e) ? "Убрать закладку" : "В закладки", () => {
+      toggleBookmark(e);
+      openDrawer(e);
+    });
+    drawer.append(head, full, kv, actions);
+    const ctxTitle = el("div", "jr-ctx-title", "Окружение");
+    const list = el("div", "jr-ctx");
+    list.append(el("div", "jr-ctx-note", "Загрузка…"));
+    drawer.append(ctxTitle, list);
+    try {
+      const data = await ctx.request(`/api/logs/context?ts=${e.ts}&id=${encodeURIComponent(e.id)}&n=20`);
+      if (S.selected !== entryKey(e)) return;
+      list.replaceChildren();
+      data.entries.forEach((item, index) => {
+        const row = el("div", `jr-ctx-row${index === data.index ? " cur" : ""}${item.level === "ERROR" || item.level === "CRITICAL" ? " bad" : item.level === "WARNING" ? " warn" : ""}`);
+        row.append(el("time", "", hms(item)), el("span", "", `${item.module ? `${item.module}: ` : ""}${item.message}`));
+        list.append(row);
+      });
+      list.querySelector(".cur")?.scrollIntoView({ block: "center" });
+    } catch (_) {
+      list.replaceChildren(el("div", "jr-ctx-note", "Окружение недоступно: файл мог ротироваться."));
+    }
+  }
+
+  function rawText(e) {
+    const head = e.time ? `${e.time} [${e.level}] ${e.module}: ${e.message}` : e.message;
+    return [head, ...(e.trace || [])].join("\n");
+  }
+
+  function markSelected() {
+    dom.feed.querySelectorAll(".jr-card.selected").forEach((node) => node.classList.remove("selected"));
+    if (!S.selected) return;
+    const group = S.groups.find((g) => g.entries.some((item) => entryKey(item) === S.selected));
+    group?.node?.classList.add("selected");
+  }
+
+  function closeDrawer() {
+    S.selected = null;
+    dom.drawer.hidden = true;
+    markSelected();
+  }
+
+  /* ---------- Режимы, закладки, экспорт ---------- */
+
+  function syncModeButtons() {
+    $("#mode-live").setAttribute("aria-pressed", String(S.live && !S.bookmarksMode));
+    $("#mode-archive").setAttribute("aria-pressed", String(!S.live && !S.bookmarksMode));
+    $("#bookmarks-only").setAttribute("aria-pressed", String(S.bookmarksMode));
+    if (S.online) setStreamState(S.live ? "поток подключён" : "архив · поток идёт в фоне", true);
+  }
+
+  function setLive(live) {
+    S.live = live;
+    S.bookmarksMode = false;
+    // Возврат в поток: диапазон, не доходящий до «сейчас», сбрасывается, иначе новых записей не будет.
+    if (live && S.range && S.range.to != null) S.range = null;
+    syncModeButtons();
+    queryChanged();
+  }
+
+  async function exportLogs() {
+    const button = $("#export-logs");
+    button.disabled = true;
+    try {
+      const lines = [];
+      let before = 0;
+      let skip = 0;
+      for (let page = 0; page < 40; page++) {
+        const p = baseParams();
+        p.set("limit", "500");
+        if (S.range) {
+          p.set("from", String(Math.floor(S.range.from)));
+          if (S.range.to != null) p.set("to", String(Math.ceil(S.range.to)));
+        }
+        if (before) {
+          p.set("before", String(before));
+          p.set("skip", String(skip));
+        }
+        const data = S.bookmarksMode ? { entries: S.entries, hasMore: false } : await ctx.request(`/api/logs/entries?${p}`);
+        const batch = data.entries || [];
+        for (let i = batch.length - 1; i >= 0; i--) lines.push(rawText(batch[i]));
+        if (!data.hasMore || !batch.length) break;
+        before = batch[0].ts;
+        skip = batch.filter((e) => e.ts === before).length;
+      }
+      const text = `${lines.reverse().join("\n")}\n`;
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
       link.download = `heroku-log-${new Date().toISOString().slice(0, 10)}.txt`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    });
+    } catch (error) {
+      ctx.showNotice(`Не удалось выгрузить журнал: ${error.message}`, "error");
+    } finally {
+      button.disabled = S.entries.length === 0;
+    }
   }
 
-  // Сохраняет поиск, уровень, модуль и время как именованный набор в localStorage.
-  function bindPresetSave() {
-    ctx.$("#preset-save").addEventListener("click", () => {
-      const name = ctx.$("#preset-name").value.trim();
+  /* ---------- Сохранённые фильтры ---------- */
+
+  function refreshPresetOptions() {
+    const select = $("#preset-select");
+    const selected = select.value;
+    select.replaceChildren(new Option("Сохранённые фильтры", ""));
+    for (const name of Object.keys(ctx.savedFilters).sort()) select.add(new Option(name, name));
+    if (ctx.savedFilters[selected]) select.value = selected;
+    $("#preset-delete").disabled = !select.value;
+  }
+
+  function savePresets() {
+    try {
+      localStorage.setItem("hkc-log-presets", JSON.stringify(ctx.savedFilters));
+    } catch (_) {
+      /* Без хранилища набор живёт до перезагрузки. */
+    }
+  }
+
+  function bindPresets() {
+    $("#preset-save").addEventListener("click", () => {
+      const name = $("#preset-name").value.trim();
       if (!name) {
         ctx.showNotice("Введите имя фильтра", "error");
         return;
       }
-      ctx.savedFilters[name] = {
-        query: ctx.filterInput.value,
-        level: ctx.activeLevel,
-        module: ctx.$("#module-filter").value,
-        from: ctx.$("#time-from").value,
-        to: ctx.$("#time-to").value,
-      };
-      localStorage.setItem("hkc-log-presets", JSON.stringify(ctx.savedFilters));
-      ctx.refreshPresetOptions();
-      ctx.$("#preset-select").value = name;
-      ctx.$("#preset-delete").disabled = false;
-      ctx.$("#preset-name").value = "";
+      ctx.savedFilters[name] = { query: S.text, level: S.level, module: S.module };
+      savePresets();
+      refreshPresetOptions();
+      $("#preset-select").value = name;
+      $("#preset-delete").disabled = false;
+      $("#preset-name").value = "";
       ctx.showNotice(`Фильтр «${name}» сохранён`);
     });
-  }
-
-  // Восстанавливает выбранный набор фильтров и обновляет ленту.
-  function bindPresetSelect() {
-    ctx.$("#preset-select").addEventListener("change", () => {
-      ctx.$("#preset-delete").disabled = !ctx.$("#preset-select").value;
-      const preset = ctx.savedFilters[ctx.$("#preset-select").value];
+    $("#preset-select").addEventListener("change", () => {
+      $("#preset-delete").disabled = !$("#preset-select").value;
+      const preset = ctx.savedFilters[$("#preset-select").value];
       if (!preset) return;
-      ctx.filterInput.value = preset.query || "";
-      ctx.activeLevel = preset.level || "ALL";
-      ctx.$("#module-filter").value = preset.module || "";
-      ctx.$("#time-from").value = preset.from || "";
-      ctx.$("#time-to").value = preset.to || "";
-      document
-        .querySelectorAll(".filter-chip")
-        .forEach((item) =>
-          item.classList.toggle(
-            "active",
-            item.dataset.level === ctx.activeLevel,
-          ),
-        );
-      ctx.renderLines();
+      setQuery({ text: preset.query || "", level: ["WARNING", "ERROR", "INFO"].includes(preset.level) ? preset.level : "ALL", module: preset.module || "", range: null });
     });
-  }
-
-  // Удаляет выбранный набор из локального хранилища и списка.
-  function bindPresetDelete() {
-    ctx.$("#preset-delete").addEventListener("click", () => {
-      const name = ctx.$("#preset-select").value;
+    $("#preset-delete").addEventListener("click", () => {
+      const name = $("#preset-select").value;
       if (!name) return;
       delete ctx.savedFilters[name];
-      localStorage.setItem("hkc-log-presets", JSON.stringify(ctx.savedFilters));
-      ctx.refreshPresetOptions();
+      savePresets();
+      refreshPresetOptions();
       ctx.showNotice(`Фильтр «${name}» удалён`);
     });
   }
 
-  // Очищает только историю на экране и буфер паузы; серверный файл журнала не удаляется.
-  function bindClear() {
-    ctx.$("#clear").addEventListener("click", () => {
-      ctx.allLines = [];
-      ctx.pausedLines = [];
-      ctx.logClearedByUser = true;
-      if (ctx.streamPaused)
-        ctx.$("#pause-stream").innerHTML = "<span>▶</span> Продолжить";
-      ctx.renderLines();
-      ctx.showNotice("Экран журнала очищен");
+  /* ---------- Переходы из других разделов ---------- */
+
+  // Открывает журнал с заданным запросом. moduleHint — имя модуля бота: подбирается подходящий
+  // логгер, а если такого нет, имя ищется как текст. focusError выделяет последнюю ошибку.
+  async function openJournal({ module = "", moduleHint = "", text = "", level = "ALL", from = 0, to = 0, focusError = false } = {}) {
+    if (moduleHint) {
+      const wanted = moduleHint.toLowerCase();
+      const found = S.modules.map(([name]) => name).find((name) => {
+        const lower = name.toLowerCase();
+        return lower === wanted || lower.endsWith(`.${wanted}`);
+      });
+      if (found) module = found;
+      else text = moduleHint;
+    }
+    S.bookmarksMode = false;
+    S.level = level;
+    S.module = module;
+    S.text = text;
+    dom.input.value = text;
+    S.range = from ? { from, to: to || null } : null;
+    S.live = !S.range || S.range.to == null;
+    if (focusError) S.live = false;
+    syncModeButtons();
+    ctx.setView("logs");
+    renderChips();
+    S.timeline?.setSelection(S.range ? [S.range.from, S.range.to ?? clock()] : null);
+    clearTimeout(reloadTimer);
+    await reload();
+    if (!focusError) return;
+    const cards = [...dom.feed.querySelectorAll('.jr-card[data-level="ERROR"], .jr-card[data-level="CRITICAL"]')];
+    const target = cards.at(-1);
+    if (!target) return;
+    S.stick = false;
+    target.scrollIntoView({ block: "center" });
+    target.classList.add("focused");
+    setTimeout(() => target.classList.remove("focused"), 2400);
+  }
+
+  function clearSearch() {
+    if (!dom.input.value && !S.text) return;
+    setQuery({ text: "" });
+  }
+
+  // Вызывается при показе раздела: шкала не рисуется, пока он скрыт.
+  function onJournalShown() {
+    S.timeline?.invalidate();
+    if (S.opened) refreshStats();
+  }
+
+  /* ---------- Подписки ---------- */
+
+  function bindJournal() {
+    dom = {
+      feed: $("#log"),
+      input: $("#filter"),
+      pill: $("#log-pill"),
+      drawer: $("#log-drawer"),
+      moduleSelect: $("#module-filter"),
+    };
+    try {
+      const stored = JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || "[]");
+      if (Array.isArray(stored)) S.bookmarks = stored.filter((e) => e && typeof e.ts === "number");
+    } catch (_) {
+      /* Повреждённые закладки игнорируются. */
+    }
+
+    dom.input.addEventListener("input", () => onInput(false));
+    dom.input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        onInput(true);
+      } else if (event.key === "Backspace" && !dom.input.value) {
+        // Пустое поле: Backspace снимает последний чип, как в привычных строках поиска.
+        if (S.range) S.range = null;
+        else if (S.module) S.module = "";
+        else if (S.level !== "ALL") S.level = "ALL";
+        else return;
+        queryChanged();
+      }
     });
-  }
+    document.querySelectorAll(".filter-chip").forEach((button) =>
+      button.addEventListener("click", () => setQuery({ level: button.dataset.level })),
+    );
+    dom.moduleSelect.addEventListener("change", () => setQuery({ module: dom.moduleSelect.value }));
+    $("#mode-live").addEventListener("click", () => setLive(true));
+    $("#mode-archive").addEventListener("click", () => {
+      S.live = false;
+      S.bookmarksMode = false;
+      syncModeButtons();
+      queryChanged();
+    });
+    $("#bookmarks-only").addEventListener("click", () => {
+      S.bookmarksMode = !S.bookmarksMode;
+      if (!S.bookmarksMode) S.live = true;
+      syncModeButtons();
+      queryChanged();
+    });
+    $("#export-logs").addEventListener("click", exportLogs);
+    $("#tl-reset").addEventListener("click", () => {
+      S.range = null;
+      queryChanged();
+    });
+    document.querySelectorAll("[data-tl-range]").forEach((button) =>
+      button.addEventListener("click", () => setPresetRange(Number(button.dataset.tlRange))),
+    );
+    dom.pill.addEventListener("click", () => {
+      if (!S.live) setLive(true);
+      else {
+        S.stick = true;
+        S.missed = 0;
+        dom.pill.hidden = true;
+        dom.feed.scrollTop = dom.feed.scrollHeight;
+      }
+    });
+    dom.feed.addEventListener("scroll", () => {
+      const f = dom.feed;
+      S.stick = f.scrollHeight - f.scrollTop - f.clientHeight < 48;
+      if (S.stick && S.live) {
+        S.missed = 0;
+        dom.pill.hidden = true;
+      }
+      if (f.scrollTop < 240) loadOlder();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && S.selected && ctx.currentView === "logs" && document.activeElement !== dom.input) closeDrawer();
+    });
+    ctx.timestamps?.addEventListener("change", () => dom.feed.classList.toggle("no-time", !ctx.timestamps.checked));
+    dom.feed.classList.toggle("no-time", ctx.timestamps ? !ctx.timestamps.checked : false);
+    bindPresets();
+    refreshPresetOptions();
+    renderChips();
+    syncModeButtons();
 
-  // Подключает перерисовку журнала к вводу поисковой строки.
-  function bindSearchKeyboard() {
-    ctx.filterInput.addEventListener("input", ctx.renderLines);
-  }
-
-  // Перерисовывает строки при смене видимости времени.
-  function bindTimestamps() {
-    ctx.timestamps.addEventListener("change", ctx.renderLines);
+    // Шкала обновляется раз в 10 секунд, пока раздел открыт; записи потока добавляют столбики сразу.
+    statsTimer = setInterval(() => {
+      if (!ctx.authenticated || ctx.currentView !== "logs" || document.hidden) return;
+      refreshStats();
+      if (Date.now() - restartsAt > 60000) refreshRestarts();
+    }, 10000);
   }
 
   return {
-    lineKey,
-    lineModule,
-    matchesAdvanced,
-    refreshModuleOptions,
-    refreshPresetOptions,
-    lineLevel,
-    matchesLevel,
-    renderLines,
-    createLogEmpty,
-    createLine,
-    appendLiveLine,
     loadHistory,
     connectStream,
-    bindFilterChip,
-    bindPauseStream,
-    bindBookmarksOnly,
-    bindExportLogs,
-    bindPresetSave,
-    bindPresetSelect,
-    bindPresetDelete,
-    bindClear,
-    bindSearchKeyboard,
-    bindTimestamps,
+    openJournal,
+    bindJournal,
+    clearSearch,
+    onJournalShown,
+    refreshPresetOptions,
+    stopJournalTimers() {
+      clearInterval(statsTimer);
+      S.timeline?.destroy();
+      S.timeline = null;
+    },
   };
 }

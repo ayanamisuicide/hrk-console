@@ -1,9 +1,10 @@
 const { test, expect } = require("@playwright/test");
+const { createJournalApi } = require("./journal-fixture");
 
 async function fixture(page) {
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/events") return route.abort();
+    if (path === "/api/events" || path === "/api/logs/stream") return route.abort();
     const data =
       path === "/api/auth/me"
         ? { username: "tester", role: "viewer" }
@@ -220,24 +221,24 @@ test("потеря связи и новый запуск не оставляют
 });
 
 test("модуль с ошибкой открывает журнал на своём логгере и последней ошибке", async ({ page }) => {
+  const journalApi = createJournalApi([
+    "2026-10-10 10:00:00 [INFO] heroku.modules.weather: loading",
+    "2026-10-10 10:00:01 [ERROR] heroku.modules.weather: init failed",
+    "Traceback (most recent call last):",
+    "2026-10-10 10:00:02 [INFO] heroku.core: ready",
+  ]);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/events") return route.abort();
+    if (path === "/api/events" || path === "/api/logs/stream") return route.abort();
+    const journal = journalApi.handle(route.request().url());
+    if (journal !== undefined)
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(journal ?? {}) });
     const data =
       path === "/api/auth/me"
         ? { username: "tester", role: "viewer" }
         : path === "/api/status"
           ? { running: true, pid: 42, uptime: "1ч" }
-          : path === "/api/logs"
-            ? {
-                lines: [
-                  "2026-10-10 10:00:00 [INFO] heroku.modules.weather: loading",
-                  "2026-10-10 10:00:01 [ERROR] heroku.modules.weather: init failed",
-                  "Traceback (most recent call last):",
-                  "2026-10-10 10:00:02 [INFO] heroku.core: ready",
-                ],
-              }
-            : path === "/api/modules"
+          : path === "/api/modules"
               ? {
                   status: "live",
                   session: "s",
@@ -255,11 +256,11 @@ test("модуль с ошибкой открывает журнал на сво
   await expect(page.locator(".mods-issue .mods-issue-trace")).toBeHidden();
   await page.locator('.mods-issue [data-issue="log"]').click();
   await expect(page.locator("#logs-view")).toBeVisible();
-  await expect(page.locator("#module-filter")).toHaveValue("heroku.modules.weather");
+  await expect(page.locator("#query-chips")).toContainText("heroku.modules.weather");
   await expect(page.locator("#filter")).toHaveValue("");
-  await expect(page.locator("#log .line")).toHaveCount(3);
-  await expect(page.locator("#log .line.continuation")).toHaveText("Traceback (most recent call last):");
-  await expect(page.locator('#log .line[data-level="ERROR"]')).toHaveClass(/focused/);
+  await expect(page.locator("#log .jr-card")).toHaveCount(2);
+  await expect(page.locator("#log .jr-trace pre")).toHaveText("Traceback (most recent call last):");
+  await expect(page.locator('#log .jr-card[data-level="ERROR"]')).toHaveClass(/focused/);
 
   // Исправный модуль открывает журнал из своей карточки без поиска ошибки.
   await page.locator('[data-view="modules"]').click();

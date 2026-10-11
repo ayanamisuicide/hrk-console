@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { createJournalApi } = require("./journal-fixture");
 // Ошибки JavaScript собираются отдельно для каждой страницы и проверяются после сценария.
 const pageErrors = new WeakMap();
 
@@ -76,6 +77,7 @@ test.beforeEach(async ({ page }) => {
   const errors = [];
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
+  const journalApi = createJournalApi(sampleLog);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const response = {
@@ -89,7 +91,6 @@ test.beforeEach(async ({ page }) => {
         herokuDir: "/srv/Heroku",
         logReady: true,
       },
-      "/api/logs": { lines: sampleLog },
       "/api/insights": { logCounts: { error: 2, warning: 0 } },
       "/api/metrics": { rssBytes: 104857600 },
       "/api/system": {
@@ -139,7 +140,14 @@ test.beforeEach(async ({ page }) => {
         ],
       },
     };
-    if (path === "/api/events") return route.abort();
+    if (path === "/api/events" || path === "/api/logs/stream") return route.abort();
+    const journal = journalApi.handle(route.request().url());
+    if (journal !== undefined)
+      return route.fulfill({
+        status: journal === null ? 404 : 200,
+        contentType: "application/json",
+        body: JSON.stringify(journal ?? {}),
+      });
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -181,9 +189,11 @@ for (const width of [390, 1440])
       }
       await expect(page.locator("#history-chart canvas")).toBeVisible();
       await page.locator('[data-view="logs"]').click();
-      await page.locator(".line-bookmark").first().click();
+      await page.locator(".jr-card").first().hover();
+      await page.locator(".jr-mark").first().click();
       await page.locator("#bookmarks-only").click();
-      await expect(page.locator("#log .line")).toHaveCount(1);
+      await expect(page.locator("#log .jr-card")).toHaveCount(1);
+      await page.locator("#bookmarks-only").click();
       if (
         (await page.locator("#journal-nav-toggle").isVisible()) &&
         (await page
@@ -194,7 +204,8 @@ for (const width of [390, 1440])
       await page.locator('[data-view="incidents"]').click();
       await page.locator(".incident-card").first().click();
       await expect(page.locator("#logs-view")).toBeVisible();
-      await expect(page.locator("#time-from")).not.toHaveValue("");
+      await expect(page.locator("#query-chips")).toContainText("время");
+      await expect(page.locator("#query-chips")).toContainText("Core");
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > innerWidth + 1,
       );

@@ -31,6 +31,7 @@ export function createNavigation(ctx) {
         modules: "Модули бота",
       }[view],
     );
+    if (view === "logs") ctx.onJournalShown?.();
     if (view === "incidents" && ctx.authenticated) ctx.refreshIncidents();
     if (view === "system" && ctx.authenticated) {
       ctx.refreshHistory();
@@ -134,9 +135,8 @@ export function createNavigation(ctx) {
         event.key === "Escape" &&
         document.activeElement === ctx.filterInput
       ) {
-        ctx.filterInput.value = "";
+        ctx.clearSearch();
         ctx.filterInput.blur();
-        ctx.renderLines();
       }
     });
   }

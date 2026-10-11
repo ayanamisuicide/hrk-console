@@ -65,34 +65,10 @@ export function createModules(ctx) {
 
   /* ---------- Переход в журнал ---------- */
 
-  // Фильтрует журнал по логгеру модуля (или по имени в тексте) и подсвечивает последнюю ошибку.
+  // Открывает журнал по модулю: подходящий логгер выбирается из известных, иначе имя ищется
+  // как текст. Для упавшего модуля выделяется последняя ошибка.
   function openInJournal(name, isError) {
-    const wanted = name.toLowerCase();
-    const logger = [...ctx.$("#module-filter").options]
-      .map((option) => option.value)
-      .find((value) => {
-        const lower = value.toLowerCase();
-        return value && (lower === wanted || lower.endsWith(`.${wanted}`));
-      });
-    ctx.filterInput.value = logger ? "" : name;
-    ctx.$("#module-filter").value = logger || "";
-    ctx.$("#time-from").value = "";
-    ctx.$("#time-to").value = "";
-    ctx.activeLevel = "ALL";
-    ctx.bookmarksOnly = false;
-    ctx.$("#bookmarks-only").setAttribute("aria-pressed", "false");
-    document.querySelectorAll(".filter-chip").forEach((chip) => chip.classList.toggle("active", chip.dataset.level === "ALL"));
-    ctx.setView("logs");
-    ctx.renderLines();
-    // Уровень не фильтруем: строки traceback без уровня должны остаться рядом с ошибкой.
-    if (!isError) return;
-    const errors = ctx.logEl.querySelectorAll('.line[data-level="ERROR"], .line[data-level="CRITICAL"]');
-    const last = errors[errors.length - 1];
-    if (!last) return;
-    ctx.autoscroll.checked = false;
-    last.scrollIntoView({ block: "center" });
-    last.classList.add("focused");
-    setTimeout(() => last.classList.remove("focused"), 2400);
+    ctx.openJournal({ moduleHint: name, focusError: isError });
   }
 
   async function copyError(text, button) {

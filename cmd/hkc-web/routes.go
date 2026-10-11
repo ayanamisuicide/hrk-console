@@ -72,6 +72,10 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/public/status", s.publicStatus)
 	mux.HandleFunc("GET /api/logs", s.authorize(s.logs))
 	mux.HandleFunc("GET /api/events", s.authorize(s.events))
+	mux.HandleFunc("GET /api/logs/entries", s.authorize(s.logEntries))
+	mux.HandleFunc("GET /api/logs/stats", s.authorize(s.logStats))
+	mux.HandleFunc("GET /api/logs/context", s.authorize(s.logContext))
+	mux.HandleFunc("GET /api/logs/stream", s.authorize(s.logStream))
 	mux.HandleFunc("POST /api/bot/{action}", s.authorizeControl(s.action))
 
 	assets, err := fs.Sub(staticFiles, "static")

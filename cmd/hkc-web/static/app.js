@@ -24,8 +24,6 @@ Object.assign(ctx, createServiceBindings(ctx));
 
 ctx.$ = (selector) => document.querySelector(selector);
 
-ctx.logEl = ctx.$("#log");
-
 ctx.notice = ctx.$("#notice");
 
 ctx.filterInput = ctx.$("#filter");
@@ -38,25 +36,11 @@ ctx.authDialog = ctx.$("#auth-dialog");
 
 ctx.initialInvite = new URLSearchParams(location.search).get("invite") || "";
 
-// В памяти хранится ограниченная история экрана; это не лимит файла на сервере.
-ctx.maxLines = 1500;
-
 ctx.authMode = ctx.initialInvite ? "register" : "login";
 
 ctx.authenticated = false;
 
-ctx.allLines = [];
-
 ctx.stream = undefined;
-
-ctx.activeLevel = "ALL";
-
-// Пауза задерживает отображение: SSE остаётся подключённым и пишет в pausedLines.
-ctx.streamPaused = false;
-
-ctx.pausedLines = [];
-
-ctx.logClearedByUser = false;
 
 ctx.currentView = "logs";
 
@@ -70,10 +54,6 @@ ctx.incidentsSignature = "";
 
 ctx.savedFilters = {};
 
-ctx.bookmarks = new Set();
-
-ctx.bookmarksOnly = false;
-
 ctx.historyRange = "live";
 
 ctx.historyView = "resources";
@@ -85,14 +65,6 @@ try {
   ctx.historyView = localStorage.getItem("hkc-history-view") || "resources";
 } catch (_) {
   /* Без хранилища используется вид по умолчанию. */
-}
-
-try {
-  ctx.bookmarks = new Set(
-    JSON.parse(localStorage.getItem("hkc-log-bookmarks") || "[]"),
-  );
-} catch (_) {
-  localStorage.removeItem("hkc-log-bookmarks");
 }
 
 ctx.animateValue = window.motionValue;
@@ -108,7 +80,7 @@ try {
   localStorage.removeItem("hkc-log-presets");
 }
 
-ctx.refreshPresetOptions();
+ctx.bindJournal();
 
 ctx.bindViewLinks();
 
@@ -120,10 +92,6 @@ ctx.setView(localStorage.getItem("hkc-view") || "logs");
 
 
 ctx.bindSearch();
-
-ctx.bindFilterChip();
-
-ctx.bindPauseStream();
 
 ctx.systemBusy = false;
 
@@ -143,19 +111,6 @@ ctx.createSparkline = createSparkline;
 ctx.sparkBusy = false;
 
 ctx.bindHistoryChart();
-
-ctx.bindBookmarksOnly();
-
-ctx.bindExportLogs();
-
-for (const selector of ["#module-filter", "#time-from", "#time-to"])
-  document.querySelector(selector).addEventListener("change", ctx.renderLines);
-
-ctx.bindPresetSave();
-
-ctx.bindPresetSelect();
-
-ctx.bindPresetDelete();
 
 ctx.commands = [
   { name: "Открыть журнал", run: () => ctx.setView("logs") },
@@ -187,12 +142,6 @@ ctx.bindCommandQuery();
 ctx.bindCommandQueryKeyboard();
 
 ctx.bindBotActions();
-
-ctx.bindClear();
-
-ctx.bindSearchKeyboard();
-
-ctx.bindTimestamps();
 
 ctx.bindAuthSwitch();
 

@@ -246,42 +246,61 @@
 
         <!-- Журнал -->
         <section id="logs-view" class="workspace-view logs-view" hidden>
-          <div class="logs-controls">
-            <div class="log-console-bar">
-              <span id="stream-state"><i></i> подключение к потоку</span>
-              <span class="line-count"><b id="line-count">0</b> строк</span>
-              <div class="log-actions">
-                <button id="pause-stream" class="compact stream-control"><span>Ⅱ</span> Пауза</button>
-                <button id="export-logs" class="compact" type="button" title="Экспорт журнала" aria-label="Экспорт журнала"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Экспорт</span></button>
-                <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные строки"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Закладки</span></button>
-                <button id="clear" class="compact" type="button" title="Очистить экран" aria-label="Очистить экран"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Очистить</span></button>
+          <div class="jr-top">
+            <span id="stream-state"><i></i> подключение к потоку</span>
+            <span class="line-count"><b id="line-count">0</b> записей</span>
+            <div class="log-actions">
+              <div class="segmented" role="group" aria-label="Режим журнала">
+                <button id="mode-live" type="button" aria-pressed="true">Поток</button>
+                <button id="mode-archive" type="button" aria-pressed="false">Архив</button>
               </div>
-            </div>
-            <div class="log-filterbar">
-              <div class="search-wrap"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="filter" type="search" placeholder="Найти в журнале…"><kbd>/</kbd></div>
-              <div class="segmented level-filters" role="group" aria-label="Уровень событий">
-                <button class="filter-chip active" data-level="ALL">Все</button>
-                <button class="filter-chip" data-level="INFO">Инфо</button>
-                <button class="filter-chip warning" data-level="WARNING">Предупреждения</button>
-                <button class="filter-chip error" data-level="ERROR">Ошибки</button>
-              </div>
-              <details class="log-advanced">
-                <summary>Фильтры <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-                <div class="log-advanced-grid">
-                  <label>Модуль <select id="module-filter"><option value="">Все модули</option></select></label>
-                  <label>С <input id="time-from" type="datetime-local"></label>
-                  <label>По <input id="time-to" type="datetime-local"></label>
-                  <div class="preset-row"><label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label><button id="preset-delete" class="compact" type="button" title="Удалить выбранный фильтр" aria-label="Удалить выбранный фильтр" disabled>×</button></div>
-                  <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
-                  <button id="preset-save" class="compact">Сохранить фильтр</button>
-                </div>
-              </details>
+              <button id="bookmarks-only" class="compact" type="button" aria-pressed="false" title="Показать отмеченные записи"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>Закладки</span></button>
+              <button id="export-logs" class="compact" type="button" title="Выгрузить результат запроса в файл" aria-label="Экспорт журнала"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Экспорт</span></button>
             </div>
           </div>
-          <section class="log-frame">
-            <div class="log-head" aria-hidden="true"><span>Время</span><span>Уровень</span><span>Модуль</span><span>Сообщение</span></div>
-            <section id="log" class="log" aria-live="polite"></section>
+          <label class="jr-query">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span id="query-chips"></span>
+            <input id="filter" type="search" placeholder="Поиск · level:error  module:updates  «текст»" autocomplete="off" aria-label="Поиск по журналу">
+            <kbd>/</kbd>
+          </label>
+          <div class="jr-quick">
+            <div class="segmented level-filters" role="group" aria-label="Уровень событий">
+              <button class="filter-chip active" type="button" data-level="ALL">Все</button>
+              <button class="filter-chip" type="button" data-level="INFO">Инфо</button>
+              <button class="filter-chip warning" type="button" data-level="WARNING">Предупреждения</button>
+              <button class="filter-chip error" type="button" data-level="ERROR">Ошибки</button>
+            </div>
+            <span id="module-chips" class="jr-module-chips"></span>
+            <select id="module-filter" aria-label="Модуль"><option value="">Все модули</option></select>
+            <details class="log-advanced">
+              <summary>Сохранённые <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+              <div class="log-advanced-grid">
+                <div class="preset-row"><label>Сохранённый фильтр <select id="preset-select"><option value="">Выберите</option></select></label><button id="preset-delete" class="compact" type="button" title="Удалить выбранный фильтр" aria-label="Удалить выбранный фильтр" disabled>×</button></div>
+                <input id="preset-name" type="text" maxlength="32" placeholder="Имя фильтра" aria-label="Имя фильтра">
+                <button id="preset-save" class="compact" type="button">Сохранить текущий</button>
+              </div>
+            </details>
+          </div>
+          <section class="jr-timeline" aria-label="Шкала событий">
+            <div class="jr-tl-head">
+              <span id="tl-info">Последние 6 часов</span>
+              <span class="jr-tl-tools">
+                <button class="jr-link" type="button" data-tl-range="15">15 мин</button>
+                <button class="jr-link" type="button" data-tl-range="60">1 час</button>
+                <button class="jr-link" type="button" data-tl-range="0">6 часов</button>
+                <button id="tl-reset" class="jr-link strong" type="button" hidden>Сбросить диапазон</button>
+              </span>
+            </div>
+            <div id="timeline" class="jr-bars"></div>
           </section>
+          <div class="jr-main">
+            <div class="jr-feed-wrap">
+              <section id="log" class="log jr-feed" aria-live="off" aria-label="Записи журнала"></section>
+              <button id="log-pill" class="jr-pill" type="button" hidden></button>
+            </div>
+            <aside id="log-drawer" class="jr-drawer" hidden aria-label="Детали записи"></aside>
+          </div>
         </section>
       </div>
     </main>

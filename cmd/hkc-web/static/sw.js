@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v40-modules";
+const CACHE = "hkc-shell-v41-journal";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -15,6 +15,7 @@ const ASSETS = [
   "/modules/auth.js",
   "/modules/incidents.js",
   "/modules/journal.js",
+  "/modules/log-timeline.js",
   "/modules/navigation.js",
   "/modules/service.js",
   "/modules/system.js",
