@@ -85,6 +85,22 @@ func itoa(n int64) string {
 	return string(b)
 }
 
+// TestLogEntriesFractionalBounds проверяет, что дробные миллисекунды не снимают границу времени.
+func TestLogEntriesFractionalBounds(t *testing.T) {
+	s := serverWithLog(t, sampleJournal)
+	var all struct{ Entries []logfeed.Entry }
+	getJSON(t, s.logEntries, "/api/logs/entries", &all)
+	last := all.Entries[len(all.Entries)-1].TS
+	var cut struct{ Entries []logfeed.Entry }
+	getJSON(t, s.logEntries, "/api/logs/entries?from="+itoa(last+1)+".75", &cut)
+	if len(cut.Entries) != 0 {
+		t.Errorf("записи старше границы остались: %+v", cut.Entries)
+	}
+	if queryInt64("-5") != 0 || queryInt64("мусор") != 0 || queryInt64("12.9") != 12 {
+		t.Error("разбор числа миллисекунд")
+	}
+}
+
 // TestLogStatsClampsWindow проверяет разумные значения по умолчанию.
 func TestLogStatsClampsWindow(t *testing.T) {
 	s := serverWithLog(t, sampleJournal)

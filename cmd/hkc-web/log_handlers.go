@@ -77,12 +77,21 @@ func logQuery(r *http.Request) logfeed.Query {
 	return q
 }
 
+// queryInt64 читает неотрицательное число миллисекунд. Дробная часть отбрасывается: часы
+// браузера, подстроенные под сервер, дают значения вроде 1790996401234.5, и молчаливый
+// ноль вместо них снимал бы нижнюю границу времени.
 func queryInt64(raw string) int64 {
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || n < 0 {
+	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if n < 0 {
+			return 0
+		}
+		return n
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f < 0 || f > 1<<62 {
 		return 0
 	}
-	return n
+	return int64(f)
 }
 
 // logEntries отдаёт записи журнала постранично: от конца к началу, с поиском по

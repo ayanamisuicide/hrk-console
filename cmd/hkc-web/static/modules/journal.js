@@ -70,7 +70,7 @@ export function createJournal(ctx) {
   }
 
   // Нижняя граница показа: выбранный диапазон и момент очистки, что позже.
-  const lowerBound = () => Math.max(S.range ? Math.floor(S.range.from) : 0, S.clearedAt);
+  const lowerBound = () => Math.floor(Math.max(S.range ? S.range.from : 0, S.clearedAt));
 
   // Добавляет к запросу временные границы.
   function applyRange(p) {
@@ -1031,7 +1031,7 @@ export function createJournal(ctx) {
       /* Без хранилища журнал показывается целиком. */
     }
     $("#clear-log").addEventListener("click", () => {
-      setCleared(clock());
+      setCleared(Math.floor(clock()));
       ctx.showNotice("Экран очищен — файл журнала не изменён");
     });
     dom.input.addEventListener("input", () => onInput(false));

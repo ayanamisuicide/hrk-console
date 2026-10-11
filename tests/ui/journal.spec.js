@@ -191,6 +191,19 @@ test("«Очистить» скрывает записи до текущего �
   await expect(page.locator("#log .jr-card")).toHaveCount(2);
 });
 
+test("«Очистить» отправляет целые миллисекунды даже при подстроенных под сервер часах", async ({ page }) => {
+  // Часы шкалы сдвинуты на дробное число миллисекунд, как после сглаживания расхождения с сервером.
+  const api = await openJournal(page, [line(0), line(1)], {
+    stats: () => ({ bucketMs: 300000, now: Date.now() + 100.7, modules: { Core: 2 }, total: 0, buckets: [] }),
+  });
+  await page.waitForTimeout(300);
+  await page.locator("#clear-log").click();
+  await expect(page.locator("#log .jr-card")).toHaveCount(0);
+  const withFrom = api.calls.filter((call) => call.startsWith("/api/logs/entries") && call.includes("from="));
+  expect(withFrom.length).toBeGreaterThan(0);
+  for (const call of withFrom) expect(call, call).toMatch(/from=\d+(&|$)/);
+});
+
 test("страница журнала не уходит за ширину экрана на телефоне", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await openJournal(page, [line(0), line(1, "ERROR", "updates", "длинное сообщение ".repeat(12))]);
