@@ -23,6 +23,11 @@ jobs:
       - name: Статическая проверка Go
         run: go vet ./...
 
+      - name: Линтер Go
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+
       - name: Тесты Go и проверка гонок
         run: go test -count=1 -race ./...
 
@@ -35,6 +40,18 @@ jobs:
       - name: Проверка мониторинга модулей и подключения Python
         run: python3 botproc/bridge/test_bridge.py
 
+  # Известные уязвимости в зависимостях и стандартной библиотеке. Отдельное задание: новая запись в
+  # базе уязвимостей не должна выглядеть как поломка кода основной проверки.
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   ui:
     runs-on: windows-latest
     steps:
@@ -44,6 +61,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Проверка JavaScript
+        run: npm run lint
       - run: npx playwright install chromium
       - run: npm run test:ui
       - if: failure()

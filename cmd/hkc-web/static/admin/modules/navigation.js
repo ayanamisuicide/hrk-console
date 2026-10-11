@@ -69,7 +69,9 @@ export function createNavigation(ctx) {
         view = JSON.parse(localStorage.getItem("hkc-admin-tree") || "[]").at(
           -1,
         );
-      } catch (_) {}
+      } catch (_) {
+        // Повреждённая запись истории — открываем вид по умолчанию.
+      }
     }
     setAdminView(view);
     setHistoryTab(localStorage.getItem("hkc-admin-history-tab"));

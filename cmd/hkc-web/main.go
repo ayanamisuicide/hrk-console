@@ -134,6 +134,8 @@ func main() {
 		log.Fatal(err)
 	}
 	s.dataDir = filepath.Dir(authFile)
+	// Сессии переживают перезапуск панели: обновление не разлогинивает пользователей.
+	s.sessions.persistTo(filepath.Join(s.dataDir, "sessions.json"))
 	s.wsl = detectWSL()
 	s.timeline = &eventTimeline{}
 	s.alerts = newAlertDispatcher(os.Getenv, s.operations.alertSettings)

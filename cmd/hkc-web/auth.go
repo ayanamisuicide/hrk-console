@@ -2,11 +2,14 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -319,10 +322,60 @@ type session struct {
 	ExpiresAt time.Time
 }
 
-// sessionStore — Сессии только в памяти с защитой от параллельных запросов.
+// sessionStore — Сессии под защитой от параллельных запросов. Ключ — SHA-256 от значения cookie,
+// поэтому ни память, ни файл на диске не содержат токенов, пригодных для входа. Если задан файл
+// (persistTo), сессии переживают перезапуск панели, в том числе при обновлении.
 type sessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]session
+	path     string
+}
+
+// sessionKey — ключ записи сессии по значению cookie.
+func sessionKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// persistTo читает сохранённые сессии (истёкшие отбрасываются) и включает запись на каждое изменение.
+// Файл создаётся с правами 0600; повреждённый файл не мешает запуску — сессии начинаются заново.
+func (s *sessionStore) persistTo(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.path = path
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var saved map[string]session
+	if err := json.Unmarshal(data, &saved); err != nil {
+		log.Printf("сессии: файл %s повреждён, вход придётся повторить: %v", path, err)
+		return
+	}
+	now := time.Now()
+	for key, entry := range saved {
+		if len(key) == sha256.Size*2 && now.Before(entry.ExpiresAt) && entry.Username != "" {
+			s.sessions[key] = entry
+		}
+	}
+}
+
+// saveLocked записывает сессии на диск; вызывается под s.mu. Сбой записи только в журнал: вход
+// продолжает работать, пока панель не перезапущена.
+func (s *sessionStore) saveLocked() {
+	if s.path == "" {
+		return
+	}
+	data, err := json.Marshal(s.sessions)
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(s.path), 0o700)
+	}
+	if err == nil {
+		err = writePrivateAtomic(s.path, data)
+	}
+	if err != nil {
+		log.Printf("сессии: не удалось сохранить: %v", err)
+	}
 }
 
 const (
@@ -330,7 +383,7 @@ const (
 	maxSessionsTotal   = 10000
 )
 
-// newSessionStore создаёт хранилище сессий в памяти; перезапуск сервера завершает все такие сессии.
+// newSessionStore создаёт хранилище сессий в памяти; без persistTo перезапуск сервера их завершает.
 func newSessionStore() *sessionStore {
 	return &sessionStore{sessions: make(map[string]session)}
 }
@@ -366,7 +419,8 @@ func (s *sessionStore) create(username string) (string, time.Time, error) {
 		}
 		delete(s.sessions, oldestToken)
 	}
-	s.sessions[token] = session{Username: username, CreatedAt: now, LastSeen: now, ExpiresAt: expires}
+	s.sessions[sessionKey(token)] = session{Username: username, CreatedAt: now, LastSeen: now, ExpiresAt: expires}
+	s.saveLocked()
 	s.mu.Unlock()
 	return token, expires, nil
 }
@@ -386,20 +440,22 @@ func sessionCount(sessions map[string]session, username string) int {
 func (s *sessionStore) get(token string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry, exists := s.sessions[token]
+	key := sessionKey(token)
+	entry, exists := s.sessions[key]
 	if !exists || time.Now().After(entry.ExpiresAt) {
-		delete(s.sessions, token)
+		delete(s.sessions, key)
 		return "", false
 	}
 	entry.LastSeen = time.Now()
-	s.sessions[token] = entry
+	s.sessions[key] = entry
 	return entry.Username, true
 }
 
 // delete удаляет одну сессию при выходе.
 func (s *sessionStore) delete(token string) {
 	s.mu.Lock()
-	delete(s.sessions, token)
+	delete(s.sessions, sessionKey(token))
+	s.saveLocked()
 	s.mu.Unlock()
 }
 
@@ -439,6 +495,7 @@ func (s *sessionStore) deleteUser(username string) {
 			delete(s.sessions, token)
 		}
 	}
+	s.saveLocked()
 }
 
 // clear завершает все сессии, например после восстановления базы доступа.
@@ -446,6 +503,7 @@ func (s *sessionStore) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = make(map[string]session)
+	s.saveLocked()
 }
 
 // randomToken получает криптографически случайные байты и кодирует их для безопасного использования в URL.

@@ -312,3 +312,33 @@ test("мини-приложение: вне Telegram просит открыть
   await page.goto("/tg/");
   await expect(page.locator("#gate")).toHaveAttribute("data-state", "outside");
 });
+
+test("мини-приложение: traceback сворачивается под своей записью", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMiniApp(page);
+  const lines = [
+    "2026-10-10 09:00:00 [INFO] app: старт",
+    "2026-10-10 09:00:01 [ERROR] updates: сбой сети",
+    "Traceback (most recent call last):",
+    '  File "x.py", line 3, in run',
+    "ConnectionError: reset",
+    "2026-10-10 09:00:02 [INFO] app: дальше",
+  ];
+  await page.route("**/api/tg/logs*", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ lines }) }));
+  await page.goto("/tg/#tgWebAppData=hash%3Dx");
+  await page.locator('[data-tab="logs"]').click();
+  // Шесть строк файла — три записи; ошибка с traceback считается один раз.
+  await expect(page.locator("#log p")).toHaveCount(3);
+  await expect(page.locator('[data-log-count="ERROR"]')).toHaveText("1");
+  const error = page.locator('#log p[data-level="ERROR"]');
+  await expect(error.locator(".trace")).toBeHidden();
+  await error.locator(".trace-toggle").click();
+  await expect(error.locator(".trace")).toBeVisible();
+  await expect(error.locator(".trace")).toContainText("ConnectionError: reset");
+  await expect(error.locator(".trace-toggle")).toHaveAttribute("aria-expanded", "true");
+  await error.locator(".trace-toggle").click();
+  await expect(error.locator(".trace")).toBeHidden();
+  // Фильтр по ошибкам оставляет запись целиком.
+  await page.locator('[data-logs-level="ERROR"]').click();
+  await expect(page.locator("#log p")).toHaveCount(1);
+});

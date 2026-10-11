@@ -37,6 +37,10 @@ KEEP_BACKUPS = 5
 # Дополнение к юниту панели: перезапуск панели не трогает бота (см. deploy/hkc-web.service).
 KEEP_BOT_DROPIN = Path(os.environ.get("HKC_SYSTEMD_DIR", "/etc/systemd/system")) / "hkc-web.service.d" / "keep-bot.conf"
 KEEP_BOT_CONTENT = "# Записано hkc-update: бот переживает перезапуск панели.\n[Service]\nKillMode=process\n"
+# Не-root панель не запускает обновление сама: файл задания замечает юнит hkc-update.path.
+PATH_UNIT = Path(os.environ.get("HKC_SYSTEMD_DIR", "/etc/systemd/system")) / "hkc-update.path"
+PATH_TEMPLATE = Path(__file__).resolve().parent / "hkc-update.path"
+SUDO_RULE = Path(os.environ.get("HKC_SUDOERS_FILE", "/etc/sudoers.d/hkc-update"))
 # Имена машин из uname и соответствующие архитектуры релизных архивов.
 ARCHITECTURES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
@@ -71,6 +75,24 @@ def keep_bot_on_restart(state):
         console_line(state, f"{KEEP_BOT_DROPIN}: KillMode=process — бот переживает перезапуск панели")
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         console_line(state, f"не удалось записать {KEEP_BOT_DROPIN}: {error}")
+
+
+# Старые установки не от root запускали обновление через sudo, а NoNewPrivileges в юните
+# панели его запрещает. Юнит-путь запускает обновление сам и заодно заменяет правило sudo.
+# Ошибка не мешает обновлению.
+def ensure_path_unit(state):
+    try:
+        request = request_path()
+        if not SUDO_RULE.exists() or PATH_UNIT.exists() or not request:
+            return
+        PATH_UNIT.write_text(PATH_TEMPLATE.read_text(encoding="utf-8").replace("__HKC_REQUEST_FILE__", request), encoding="utf-8")
+        PATH_UNIT.chmod(0o644)
+        run(["systemctl", "daemon-reload"], timeout=40)
+        run(["systemctl", "enable", "--now", "hkc-update.path"], timeout=40)
+        SUDO_RULE.unlink()
+        console_line(state, f"{PATH_UNIT}: обновление из панели запускает systemd, правило sudo больше не нужно")
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        console_line(state, f"не удалось настроить {PATH_UNIT}: {error}")
 
 
 # Вызывает Git только с заданными аргументами, без хуков; копии на /mnt используют Windows-преобразование строк.
@@ -537,6 +559,7 @@ def install(version=""):
         replace_binary(executable, binary)
         switched = True
         keep_bot_on_restart(state)
+        ensure_path_unit(state)
         console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа новой сборки.", progress=82, step="health")
@@ -612,6 +635,7 @@ def rollback(name):
         replace_binary(executable, binary)
         switched = True
         keep_bot_on_restart(state)
+        ensure_path_unit(state)
         console_line(state, "systemctl restart hkc-web.service")
         run(["systemctl", "restart", "hkc-web.service"], timeout=40)
         save_status(state, "restarting", "Ждём ответа панели.", progress=85, step="health")

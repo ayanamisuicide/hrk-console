@@ -1,6 +1,6 @@
 module heroku-console
 
-go 1.26.5
+go 1.26.9
 
 require golang.org/x/crypto v0.58.0
 

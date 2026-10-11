@@ -1144,6 +1144,27 @@ svg {
 .log time {
   color: var(--hint);
 }
+.log .trace {
+  display: block;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--hint) 45%, transparent);
+  color: var(--hint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.log .trace[hidden] {
+  display: none;
+}
+.log .trace-toggle {
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--hint) 18%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85em;
+}
 .log .none {
   padding: 28px 12px;
   color: var(--hint);

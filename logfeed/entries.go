@@ -1,17 +1,16 @@
 package logfeed
 
 import (
-	"bufio"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Entry — запись журнала целиком: строка с префиксом и все продолжения
@@ -30,25 +29,76 @@ type Entry struct {
 	Trace   []string `json:"trace,omitempty"`
 }
 
-var entryPrefix = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[([A-Z]+)\] ([^:]+):\s?(.*)$`)
-
 const timeLayout = "2006-01-02 15:04:05"
 
 // ParseLine разбирает строку с префиксом журнала. ok=false — это продолжение
 // предыдущей записи.
 func ParseLine(raw string) (e Entry, ok bool) {
-	m := entryPrefix.FindStringSubmatch(raw)
-	if m == nil {
+	// Дешёвый отсев: большинство строк — продолжения traceback, у них нет даты в начале.
+	if len(raw) < 26 || raw[4] != '-' || raw[7] != '-' || raw[10] != ' ' {
 		return Entry{}, false
 	}
-	e = Entry{Time: m[1], Level: m[2], Module: m[3], Message: m[4]}
-	if t, err := time.ParseInLocation(timeLayout, m[1], time.Local); err == nil {
-		e.TS = t.UnixMilli()
+	// «ГГГГ-ММ-ДД ЧЧ:ММ:СС [УРОВЕНЬ] модуль: сообщение» разбирается вручную: так в разы
+	// быстрее регулярного выражения entryPrefix, с которым совпадает на любых строках (тест).
+	if raw[13] != ':' || raw[16] != ':' || raw[19] != ' ' || raw[20] != '[' {
+		return Entry{}, false
+	}
+	var d [14]int
+	for i, at := range [14]int{0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18} {
+		c := raw[at]
+		if c < '0' || c > '9' {
+			return Entry{}, false
+		}
+		d[i] = int(c - '0')
+	}
+	rest := raw[21:]
+	end := 0
+	for end < len(rest) && rest[end] >= 'A' && rest[end] <= 'Z' {
+		end++
+	}
+	if end == 0 || len(rest) < end+3 || rest[end] != ']' || rest[end+1] != ' ' {
+		return Entry{}, false
+	}
+	level := rest[:end]
+	rest = rest[end+2:]
+	colon := strings.IndexByte(rest, ':')
+	if colon < 1 {
+		return Entry{}, false
+	}
+	module, message := rest[:colon], rest[colon+1:]
+	if message != "" {
+		switch message[0] {
+		case ' ', '\t', '\n', '\f', '\r':
+			message = message[1:]
+		}
+	}
+	e = Entry{Time: raw[:19], Level: level, Module: module, Message: message}
+	year := d[0]*1000 + d[1]*100 + d[2]*10 + d[3]
+	month, day := d[4]*10+d[5], d[6]*10+d[7]
+	hour, minute, sec := d[8]*10+d[9], d[10]*10+d[11], d[12]*10+d[13]
+	if month >= 1 && month <= 12 && day >= 1 && day <= daysIn(time.Month(month), year) && hour < 24 && minute < 60 && sec < 60 {
+		e.TS = time.Date(year, time.Month(month), day, hour, minute, sec, 0, time.Local).UnixMilli()
 	}
 	return e, true
 }
 
+func daysIn(month time.Month, year int) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
 // seal заполняет ID, когда запись собрана целиком.
+// detach копирует строки записи, чтобы она не удерживала блок файла, из которого прочитана.
+func (e *Entry) detach() {
+	e.Time, e.Level, e.Module, e.Message = strings.Clone(e.Time), strings.Clone(e.Level), strings.Clone(e.Module), strings.Clone(e.Message)
+	if len(e.Trace) > 0 {
+		trace := make([]string, len(e.Trace))
+		for i, line := range e.Trace {
+			trace[i] = strings.Clone(line)
+		}
+		e.Trace = trace
+	}
+}
+
 func (e *Entry) seal() {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(e.Time + "\x00" + e.Level + "\x00" + e.Module + "\x00" + e.Message))
@@ -146,37 +196,6 @@ func escapeGlob(path string) string {
 	return strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`).Replace(path)
 }
 
-// readEntries читает один файл целиком. Строки читаются без лимита длины:
-// traceback с огромным значением не должен обрывать чтение остального файла.
-func readEntries(path string) []Entry {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, 64*1024)
-	g := &Grouper{}
-	var out []Entry
-	for {
-		line, err := r.ReadString('\n')
-		if line != "" {
-			if e, ok := g.Feed(strings.TrimSuffix(line, "\n")); ok {
-				out = append(out, e)
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			break
-		}
-	}
-	if e, ok := g.Flush(); ok {
-		out = append(out, e)
-	}
-	return out
-}
-
 // Query — условия отбора записей.
 type Query struct {
 	// Levels — допустимые уровни. Пусто — любые. ERROR включает CRITICAL.
@@ -192,6 +211,19 @@ type Query struct {
 	BeforeTS   int64
 	BeforeSkip int
 	Limit      int
+
+	// Mask, если задан, прячет секреты в тексте записи. Поиск по Text тогда видит только то,
+	// что видит читатель: иначе подбор подстроки по «есть ли совпадение» раскрыл бы скрытое.
+	Mask func(string) string
+
+	// needle — Text в нижнем регистре; считается один раз на запрос, а не на запись.
+	needle string
+}
+
+// prepare готовит условия к проходу по файлу.
+func (q Query) prepare() Query {
+	q.needle = strings.ToLower(q.Text)
+	return q
 }
 
 // Match проверяет запись по всем условиям, кроме курсора.
@@ -218,14 +250,72 @@ func (q Query) matchSoft(e Entry, withModule bool) bool {
 		return false
 	}
 	if q.Text != "" {
-		needle := strings.ToLower(q.Text)
-		if !strings.Contains(strings.ToLower(e.Message), needle) &&
-			!strings.Contains(strings.ToLower(e.Module), needle) &&
-			!strings.Contains(strings.ToLower(strings.Join(e.Trace, "\n")), needle) {
+		needle := q.needle
+		if needle == "" {
+			needle = strings.ToLower(q.Text)
+		}
+		if !containsFold(e.Message, needle) && !containsFold(e.Module, needle) && !traceContains(e.Trace, needle) {
+			return false
+		}
+		if q.Mask != nil && !q.matchesMasked(e, needle) {
 			return false
 		}
 	}
 	return true
+}
+
+// matchesMasked повторяет поиск по тексту, каким его видит читатель с маской. Дорогая маска
+// запускается только для записей, уже прошедших дешёвую проверку.
+func (q Query) matchesMasked(e Entry, needle string) bool {
+	if containsFold(q.Mask(e.Message), needle) || containsFold(e.Module, needle) {
+		return true
+	}
+	for _, line := range e.Trace {
+		if containsFold(q.Mask(line), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// traceContains ищет строку в traceback; совпадение не бывает на стыке строк.
+func traceContains(trace []string, needle string) bool {
+	for _, line := range trace {
+		if containsFold(line, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsFold — strings.Contains(strings.ToLower(hay), needle) без выделения памяти;
+// needle уже в нижнем регистре.
+func containsFold(hay, needle string) bool {
+	if needle == "" {
+		return true
+	}
+	first, size := utf8.DecodeRuneInString(needle)
+	for i, r := range hay {
+		if unicode.ToLower(r) != first {
+			continue
+		}
+		h, n := hay[i+utf8.RuneLen(r):], needle[size:]
+		for n != "" {
+			if h == "" {
+				return false
+			}
+			hr, hs := utf8.DecodeRuneInString(h)
+			nr, ns := utf8.DecodeRuneInString(n)
+			if unicode.ToLower(hr) != nr {
+				break
+			}
+			h, n = h[hs:], n[ns:]
+		}
+		if n == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func levelIn(levels []string, level string) bool {
@@ -244,29 +334,28 @@ func Search(path string, q Query) (entries []Entry, hasMore bool) {
 	if q.Limit <= 0 {
 		q.Limit = 200
 	}
+	q = q.prepare()
 	skip := q.BeforeSkip
 	files := Files(path)
 	for i := len(files) - 1; i >= 0 && len(entries) <= q.Limit; i-- {
-		all := readEntries(files[i])
-		for j := len(all) - 1; j >= 0; j-- {
-			e := all[j]
+		eachEntryBackwards(files[i], 0, func(e Entry) bool {
 			if q.BeforeTS > 0 {
 				if e.TS > q.BeforeTS {
-					continue
+					return true
 				}
 				if e.TS == q.BeforeTS && skip > 0 && q.Match(e) {
 					skip--
-					continue
+					return true
 				}
 			}
 			if !q.Match(e) {
-				continue
+				return true
 			}
+			e.detach()
+			e.seal()
 			entries = append(entries, e)
-			if len(entries) > q.Limit {
-				break
-			}
-		}
+			return len(entries) <= q.Limit
+		})
 	}
 	if len(entries) > q.Limit {
 		hasMore = true
@@ -305,36 +394,39 @@ func Collect(path string, from, to, bucketMs int64, q Query) Stats {
 	for i := range st.Buckets {
 		st.Buckets[i].T = from + int64(i)*bucketMs
 	}
+	q = q.prepare()
 	files := Files(path)
 	for i := len(files) - 1; i >= 0; i-- {
-		all := readEntries(files[i])
 		older := false
-		for j := len(all) - 1; j >= 0; j-- {
-			e := all[j]
+		eachEntryBackwards(files[i], 0, func(e Entry) bool {
 			if e.TS < from && e.TS > 0 {
 				older = true
-				break
+				return false
 			}
 			if e.TS >= to || e.TS < from || !q.matchSoft(e, false) {
-				continue
+				return true
 			}
 			if e.Module != "" {
+				if _, known := st.Modules[e.Module]; !known {
+					e.Module = strings.Clone(e.Module)
+				}
 				st.Modules[e.Module]++
 			}
 			if q.Module != "" && e.Module != q.Module {
-				continue
+				return true
 			}
 			b := &st.Buckets[(e.TS-from)/bucketMs]
-			switch {
-			case e.Level == "ERROR" || e.Level == "CRITICAL":
+			switch e.Level {
+			case "ERROR", "CRITICAL":
 				b.Err++
-			case e.Level == "WARNING":
+			case "WARNING":
 				b.Warn++
 			default:
 				b.Info++
 			}
 			st.Total++
-		}
+			return true
+		})
 		if older {
 			break
 		}
@@ -346,21 +438,48 @@ func Collect(path string, from, to, bucketMs int64, q Query) Stats {
 // Запись ищется по времени и ID. index — позиция записи в результате.
 func Around(path string, ts int64, id string, n int) (entries []Entry, index int, ok bool) {
 	files := Files(path)
-	for i := len(files) - 1; i >= 0; i-- {
-		all := readEntries(files[i])
-		for j := len(all) - 1; j >= 0; j-- {
-			if all[j].ID != id || all[j].TS != ts {
-				continue
+	for i := len(files) - 1; i >= 0 && !ok; i-- {
+		var newer, older []Entry // newer — окно из n записей новее найденной, в порядке чтения
+		var target Entry
+		found := false
+		eachEntryBackwards(files[i], 0, func(e Entry) bool {
+			if found {
+				older = append(older, e)
+				return len(older) < n
 			}
-			lo, hi := j-n, j+n+1
-			if lo < 0 {
-				lo = 0
+			if e.TS == ts {
+				e.seal()
+				if e.ID == id {
+					target, found = e, true
+					return n > 0
+				}
 			}
-			if hi > len(all) {
-				hi = len(all)
+			if n > 0 {
+				newer = append(newer, e)
+				if len(newer) > n {
+					newer = newer[1:]
+				}
 			}
-			return all[lo:hi], j - lo, true
+			return true
+		})
+		if !found {
+			continue
 		}
+		out := make([]Entry, 0, len(older)+1+len(newer))
+		for j := len(older) - 1; j >= 0; j-- {
+			older[j].detach()
+			older[j].seal()
+			out = append(out, older[j])
+		}
+		index = len(out)
+		target.detach()
+		out = append(out, target)
+		for j := len(newer) - 1; j >= 0; j-- {
+			newer[j].detach()
+			newer[j].seal()
+			out = append(out, newer[j])
+		}
+		return out, index, true
 	}
 	return nil, 0, false
 }

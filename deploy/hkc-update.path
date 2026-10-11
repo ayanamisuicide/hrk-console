@@ -1,0 +1,12 @@
+# Шаблон: установщик заменяет __HKC_REQUEST_FILE__. Нужен, когда панель работает не от root:
+# она кладёт файл задания, а запускает обновление systemd — без sudo и без снятия защитных
+# ограничений (NoNewPrivileges) с юнита панели.
+[Unit]
+Description=Задание на обновление веб-панели Heroku
+
+[Path]
+PathExists=__HKC_REQUEST_FILE__
+Unit=hkc-update.service
+
+[Install]
+WantedBy=multi-user.target

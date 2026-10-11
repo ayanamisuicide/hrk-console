@@ -162,9 +162,13 @@ README, документацию, пояснения к изменениям и 
 
 ## Проверки
 
-Запускайте `make test`, `make vet`, `make build`, `python3 deploy/test_update.py`
-и `npm run test:ui`. Проверку гонок `go test -count=1 -race ./...` выполняйте
-в Linux/WSL. Браузерные тесты проверяют темы на компьютере и телефоне,
+Запускайте `make test`, `make vet`, `make build`, `python3 deploy/test_update.py`,
+`npm run lint` и `npm run test:ui`. Проверку гонок `go test -count=1 -race ./...` выполняйте
+в Linux/WSL: часть тестов (обновление из Telegram, установка из панели) на Windows
+пропускается, а Python-тесты обновления без `fcntl` там не запускаются. В CI дополнительно идут
+`golangci-lint` (конфиг — `.golangci.yml`), ESLint для кода браузера (`eslint.config.js`) и
+`govulncheck` отдельным заданием: уязвимость стандартной библиотеки лечится повышением версии Go
+в `go.mod`. Браузерные тесты проверяют темы на компьютере и телефоне,
 снимки интерфейса, ошибки выполнения и загрузку без сети.
 
 Коммит, публикация релиза и обновление запущенной службы — отдельные действия.
@@ -173,3 +177,4 @@ README, документацию, пояснения к изменениям и 
 
 Скриншоты для README снимаются на тестовых данных UI-тестов:
 `README_SHOTS=1 npx playwright test -g "скриншоты для README"` (файлы в `docs/images`).
+Снимок журнала — `DOCS_SCREENSHOTS=1 npx playwright test tests/ui/docs-screenshots.spec.js`.

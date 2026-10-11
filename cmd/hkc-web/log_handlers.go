@@ -18,7 +18,39 @@ func (s *server) logs(w http.ResponseWriter, r *http.Request) {
 			limit = parsed
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"lines": logfeed.TailLines(s.bot.LogFile, limit)})
+	lines := logfeed.TailLines(s.bot.LogFile, limit)
+	if mask := s.logMask(r); mask != nil {
+		for i := range lines {
+			lines[i] = mask(lines[i])
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines})
+}
+
+// logMask возвращает функцию, скрывающую секреты в журнале, либо nil, если читатель вправе видеть
+// его как есть. Сырой журнал видит только оператор панели: он управляет ботом и без того. Наблюдатели,
+// API-токены чтения и мини-приложение Telegram (данные уходят на серверы Telegram) получают текст
+// с замаскированными токенами и ключами — так же, как ответы бота в чате.
+func (s *server) logMask(r *http.Request) func(string) string {
+	if cookie, err := r.Cookie(sessionCookie); err == nil {
+		if username, ok := s.sessions.get(cookie.Value); ok && s.auth.role(username) == "operator" {
+			return nil
+		}
+	}
+	return maskSecrets
+}
+
+// maskEntries скрывает секреты в сообщении и строках traceback записей.
+func maskEntries(entries []logfeed.Entry, mask func(string) string) {
+	if mask == nil {
+		return
+	}
+	for i := range entries {
+		entries[i].Message = mask(entries[i].Message)
+		for j := range entries[i].Trace {
+			entries[i].Trace[j] = mask(entries[i].Trace[j])
+		}
+	}
 }
 
 // events отправляет новые завершённые строки через SSE и поддерживает соединение служебными сообщениями.
@@ -40,6 +72,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	// Закрытие вкладки отменяет запрос; defer освобождает файл и горутину.
 	defer follower.Stop()
+	mask := s.logMask(r)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
@@ -50,6 +83,9 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		case line, open := <-follower.Lines:
 			if !open {
 				return
+			}
+			if mask != nil {
+				line = mask(line)
 			}
 			payload, _ := json.Marshal(line)
 			fmt.Fprintf(w, "data: %s\n\n", payload)
@@ -98,6 +134,8 @@ func queryInt64(raw string) int64 {
 // всем ротированным файлам. before и skip — курсор предыдущей страницы.
 func (s *server) logEntries(w http.ResponseWriter, r *http.Request) {
 	q := logQuery(r)
+	mask := s.logMask(r)
+	q.Mask = mask
 	q.Limit = 200
 	if parsed, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && parsed > 0 && parsed <= 500 {
 		q.Limit = parsed
@@ -110,12 +148,14 @@ func (s *server) logEntries(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []logfeed.Entry{}
 	}
+	maskEntries(entries, mask)
 	writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "hasMore": more})
 }
 
 // logStats отдаёт число записей по интервалам для шкалы времени и список модулей.
 func (s *server) logStats(w http.ResponseWriter, r *http.Request) {
 	q := logQuery(r)
+	q.Mask = s.logMask(r)
 	to, from := q.To, q.From
 	if to == 0 {
 		to = time.Now().UnixMilli()
@@ -155,6 +195,7 @@ func (s *server) logContext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "запись не найдена: возможно, файл уже ротирован", http.StatusNotFound)
 		return
 	}
+	maskEntries(entries, s.logMask(r))
 	writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "index": index})
 }
 
@@ -188,7 +229,9 @@ func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "event: state\ndata: %s\n\n", payload)
 		flusher.Flush()
 	}
+	mask := s.logMask(r)
 	sendEntry := func(e logfeed.Entry) {
+		maskEntries([]logfeed.Entry{e}, mask)
 		payload, _ := json.Marshal(e)
 		fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()

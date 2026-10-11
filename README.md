@@ -49,6 +49,7 @@ curl -fsSL https://github.com/ayanamisuicide/hrk-console/releases/latest/downloa
 <summary>Ещё скриншоты</summary>
 <br>
 <p align="center">
+<img src="docs/images/journal.png" alt="Журнал: записи с traceback, шкала событий за 6 часов, поиск" width="760"><br><br>
 <img src="docs/images/modules.png" alt="Вкладка «Модули»" width="760"><br><br>
 <img src="docs/images/mobile.png" alt="Панель на телефоне" width="300">
 </p>

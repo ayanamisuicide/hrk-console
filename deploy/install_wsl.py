@@ -105,16 +105,19 @@ def main():
         descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(content)
-    sudoers = Path("/etc/sudoers.d/hkc-update")
+    # Панель не от root кладёт файл задания, а обновление запускает юнит-путь: без sudo.
+    Path("/etc/sudoers.d/hkc-update").unlink(missing_ok=True)
+    path_unit = Path("/etc/systemd/system/hkc-update.path")
     if args.service_user != "root":
-        rule = f"{args.service_user} ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block hkc-update.service\n"
-        descriptor = os.open(sudoers, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o440)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(rule)
-        update.run(["visudo", "-cf", str(sudoers)])
-    elif sudoers.exists():
-        sudoers.unlink()
+        request = Path(env["HKC_AUTH_FILE"]).parent / "update-request.json"
+        template = (scripts / "hkc-update.path").read_text(encoding="utf-8")
+        path_unit.write_text(template.replace("__HKC_REQUEST_FILE__", str(request)), encoding="utf-8")
+        path_unit.chmod(0o644)
+    else:
+        path_unit.unlink(missing_ok=True)
     update.run(["systemctl", "daemon-reload"])
+    if args.service_user != "root":
+        update.run(["systemctl", "enable", "--now", "hkc-update.path"])
     update.replace_binary(executable, args.binary.read_bytes())
     try:
         # Перед остановкой повторно сверяем исполняемый файл именно старой панели.

@@ -8,16 +8,6 @@ import (
 	"time"
 )
 
-// writeLog создаёт файл журнала из строк и возвращает его путь.
-func writeLog(t *testing.T, name string, lines ...string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // TestParseEntriesGroupsContinuations проверяет, что traceback уходит внутрь записи.
 func TestParseEntriesGroupsContinuations(t *testing.T) {
 	got := ParseEntries([]string{

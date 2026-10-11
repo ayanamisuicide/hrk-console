@@ -68,11 +68,12 @@ func (s *server) performActionLocked(action string) (actionResponse, int) {
 	case "stop":
 		code := s.bot.Stop()
 		result.OK = code != 2
-		if code == 1 {
+		switch code {
+		case 1:
 			result.Message = "бот уже остановлен"
-		} else if code == 2 {
+		case 2:
 			result.Message = "бот остановлен принудительно"
-		} else {
+		default:
 			result.Message = "бот остановлен"
 		}
 	case "restart":

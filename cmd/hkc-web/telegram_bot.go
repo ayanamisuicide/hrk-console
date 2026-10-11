@@ -308,13 +308,14 @@ func (c *telegramControl) run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err == nil || errors.Is(err, context.Canceled) {
+		// session возвращается только с ошибкой; отмена опроса (смена настроек) — не сбой.
+		if errors.Is(err, context.Canceled) {
 			continue
 		}
 		var apiErr *telegramAPIError
 		if errors.As(err, &apiErr) {
-			switch {
-			case apiErr.Code == http.StatusConflict:
+			switch apiErr.Code {
+			case http.StatusConflict:
 				message := "Этого бота уже опрашивает другая программа — например, инлайн-бот Heroku. Создайте для панели отдельного бота у @BotFather."
 				if strings.Contains(strings.ToLower(apiErr.Description), "webhook") {
 					message = "У этого бота настроен webhook, поэтому панель не может получать команды. Создайте для панели отдельного бота у @BotFather."
@@ -325,7 +326,7 @@ func (c *telegramControl) run(ctx context.Context) {
 					return
 				}
 				continue
-			case apiErr.Code == http.StatusUnauthorized || apiErr.Code == http.StatusNotFound:
+			case http.StatusUnauthorized, http.StatusNotFound:
 				c.setState("error", "Telegram отклонил токен бота. Проверьте HKC_TELEGRAM_BOT_TOKEN.")
 				if !c.waitWake(ctx, 0) {
 					return

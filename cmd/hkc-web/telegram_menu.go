@@ -621,8 +621,8 @@ func (c *telegramControl) menuEditResult(chat int64, err error, now time.Time) {
 	if !errors.As(err, &apiErr) {
 		return // сеть: следующий тик повторит
 	}
-	switch {
-	case apiErr.Code == http.StatusTooManyRequests:
+	switch apiErr.Code {
+	case http.StatusTooManyRequests:
 		// Лимит: ждём, сколько просит Telegram, и дальше обновляем реже на одну ступень.
 		wait := menuBackoff
 		if m := retryAfterRe.FindStringSubmatch(apiErr.Description); m != nil {
@@ -645,7 +645,7 @@ func (c *telegramControl) menuEditResult(chat int64, err error, now time.Time) {
 		}
 		c.menu.nextAt[chat] = now.Add(wait)
 		c.menu.mu.Unlock()
-	case apiErr.Code == http.StatusBadRequest || apiErr.Code == http.StatusForbidden || apiErr.Code == http.StatusNotFound:
+	case http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound:
 		c.menu.remove(chat)
 	}
 }

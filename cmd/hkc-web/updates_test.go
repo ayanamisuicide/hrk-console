@@ -325,3 +325,68 @@ func TestCancelUpdateOnlyBeforeSwitch(t *testing.T) {
 		t.Fatal("cancel flag not written")
 	}
 }
+
+// Когда установщик создал юнит-путь, панель не вызывает ни systemctl, ни sudo: задание
+// подхватывает systemd, а защитные ограничения юнита панели остаются нетронутыми.
+func TestStartUpdateServiceLeavesJobToPathUnit(t *testing.T) {
+	unit := filepath.Join(t.TempDir(), "hkc-update.path")
+	if err := os.WriteFile(unit, []byte("[Path]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := updatePathUnit
+	updatePathUnit = unit
+	t.Cleanup(func() { updatePathUnit = previous })
+	t.Setenv("HKC_SERVICE_USER", "hkc")
+	if err := startUpdateService(context.Background()); err != nil {
+		t.Fatalf("при юните-пути ничего запускать не нужно: %v", err)
+	}
+}
+
+// Не-root установка без hkc-update.path под NoNewPrivileges объясняет, что делать, а не падает
+// молча на «не удалось запустить службу».
+func TestUpdateBlockedWhenSudoCannotWork(t *testing.T) {
+	previousStatus, previousUnit := selfStatus, updatePathUnit
+	t.Cleanup(func() { selfStatus, updatePathUnit = previousStatus, previousUnit })
+	updatePathUnit = filepath.Join(t.TempDir(), "absent.path")
+	selfStatus = func() string { return "Name:\thkc-web\nNoNewPrivs:\t1\nSeccomp:\t0\n" }
+
+	t.Setenv("HKC_SERVICE_USER", "root")
+	if cannotStartUpdate() {
+		t.Fatal("от root sudo не нужен")
+	}
+	t.Setenv("HKC_SERVICE_USER", "hkc")
+	if !cannotStartUpdate() {
+		t.Fatal("не-root под NoNewPrivileges без юнита обновить не может")
+	}
+	selfStatus = func() string { return "NoNewPrivs:\t0\n" }
+	if cannotStartUpdate() {
+		t.Fatal("без NoNewPrivileges sudo работает")
+	}
+	selfStatus = func() string { return "NoNewPrivs:\t1\n" }
+	unit := filepath.Join(t.TempDir(), "hkc-update.path")
+	if err := os.WriteFile(unit, []byte("[Path]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updatePathUnit = unit
+	if cannotStartUpdate() {
+		t.Fatal("с юнитом-путём запуск идёт через systemd")
+	}
+
+	// В обзоре это видно как блокер с подсказкой.
+	updatePathUnit = filepath.Join(t.TempDir(), "absent.path")
+	s := updateTestServer(t)
+	t.Setenv("HKC_UPDATE_ENABLED", "1")
+	if runtime.GOOS != "linux" {
+		t.Skip("обзор обновлений включён только в Linux")
+	}
+	overview := s.buildUpdateOverview(context.Background())
+	found := false
+	for _, issue := range overview.Blockers {
+		if strings.Contains(issue.Text, "NoNewPrivileges") && strings.Contains(issue.Fix, "установщик") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("нет блокера: %+v", overview.Blockers)
+	}
+}

@@ -9,7 +9,6 @@ const PAGE = 200;
 const MAX_ENTRIES = 2500;
 const WINDOW_MS = 6 * 3600 * 1000;
 const BUCKET_MS = 5 * 60 * 1000;
-const LEVEL_LABEL = { ALL: "все", INFO: "инфо", WARNING: "предупреждения", ERROR: "ошибки" };
 const BOOKMARKS_KEY = "hkc-log-bookmarks-v2";
 const CLEARED_KEY = "hkc-log-cleared-at";
 

@@ -458,6 +458,12 @@ func (s *server) buildUpdateOverview(ctx context.Context) updateOverview {
 			Fix:  "Запустите установщик: он настроит службу обновлений и сохранит ваши данные.",
 		})
 	}
+	if overview.Enabled && cannotStartUpdate() {
+		overview.Blockers = append(overview.Blockers, updateIssue{
+			Text: "Панель работает не от root под защитой NoNewPrivileges и не может запустить обновление: у этой установки нет юнита hkc-update.path, а sudo в таком режиме не работает.",
+			Fix:  "Запустите установщик ещё раз (curl -fsSL https://github.com/ayanamisuicide/hrk-console/releases/latest/download/install.sh | sudo bash): он добавит юнит и сохранит ваши данные.",
+		})
+	}
 	if installed.Modified {
 		overview.Blockers = append(overview.Blockers, updateIssue{
 			Text: "Панель собрана из изменённых исходников.",
@@ -592,14 +598,46 @@ func (s *server) launchUpdate(ctx context.Context, request updateRequest) (actio
 	return actionResponse{OK: true, Message: "Запущено. Панель перезапустится, страница переподключится сама."}, http.StatusAccepted
 }
 
-// startUpdateService запускает отдельную службу; пользователь панели не root вызывает её
-// через узкое правило sudo, которое создаёт установщик. Переменная подменяется в тестах.
+// updatePathUnit — юнит, который сам запускает обновление, когда панель оставила файл задания.
+// Установщик создаёт его для панели не от root; переменная подменяется в тестах.
+var updatePathUnit = "/etc/systemd/system/hkc-update.path"
+
+// startUpdateService запускает отдельную службу обновления. Если есть юнит-путь, задание
+// уже подхвачено systemd и ничего делать не нужно. Иначе (панель от root, а также старые
+// установки не от root) вызывается systemctl, во втором случае — через правило sudo.
+// Переменная подменяется в тестах.
 var startUpdateService = func(ctx context.Context) error {
+	if _, err := os.Stat(updatePathUnit); err == nil {
+		return nil
+	}
 	command := []string{"systemctl", "start", "--no-block", "hkc-update.service"}
 	if user := strings.TrimSpace(os.Getenv("HKC_SERVICE_USER")); user != "" && user != "root" {
 		command = []string{"/usr/bin/sudo", "-n", "/usr/bin/systemctl", "start", "--no-block", "hkc-update.service"}
 	}
 	return exec.CommandContext(ctx, command[0], command[1:]...).Run()
+}
+
+// selfStatus читает /proc/self/status; подменяется в тестах.
+var selfStatus = func() string {
+	data, _ := os.ReadFile("/proc/self/status")
+	return string(data)
+}
+
+// cannotStartUpdate — панель не от root под NoNewPrivileges, а юнита hkc-update.path нет: sudo,
+// через который такие установки запускали обновление, при этом флаге не работает.
+func cannotStartUpdate() bool {
+	if user := strings.TrimSpace(os.Getenv("HKC_SERVICE_USER")); user == "" || user == "root" {
+		return false
+	}
+	if _, err := os.Stat(updatePathUnit); err == nil {
+		return false
+	}
+	for _, line := range strings.Split(selfStatus(), "\n") {
+		if value, ok := strings.CutPrefix(line, "NoNewPrivs:"); ok {
+			return strings.TrimSpace(value) == "1"
+		}
+	}
+	return false
 }
 
 func decodeUpdateBody(r *http.Request, target any) error {

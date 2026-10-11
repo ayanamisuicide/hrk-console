@@ -114,14 +114,14 @@ func htmlPrefix(src string, visible int, toWord bool) string {
 func htmlVisibleLen(src string) int {
 	count := 0
 	for i := 0; i < len(src); {
-		switch {
-		case src[i] == '<':
+		switch src[i] {
+		case '<':
 			end := strings.IndexByte(src[i:], '>')
 			if end < 0 {
 				return count
 			}
 			i += end + 1
-		case src[i] == '&':
+		case '&':
 			if semi := strings.IndexByte(src[i:], ';'); semi > 0 && semi <= 10 {
 				i += semi + 1
 			} else {

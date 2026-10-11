@@ -690,21 +690,46 @@ async function refreshModules() {
 
 const logLevel = (line) => line.match(/\[([A-Z]+)\]/)?.[1] || "OTHER";
 
+const LOG_HEAD = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[A-Z]+\] /;
+
+// Строки журнала собираются в записи: продолжения (traceback) идут под своей строкой с временем,
+// а не отдельными строками. Ключ записи нужен, чтобы понять, что из уже показанного не изменилось.
+function groupLines(lines) {
+  const entries = [];
+  for (const line of lines) {
+    if (LOG_HEAD.test(line) || !entries.length) entries.push({ head: line, trace: [] });
+    else entries.at(-1).trace.push(line);
+  }
+  for (const entry of entries) entry.key = [entry.head, ...entry.trace].join("\n");
+  return entries;
+}
+
 function visibleLines() {
   const query = state.logQuery.toLowerCase();
-  return state.logLines.filter((line) => {
-    if (query && !line.toLowerCase().includes(query)) return false;
+  return groupLines(state.logLines).filter((entry) => {
+    if (query && !entry.key.toLowerCase().includes(query)) return false;
     if (state.logLevel === "all") return true;
-    const value = logLevel(line);
+    const value = logLevel(entry.head);
     return state.logLevel === "ERROR" ? value === "ERROR" || value === "CRITICAL" : value === state.logLevel;
   });
 }
 
-function lineElement(line, fresh) {
-  const row = h("p", { "data-level": logLevel(line), class: fresh ? "fresh" : "" });
-  const match = line.match(/^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}) (.*)$/s);
+function lineElement(entry, fresh) {
+  const row = h("p", { "data-level": logLevel(entry.head), class: fresh ? "fresh" : "" });
+  const match = entry.head.match(/^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}) (.*)$/s);
   if (match) row.append(h("time", { text: match[1] }), ` ${match[2]}`);
-  else row.textContent = line;
+  else row.textContent = entry.head;
+  if (entry.trace.length) {
+    const trace = h("span", { class: "trace", text: entry.trace.join("\n"), hidden: "" });
+    const toggle = h("button", { class: "trace-toggle", type: "button", text: `+${entry.trace.length} стр.`, "aria-expanded": "false" });
+    toggle.addEventListener("click", () => {
+      const open = trace.hidden;
+      trace.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = open ? "свернуть" : `+${entry.trace.length} стр.`;
+    });
+    row.append(" ", toggle, trace);
+  }
   return row;
 }
 
@@ -719,6 +744,7 @@ function logBottom(smooth = false) {
 function renderLogs(forceFull = false) {
   const log = $("#log");
   const lines = visibleLines();
+  const keys = lines.map((entry) => entry.key);
   const pinned = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   const previous = state.rendered;
   let appended = 0;
@@ -726,7 +752,7 @@ function renderLogs(forceFull = false) {
   if (!forceFull && previous.length) {
     const tail = previous.slice(-3);
     for (let i = lines.length - 1; i >= tail.length - 1; i--) {
-      if (tail.every((line, k) => lines[i - (tail.length - 1) + k] === line)) {
+      if (tail.every((key, k) => keys[i - (tail.length - 1) + k] === key)) {
         overlap = i;
         break;
       }
@@ -744,7 +770,7 @@ function renderLogs(forceFull = false) {
     );
     if (pinned || forceFull) logBottom();
   }
-  state.rendered = lines;
+  state.rendered = keys;
   if (overlap >= 0 && appended) {
     if (pinned) logBottom(true);
     else state.unread += appended;
@@ -752,7 +778,7 @@ function renderLogs(forceFull = false) {
   updateJump();
 
   for (const name of ["ERROR", "WARNING"]) {
-    const count = state.logLines.filter((line) => (name === "ERROR" ? ["ERROR", "CRITICAL"].includes(logLevel(line)) : logLevel(line) === name)).length;
+    const count = groupLines(state.logLines).filter((entry) => (name === "ERROR" ? ["ERROR", "CRITICAL"].includes(logLevel(entry.head)) : logLevel(entry.head) === name)).length;
     const badge = $(`[data-log-count="${name}"]`);
     const text = count ? String(count) : "";
     if (badge.textContent !== text) {

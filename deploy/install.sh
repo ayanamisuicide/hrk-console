@@ -446,17 +446,20 @@ for unit in hkc-web.service hkc-update.service; do
   mv -f "/etc/systemd/system/$unit.tmp" "/etc/systemd/system/$unit"
 done
 sudoers=/etc/sudoers.d/hkc-update
+rm -f "$sudoers"
 if [ "$SERVICE_USER" != root ]; then
-  # Узкое правило: пользователь панели может только запустить службу обновления.
-  printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block hkc-update.service\n' "$SERVICE_USER" > "$sudoers.tmp"
-  chmod 0440 "$sudoers.tmp"
-  if command -v visudo >/dev/null 2>&1; then run "правило sudo не прошло проверку" visudo -cf "$sudoers.tmp"; fi
-  mv -f "$sudoers.tmp" "$sudoers"
+  # Панель не от root кладёт файл задания, а обновление запускает systemd: sudo не нужен, и
+  # защитные ограничения юнита панели (NoNewPrivileges) остаются на месте.
+  sed -e "s|__HKC_REQUEST_FILE__|$SERVICE_HOME/.config/hkc/update-request.json|g"     "$SOURCE_DIR/deploy/hkc-update.path" > /etc/systemd/system/hkc-update.path.tmp
+  chmod 0644 /etc/systemd/system/hkc-update.path.tmp
+  mv -f /etc/systemd/system/hkc-update.path.tmp /etc/systemd/system/hkc-update.path
 else
-  rm -f "$sudoers"
+  systemctl disable --now hkc-update.path >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/hkc-update.path
 fi
 run "systemd не перечитал службы" systemctl daemon-reload
 run "не удалось включить автозапуск" systemctl enable hkc-web.service
+[ "$SERVICE_USER" = root ] || run "не удалось включить hkc-update.path" systemctl enable --now hkc-update.path
 ok "hkc-web · hkc-update"
 
 # ---------- 9. Запуск ----------

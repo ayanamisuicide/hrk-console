@@ -294,5 +294,46 @@ class KeepBotTests(unittest.TestCase):
         self.assertTrue(lines)
 
 
+class PathUnitTests(unittest.TestCase):
+    def setup(self, temporary, rule=True):
+        root = Path(temporary)
+        sudoers = root / "hkc-update"
+        if rule:
+            sudoers.write_text("x", encoding="utf-8")
+        template = root / "tpl.path"
+        template.write_text("PathExists=__HKC_REQUEST_FILE__\n", encoding="utf-8")
+        return sudoers, root / "hkc-update.path", template
+
+    # Установка не от root получает юнит-путь, а правило sudo исчезает.
+    def test_path_unit_replaces_sudo_rule(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sudoers, unit, template = self.setup(temporary)
+            calls = []
+            with patch.object(update, "SUDO_RULE", sudoers), patch.object(update, "PATH_UNIT", unit),                     patch.object(update, "PATH_TEMPLATE", template), patch.object(update, "request_path", lambda: "/h/update-request.json"),                     patch.object(update, "run", lambda args, timeout=90: calls.append(args)),                     patch.object(update, "console_line", lambda state, text: None):
+                update.ensure_path_unit(Path(temporary))
+                update.ensure_path_unit(Path(temporary))
+            self.assertEqual(unit.read_text(encoding="utf-8"), "PathExists=/h/update-request.json\n")
+            self.assertFalse(sudoers.exists())
+            self.assertEqual(calls, [["systemctl", "daemon-reload"], ["systemctl", "enable", "--now", "hkc-update.path"]])
+
+    # Панель от root (правила sudo нет) ничего не получает.
+    def test_nothing_for_root_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sudoers, unit, template = self.setup(temporary, rule=False)
+            with patch.object(update, "SUDO_RULE", sudoers), patch.object(update, "PATH_UNIT", unit),                     patch.object(update, "PATH_TEMPLATE", template), patch.object(update, "request_path", lambda: "/h/r.json"),                     patch.object(update, "run", lambda args, timeout=90: self.fail("не должно вызываться")):
+                update.ensure_path_unit(Path(temporary))
+            self.assertFalse(unit.exists())
+
+    # Сбой не прерывает обновление и не стирает правило sudo.
+    def test_failure_keeps_sudo_rule(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sudoers, unit, template = self.setup(temporary)
+            def fail(*args, **kwargs):
+                raise RuntimeError("нет прав")
+            with patch.object(update, "SUDO_RULE", sudoers), patch.object(update, "PATH_UNIT", unit),                     patch.object(update, "PATH_TEMPLATE", template), patch.object(update, "request_path", lambda: "/h/r.json"),                     patch.object(update, "run", fail), patch.object(update, "console_line", lambda state, text: None):
+                update.ensure_path_unit(Path(temporary))
+            self.assertTrue(sudoers.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

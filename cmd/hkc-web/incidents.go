@@ -93,9 +93,14 @@ func detectIncidents(lines []string) []incident {
 }
 
 // incidents анализирует ограниченный хвост журнала и возвращает найденные происшествия.
-func (s *server) incidents(w http.ResponseWriter, _ *http.Request) {
+func (s *server) incidents(w http.ResponseWriter, r *http.Request) {
 	lines := logfeed.TailLines(s.bot.LogFile, 3000)
 	items := detectIncidents(lines)
+	if mask := s.logMask(r); mask != nil {
+		for index := range items {
+			items[index].Title, items[index].Context = mask(items[index].Title), mask(items[index].Context)
+		}
+	}
 	if s.hostHistory != nil {
 		restarts := s.hostHistory.restartTimes(time.Now().Add(-24 * time.Hour))
 		for index := range items {
