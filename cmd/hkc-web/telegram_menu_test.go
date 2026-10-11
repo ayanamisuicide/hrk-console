@@ -185,13 +185,13 @@ func TestMenuEditErrors(t *testing.T) {
 		t.Fatal("«not modified» стёрло меню")
 	}
 
-	// Лимит Telegram: следующая попытка не раньше чем через полминуты.
+	// Лимит Telegram: ждём, сколько он просит (retry after 5 → 6 с), и дальше обновляем реже.
 	fake.mu.Lock()
 	fake.failCode, fake.failDescription = 429, "Too Many Requests: retry after 5"
 	fake.mu.Unlock()
 	control.menuTick(t.Context(), t0.Add(22*time.Second))
 	attempts := len(fake.byMethod("editMessageText"))
-	control.menuTick(t.Context(), t0.Add(33*time.Second))
+	control.menuTick(t.Context(), t0.Add(25*time.Second))
 	if len(fake.byMethod("editMessageText")) != attempts {
 		t.Fatal("после 429 бот не выдержал паузу")
 	}
@@ -395,3 +395,108 @@ func TestMenuContent(t *testing.T) {
 }
 
 func writeFile(path, content string) error { return os.WriteFile(path, []byte(content), 0o644) }
+
+// tickEvery прогоняет планировщик шагом step от start до end включительно.
+func tickEvery(t *testing.T, control *telegramControl, start time.Time, step, length time.Duration) {
+	t.Helper()
+	for offset := time.Duration(0); offset <= length; offset += step {
+		control.menuTick(t.Context(), start.Add(offset))
+	}
+}
+
+// TestMenuOneSecondMode — секундный режим держит ровную частоту и каждый раз меняет текст.
+func TestMenuOneSecondMode(t *testing.T) {
+	fake, _, control := menuControl(t)
+	control.handleUpdate(message(1, "меню", 0))
+	control.menu.update(1, func(e *menuEntry) { e.Interval = 1 })
+	t0 := time.Now()
+	control.menu.touch(1, t0)
+
+	tickEvery(t, control, t0, menuTickEvery, 10*time.Second)
+	edits := fake.byMethod("editMessageText")
+	if len(edits) < 9 || len(edits) > 10 {
+		t.Fatalf("за 10 секунд %d правок, ожидали 9–10", len(edits))
+	}
+	if edits[len(edits)-1]["text"] == edits[len(edits)-2]["text"] {
+		t.Fatal("соседние правки одинаковы: Telegram отверг бы их как «не изменилось»")
+	}
+	if !strings.Contains(edits[len(edits)-1]["text"].(string), "каждую секунду") {
+		t.Fatalf("подпись: %v", edits[len(edits)-1]["text"])
+	}
+
+	// Давно не нажимали — секундный режим сам замедляется до раза в минуту.
+	late := t0.Add(5 * time.Minute)
+	control.menuTick(t.Context(), late) // по старому сроку
+	before := len(fake.byMethod("editMessageText"))
+	tickEvery(t, control, late.Add(menuTickEvery), menuTickEvery, 30*time.Second)
+	if len(fake.byMethod("editMessageText")) != before {
+		t.Fatal("в простое секундный режим продолжает править каждую секунду")
+	}
+	// Нажатие снова включает частые обновления.
+	control.menu.touch(1, late.Add(time.Minute))
+	tickEvery(t, control, late.Add(time.Minute), menuTickEvery, 5*time.Second)
+	if n := len(fake.byMethod("editMessageText")) - before; n < 3 {
+		t.Fatalf("после нажатия правок %d", n)
+	}
+}
+
+// TestMenuRateLimitLadder — на каждый 429 бот обновляет реже на ступень, об этом сказано в меню,
+// а новый выбор периода возвращает выбранную частоту.
+func TestMenuRateLimitLadder(t *testing.T) {
+	fake, _, control := menuControl(t)
+	control.handleUpdate(message(1, "меню", 0))
+	control.menu.update(1, func(e *menuEntry) { e.Interval = 1 })
+	t0 := time.Now()
+	control.menu.touch(1, t0)
+	control.menuTick(t.Context(), t0) // назначает срок
+
+	fake.mu.Lock()
+	fake.failCode, fake.failDescription = 429, "Too Many Requests: retry after 1"
+	fake.mu.Unlock()
+	fake.setFail("editMessageText", true)
+
+	floor := func() time.Duration {
+		control.menu.mu.Lock()
+		defer control.menu.mu.Unlock()
+		return control.menu.floor[1]
+	}
+	next := func() time.Time {
+		control.menu.mu.Lock()
+		defer control.menu.mu.Unlock()
+		return control.menu.nextAt[1]
+	}
+	var seen []time.Duration
+	now := t0
+	for i := 0; i < 5; i++ {
+		now = next()
+		control.menuTick(t.Context(), now)
+		seen = append(seen, floor())
+	}
+	want := []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 30 * time.Second}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Fatalf("ступени после 429: %v, ожидали %v", seen, want)
+		}
+	}
+	entry, _ := control.menu.get(1)
+	if footer := control.menuFooter(1, entry, now); !strings.Contains(footer, "частота снижена") || !strings.Contains(footer, "каждые 30 с") {
+		t.Fatalf("подпись после снижения: %s", footer)
+	}
+
+	// Telegram снова принимает правки; человек сам выбирает период — вынужденное снижение снимается.
+	fake.setFail("editMessageText", false)
+	menuCallback(control, fake, t, "iv1")
+	if floor() != 0 {
+		t.Fatal("вынужденное снижение не сброшено после выбора периода")
+	}
+	entry, _ = control.menu.get(1)
+	if footer := control.menuFooter(1, entry, now); strings.Contains(footer, "снижена") {
+		t.Fatalf("подпись всё ещё говорит о снижении: %s", footer)
+	}
+	// Сам по себе обычный период выше ступени снижения не меняется: 429 при 10 с даёт 30 с.
+	control.menu.update(1, func(e *menuEntry) { e.Interval = 60 })
+	control.menu.resetFloor(1)
+	if got := control.menu.effectiveInterval(1, 60, now); got != time.Minute {
+		t.Fatalf("минутный период изменился: %v", got)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,17 +25,22 @@ import (
 
 const (
 	menuFile            = "telegram-menu.json"
-	menuTickEvery       = 2 * time.Second
-	menuIdleAfter       = 2 * time.Minute // дольше администратор не нажимает — обновляем редко
+	menuTickEvery       = 250 * time.Millisecond // шаг планировщика: секундный период держится ровно
+	menuIdleAfter       = 2 * time.Minute        // дольше администратор не нажимает — обновляем редко
 	menuIdleEvery       = time.Minute
 	menuDefaultInterval = 10 // секунд
 	menuBackoff         = 30 * time.Second
-	menuDataTTL         = 3 * time.Second
+	menuDataTTL         = 700 * time.Millisecond // данные не старше секундного периода
 	menuHeavyTTL        = 30 * time.Second
 )
 
 // menuIntervals — доступные периоды автообновления в секундах; 0 — выключено.
-var menuIntervals = []int{5, 10, 60, 0}
+var menuIntervals = []int{1, 5, 10, 60, 0}
+
+// menuFloors — ступени, на которые бот сам замедляет обновление, когда Telegram отвечает 429.
+var menuFloors = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second}
+
+var retryAfterRe = regexp.MustCompile(`retry after (\d+)`)
 
 // menuEntry — меню одного чата. Хранится в файле: после перезапуска панели меню продолжает жить.
 type menuEntry struct {
@@ -50,6 +56,8 @@ type menuStore struct {
 	entries map[int64]*menuEntry
 	touched map[int64]time.Time
 	nextAt  map[int64]time.Time
+	// floor — вынужденная нижняя граница периода после лимита Telegram; только в памяти.
+	floor map[int64]time.Duration
 
 	// Кэш собранных данных: несколько чатов и кнопки не должны каждый раз читать журнал и процессы.
 	dataMu  sync.Mutex
@@ -60,7 +68,7 @@ type menuStore struct {
 }
 
 func newMenuStore(path string) *menuStore {
-	m := &menuStore{path: path, entries: map[int64]*menuEntry{}, touched: map[int64]time.Time{}, nextAt: map[int64]time.Time{}}
+	m := &menuStore{path: path, entries: map[int64]*menuEntry{}, touched: map[int64]time.Time{}, nextAt: map[int64]time.Time{}, floor: map[int64]time.Duration{}}
 	if path == "" {
 		return m
 	}
@@ -160,14 +168,28 @@ func (m *menuStore) effectiveInterval(chat int64, chosen int, now time.Time) tim
 	if chosen <= 0 {
 		return 0
 	}
-	d := time.Duration(chosen) * time.Second
 	m.mu.Lock()
-	touched := m.touched[chat]
-	m.mu.Unlock()
-	if touched.IsZero() || now.Sub(touched) > menuIdleAfter {
+	defer m.mu.Unlock()
+	return m.effectiveLocked(chat, chosen, now)
+}
+
+func (m *menuStore) effectiveLocked(chat int64, chosen int, now time.Time) time.Duration {
+	if chosen <= 0 {
+		return 0
+	}
+	d := time.Duration(chosen) * time.Second
+	if touched := m.touched[chat]; touched.IsZero() || now.Sub(touched) > menuIdleAfter {
 		d = max(d, menuIdleEvery)
 	}
-	return d
+	// После лимита Telegram частота снижена, пока человек сам не выберет период заново.
+	return max(d, m.floor[chat])
+}
+
+// resetFloor возвращает выбранную частоту: человек сам поменял период или открыл меню заново.
+func (m *menuStore) resetFloor(chat int64) {
+	m.mu.Lock()
+	delete(m.floor, chat)
+	m.mu.Unlock()
 }
 
 /* ---------- Данные ---------- */
@@ -339,7 +361,16 @@ func (c *telegramControl) menuFooter(chat int64, e menuEntry, now time.Time) str
 	every := "автообновление выключено"
 	if eff := c.menu.effectiveInterval(chat, e.Interval, now); eff > 0 {
 		every = "каждые " + intervalLabel(int(eff/time.Second))
-		if eff == menuIdleEvery && e.Interval > 0 && e.Interval < 60 {
+		if eff == time.Second {
+			every = "каждую секунду"
+		}
+		c.menu.mu.Lock()
+		floor := c.menu.floor[chat]
+		c.menu.mu.Unlock()
+		switch {
+		case floor > 0 && floor > time.Duration(e.Interval)*time.Second:
+			every += " — частота снижена: лимит Telegram"
+		case eff == menuIdleEvery && e.Interval > 0 && e.Interval < 60:
 			every = "раз в минуту — вы давно не нажимали"
 		}
 	}
@@ -514,12 +545,12 @@ func (c *telegramControl) renderMenuMore(chat int64, e menuEntry, d menuData, no
 	button := func(text, data string) map[string]any { return map[string]any{"text": text, "callback_data": data} }
 	var intervals []map[string]any
 	for _, seconds := range menuIntervals {
-		label := "⏱ " + intervalLabel(seconds)
+		label := intervalLabel(seconds)
 		if seconds == 0 {
 			label = "⏸ выкл"
 		}
 		if seconds == e.Interval {
-			label = "✓ " + strings.TrimPrefix(label, "⏱ ")
+			label = "✓ " + label
 		}
 		intervals = append(intervals, button(label, fmt.Sprintf("mn:iv%d", seconds)))
 	}
@@ -552,6 +583,7 @@ func (c *telegramControl) openMenu(ctx context.Context, chat int64) {
 		entry.Interval, entry.Pinned = old.Interval, old.Pinned
 		_ = c.api.call(ctx, "deleteMessage", map[string]any{"chat_id": chat, "message_id": old.Message}, nil)
 	}
+	c.menu.resetFloor(chat)
 	c.menu.touch(chat, now)
 	var id int64
 	draft := c.think(ctx, chat)
@@ -591,8 +623,27 @@ func (c *telegramControl) menuEditResult(chat int64, err error, now time.Time) {
 	}
 	switch {
 	case apiErr.Code == http.StatusTooManyRequests:
+		// Лимит: ждём, сколько просит Telegram, и дальше обновляем реже на одну ступень.
+		wait := menuBackoff
+		if m := retryAfterRe.FindStringSubmatch(apiErr.Description); m != nil {
+			if n, _ := strconv.Atoi(m[1]); n > 0 {
+				wait = time.Duration(n+1) * time.Second
+			}
+		}
 		c.menu.mu.Lock()
-		c.menu.nextAt[chat] = now.Add(menuBackoff)
+		if e, ok := c.menu.entries[chat]; ok {
+			current := c.menu.effectiveLocked(chat, e.Interval, now)
+			for _, step := range menuFloors {
+				if step > current {
+					c.menu.floor[chat] = step
+					break
+				}
+			}
+			if current >= menuFloors[len(menuFloors)-1] {
+				c.menu.floor[chat] = current
+			}
+		}
+		c.menu.nextAt[chat] = now.Add(wait)
 		c.menu.mu.Unlock()
 	case apiErr.Code == http.StatusBadRequest || apiErr.Code == http.StatusForbidden || apiErr.Code == http.StatusNotFound:
 		c.menu.remove(chat)
@@ -622,9 +673,18 @@ func (c *telegramControl) menuTick(ctx context.Context, now time.Time) {
 			c.menu.mu.Unlock()
 			continue
 		}
-		c.menu.nextAt[chat] = now.Add(interval)
+		// Срок считается от прошлого срока, а не от момента правки: так секундный период не
+		// накапливает задержку сети и шага планировщика.
+		next := due.Add(interval)
+		if !next.After(now) {
+			next = now.Add(interval)
+		}
+		c.menu.nextAt[chat] = next
 		c.menu.mu.Unlock()
-		c.editMenu(ctx, chat, e, now)
+		// Зависший запрос не должен останавливать обновление остальных меню.
+		editCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		c.editMenu(editCtx, chat, e, now)
+		cancel()
 	}
 }
 
@@ -679,6 +739,7 @@ func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *tgCa
 				break
 			}
 		}
+		c.menu.resetFloor(chat)
 		entry, _ = c.menu.update(chat, func(e *menuEntry) { e.Interval = next })
 		reply = "Автообновление: " + intervalLabel(next)
 	case strings.HasPrefix(act, "iv"):
@@ -692,6 +753,7 @@ func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *tgCa
 			answer("Кнопка устарела")
 			return
 		}
+		c.menu.resetFloor(chat)
 		entry, _ = c.menu.update(chat, func(e *menuEntry) { e.Interval = seconds })
 		reply = "Автообновление: " + intervalLabel(seconds)
 	case act == "run":
