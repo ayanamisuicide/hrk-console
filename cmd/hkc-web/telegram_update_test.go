@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // updateTelegram готовит сервер обновлений с ботом, слушающим подменённый Bot API.
@@ -75,8 +77,8 @@ func TestTelegramUpdateButtonOnlyWhenBotListens(t *testing.T) {
 func TestTelegramUpdateFlow(t *testing.T) {
 	fake, s, control, installed := updateTelegram(t)
 	press := func(from int64, data string) {
-		control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c", From: tgUser{ID: from, Username: "anya"}, Data: data,
-			Message: &tgMessage{MessageID: 8, Chat: tgChat{ID: 1}}}})
+		control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c", From: telegram.User{ID: from, Username: "anya"}, Data: data,
+			Message: &telegram.Message{MessageID: 8, Chat: telegram.Chat{ID: 1}}}})
 	}
 
 	// Чужой не запускает установку.
@@ -131,8 +133,8 @@ func TestTelegramUpdateFlow(t *testing.T) {
 func TestTelegramUpdateBlockedKeepsButton(t *testing.T) {
 	fake, _, control, _ := updateTelegram(t)
 	t.Setenv("HKC_UPDATE_ENABLED", "")
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c", From: tgUser{ID: 1}, Data: "upd:v9.0.0",
-		Message: &tgMessage{MessageID: 8, Chat: tgChat{ID: 1}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c", From: telegram.User{ID: 1}, Data: "upd:v9.0.0",
+		Message: &telegram.Message{MessageID: 8, Chat: telegram.Chat{ID: 1}}}})
 	edits := fake.byMethod("editMessageText")
 	if len(edits) != 1 || !strings.Contains(lastText(edits), "Не удалось начать обновление") || edits[0]["reply_markup"] == nil {
 		t.Fatalf("blocked update: %v", edits)

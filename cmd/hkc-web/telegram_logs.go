@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"heroku-console/internal/telegram"
 	"heroku-console/logfeed"
 )
 
@@ -268,7 +269,7 @@ func logLines(entries []logfeed.Entry, budget int) (lines []string, shown []logf
 	used := 0
 	start := len(rows)
 	for i := len(rows) - 1; i >= 0; i-- {
-		cost := htmlVisibleLen(html.EscapeString(rows[i].text)) + 1
+		cost := telegram.HTMLVisibleLen(html.EscapeString(rows[i].text)) + 1
 		if used+cost > budget && start < len(rows) {
 			break
 		}
@@ -486,25 +487,25 @@ func (c *telegramControl) renderErrors(nonce string, v *logView, now time.Time) 
 /* ---------- Команды и кнопки ---------- */
 
 // showLog — ответ на «логи», «ошибки» и «найди …»: новый просмотр с кнопками.
-func (c *telegramControl) showLog(ctx context.Context, chat int64, it intent) {
+func (c *telegramControl) showLog(ctx context.Context, chat int64, it telegram.Intent) {
 	c.answer(ctx, chat, func() (string, map[string]any) {
-		v := &logView{mode: "logs", module: it.module, level: it.level, since: it.since, limit: it.limit}
-		switch it.kind {
-		case intentErrors:
+		v := &logView{mode: "logs", module: it.Module, level: it.Level, since: it.Since, limit: it.Limit}
+		switch it.Kind {
+		case telegram.IntentErrors:
 			v.mode, v.level = "errors", "ERROR"
-		case intentSearch:
-			v.mode, v.text = "search", it.text
+		case telegram.IntentSearch:
+			v.mode, v.text = "search", it.Text
 		}
 		if v.module == "" {
-			v.module = moduleFrom(it.words, c.knownModules())
+			v.module = telegram.ModuleFrom(it.Words, c.knownModules())
 		}
 		if v.limit <= 0 || v.limit > logsMaxN {
 			v.limit = logsDefaultN
-			if it.limit > logsMaxN {
+			if it.Limit > logsMaxN {
 				v.limit = logsMaxN
 			}
 		}
-		if v.mode == "search" && it.limit <= 0 {
+		if v.mode == "search" && it.Limit <= 0 {
 			v.limit = 15
 		}
 		nonce := c.registerView(v)
@@ -548,7 +549,7 @@ func rawEntry(e logfeed.Entry) string {
 }
 
 // handleLogCallback обрабатывает кнопки под просмотром журнала: lg:<код>:<действие>.
-func (c *telegramControl) handleLogCallback(ctx context.Context, callback *tgCallback, data string, answer func(string)) {
+func (c *telegramControl) handleLogCallback(ctx context.Context, callback *telegram.Callback, data string, answer func(string)) {
 	nonce, act, _ := strings.Cut(data, ":")
 	v, ok := c.viewByNonce(nonce)
 	if !ok || callback.Message == nil {
@@ -592,7 +593,7 @@ func (c *telegramControl) handleLogCallback(ctx context.Context, callback *tgCal
 		answer("Готовлю файл…")
 		name, content := c.logFile(v)
 		caption := fmt.Sprintf("Журнал · %s", describeSize(len(content)))
-		if err := c.api.upload(ctx, "sendDocument", map[string]string{"chat_id": strconv.FormatInt(chat, 10), "caption": caption}, "document", name, content); err != nil {
+		if err := c.api.Upload(ctx, "sendDocument", map[string]string{"chat_id": strconv.FormatInt(chat, 10), "caption": caption}, "document", name, content); err != nil {
 			c.send(ctx, chat, "⚠️ Не удалось отправить файл: "+html.EscapeString(err.Error()), nil)
 		}
 	case strings.HasPrefix(act, "tb"):

@@ -1,0 +1,318 @@
+/* Адаптивность всей консоли. Подключается последним: перекрывает правила разделов. */
+
+/* ---------- Адаптивность ---------- */
+@media (max-width: 1180px) {
+  .command-trigger {
+    min-width: 0;
+  }
+  .command-trigger span,
+  .command-trigger kbd {
+    display: none;
+  }
+}
+@media (max-width: 1200px) {
+  .system-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 960px) {
+  .system-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .system-kpis {
+    gap: 10px;
+  }
+  .resource-card {
+    gap: 8px;
+    padding: 12px;
+  }
+  .resource-heading {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .resource-heading strong {
+    font-size: 21px;
+  }
+  .resource-spark {
+    height: 28px;
+  }
+  .system-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 14px 16px;
+  }
+  #system-sampled {
+    grid-column: 1 / -1;
+  }
+  .history-chart {
+    height: 260px;
+  }
+  .history-toolbar,
+  .history-actions {
+    width: 100%;
+  }
+  .history-actions .history-ranges {
+    margin-left: auto;
+  }
+  .history-help {
+    display: none;
+  }
+  .probe-list li {
+    grid-template-columns: minmax(0, 1fr) 70px;
+  }
+  .probe-list li i {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .net-rates strong {
+    font-size: 17px;
+  }
+}
+/* Телефон: компактная шапка сверху и вкладки снизу */
+@media (max-width: 760px) {
+  body {
+    overflow: auto;
+  }
+  .shell {
+    display: block;
+    height: auto;
+    padding-bottom: 68px;
+  }
+  .sidebar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 12px 12px 4px;
+    overflow: visible;
+  }
+  .brand {
+    padding: 0;
+  }
+  .brand-copy p {
+    display: none;
+  }
+  .status-card {
+    padding: 7px 11px;
+  }
+  .side-nav {
+    position: fixed;
+    z-index: 40;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(14px);
+  }
+  .nav-label,
+  .nav-group-toggle,
+  .nav-subitem small {
+    display: none;
+  }
+  .nav-group,
+  .nav-group-row,
+  .nav-submenu {
+    display: contents;
+  }
+  .side-nav .nav-subitem b {
+    font-weight: 500;
+  }
+  .side-nav .nav-item,
+  .side-nav .nav-subitem {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    padding: 4px;
+    font-size: 10.5px;
+    text-align: center;
+  }
+  .side-nav .nav-item span,
+  .side-nav .nav-subitem span {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .side-nav .nav-item.active,
+  .side-nav .nav-subitem.active {
+    background: transparent;
+    box-shadow: none;
+    color: var(--accent);
+  }
+  .sidebar-bottom {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .controls {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .controls button {
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+  .settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 9px 12px;
+  }
+  .connection {
+    display: none;
+  }
+  .theme-toggle {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .theme-toggle span {
+    display: none;
+  }
+  .status-card {
+    margin-right: 42px;
+  }
+  .shell > main {
+    margin: 8px;
+    overflow: visible;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+  .header-actions button span {
+    display: none;
+  }
+  #username {
+    display: none;
+  }
+  .workspace {
+    overflow: visible;
+  }
+  .workspace-view {
+    padding: 16px 14px 20px;
+  }
+  .view-intro h3 {
+    font-size: 18px;
+  }
+  /* Журнал занимает ровно экран над нижней навигацией: лента прокручивается внутри него и
+     не прячется под второй прокруткой страницы, а шапка при чтении истории сворачивается. */
+  .logs-view {
+    gap: 10px;
+    height: calc(100dvh - 68px - 44px);
+    min-height: 480px;
+    padding-bottom: 0;
+  }
+  .jr-main {
+    min-height: 0;
+  }
+  .log-actions {
+    margin-left: auto;
+  }
+  .jr-stats {
+    gap: 6px;
+  }
+  .jr-tile {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 6px 9px;
+  }
+  .jr-tile b {
+    font-size: 17px;
+  }
+  .jr-tile > span[data-short] {
+    font-size: 0;
+  }
+  .jr-tile > span[data-short]::after {
+    font-size: 11px;
+    content: attr(data-short);
+  }
+  .jr-tile > span {
+    font-size: 11px;
+  }
+  .jr-tile small {
+    display: none;
+  }
+  /* Модули — одной строкой с прокруткой вбок, а не тремя рядами. */
+  .jr-quick {
+    flex-wrap: nowrap;
+    margin: 0 -14px;
+    padding: 0 14px 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .jr-quick > *,
+  .jr-module-chips > * {
+    flex: none;
+  }
+  .jr-quick .log-advanced {
+    position: static;
+  }
+  /* Окно сохранённых фильтров привязано к экрану, а не к прокручиваемой строке модулей,
+     иначе строка обрезала бы его. По вертикали оно остаётся под кнопкой (top: auto). */
+  .log-advanced-grid {
+    position: absolute;
+    top: auto;
+    right: 14px;
+    left: 14px;
+    width: auto;
+    margin-top: 8px;
+  }
+  .jr-tl-tools {
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+  .jr-nav-label {
+    display: none;
+  }
+  .jr-tl-tools .jr-link {
+    padding: 0 7px;
+  }
+  .jr-bars {
+    height: 72px;
+  }
+  .jr-mini-n {
+    padding: 0 8px;
+  }
+  /* В свёрнутой шапке на телефоне итоги идут строкой под поиском. */
+  .logs-view.compact .jr-searchrow {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .logs-view.compact .jr-query {
+    flex-basis: 100%;
+  }
+  .jr-mini {
+    flex: 1 1 100%;
+  }
+  #jr-expand {
+    margin-left: auto;
+  }
+  #jr-expand {
+    padding: 0 6px;
+  }
+  .log-actions {
+    gap: 4px;
+  }
+  .log-actions button span {
+    display: none;
+  }
+  .log-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+  .load-values strong {
+    font-size: 18px;
+  }
+}

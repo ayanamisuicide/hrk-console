@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"heroku-console/botproc"
+	"heroku-console/internal/telegram"
 )
 
 // Главное меню: одно сообщение-дашборд в личном чате с администратором. Бот сам правит его по
@@ -310,7 +311,7 @@ func (c *telegramControl) menuSnapshot(now time.Time) menuData {
 }
 
 func (c *telegramControl) muteView() (time.Time, bool) {
-	if state, ok := c.mute.active(); ok {
+	if state, ok := c.mute.Active(); ok {
 		return state.Until, state.All
 	}
 	return time.Time{}, false
@@ -581,7 +582,7 @@ func (c *telegramControl) openMenu(ctx context.Context, chat int64) {
 	entry := menuEntry{Screen: "main", Interval: menuDefaultInterval}
 	if hadOld {
 		entry.Interval, entry.Pinned = old.Interval, old.Pinned
-		_ = c.api.call(ctx, "deleteMessage", map[string]any{"chat_id": chat, "message_id": old.Message}, nil)
+		_ = c.api.Call(ctx, "deleteMessage", map[string]any{"chat_id": chat, "message_id": old.Message}, nil)
 	}
 	c.menu.resetFloor(chat)
 	c.menu.touch(chat, now)
@@ -599,7 +600,7 @@ func (c *telegramControl) openMenu(ctx context.Context, chat int64) {
 	entry.Message = id
 	c.menu.put(chat, entry)
 	if entry.Pinned {
-		_ = c.api.call(ctx, "pinChatMessage", map[string]any{"chat_id": chat, "message_id": id, "disable_notification": true}, nil)
+		_ = c.api.Call(ctx, "pinChatMessage", map[string]any{"chat_id": chat, "message_id": id, "disable_notification": true}, nil)
 	}
 }
 
@@ -608,7 +609,7 @@ func (c *telegramControl) editMenu(ctx context.Context, chat int64, e menuEntry,
 	text, keyboard := c.renderMenu(chat, e, now)
 	payload := map[string]any{"chat_id": chat, "message_id": e.Message, "text": text, "parse_mode": "HTML",
 		"disable_web_page_preview": true, "reply_markup": keyboard}
-	c.menuEditResult(chat, c.api.call(ctx, "editMessageText", payload, nil), now)
+	c.menuEditResult(chat, c.api.Call(ctx, "editMessageText", payload, nil), now)
 }
 
 // menuEditResult решает, что делать после правки: «не изменилось» — не ошибка; лимит — подождать;
@@ -617,7 +618,7 @@ func (c *telegramControl) menuEditResult(chat int64, err error, now time.Time) {
 	if err == nil || isNotModified(err) {
 		return
 	}
-	var apiErr *telegramAPIError
+	var apiErr *telegram.APIError
 	if !errors.As(err, &apiErr) {
 		return // сеть: следующий тик повторит
 	}
@@ -712,7 +713,7 @@ func plainText(text string) string {
 }
 
 // handleMenuCallback — кнопки меню: mn:<действие>.
-func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *tgCallback, act string, answer func(string)) {
+func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *telegram.Callback, act string, answer func(string)) {
 	if callback.Message == nil {
 		answer("Сообщение недоступно")
 		return
@@ -762,30 +763,30 @@ func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *tgCa
 	case act == "mu1", act == "mum":
 		d := time.Hour
 		if act == "mum" {
-			d, _ = parseMuteDuration("до утра", c.now())
+			d, _ = telegram.ParseMuteDuration("до утра", c.now())
 		}
-		if err := c.mute.set(c.now().Add(d), false); err != nil {
+		if err := c.mute.Set(c.now().Add(d), false); err != nil {
 			answer("Не удалось сохранить")
 			return
 		}
-		c.auditChat(callback.From, "telegram.mute", "из меню, "+formatMuteDuration(d))
-		reply = "Тишина на " + formatMuteDuration(d) + ". Критичное придёт."
+		c.auditChat(callback.From, "telegram.mute", "из меню, "+telegram.FormatMuteDuration(d))
+		reply = "Тишина на " + telegram.FormatMuteDuration(d) + ". Критичное придёт."
 	case act == "mu0":
-		if err := c.mute.clear(); err != nil {
+		if err := c.mute.Clear(); err != nil {
 			answer("Не удалось")
 			return
 		}
 		c.auditChat(callback.From, "telegram.unmute", "из меню")
 		reply = "Уведомления включены"
 	case act == "pin":
-		if err := c.api.call(ctx, "pinChatMessage", map[string]any{"chat_id": chat, "message_id": entry.Message, "disable_notification": true}, nil); err != nil {
+		if err := c.api.Call(ctx, "pinChatMessage", map[string]any{"chat_id": chat, "message_id": entry.Message, "disable_notification": true}, nil); err != nil {
 			answer("Не удалось закрепить: " + clip(err.Error(), 120))
 			return
 		}
 		entry, _ = c.menu.update(chat, func(e *menuEntry) { e.Pinned = true })
 		reply = "Закреплено"
 	case act == "unpin":
-		_ = c.api.call(ctx, "unpinChatMessage", map[string]any{"chat_id": chat, "message_id": entry.Message}, nil)
+		_ = c.api.Call(ctx, "unpinChatMessage", map[string]any{"chat_id": chat, "message_id": entry.Message}, nil)
 		entry, _ = c.menu.update(chat, func(e *menuEntry) { e.Pinned = false })
 		reply = "Откреплено"
 	case act == "upd":

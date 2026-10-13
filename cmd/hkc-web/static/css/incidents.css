@@ -1,0 +1,55 @@
+/* Раздел «Происшествия». */
+
+/* ---------- Происшествия ---------- */
+.incident-list {
+  display: grid;
+  gap: 10px;
+}
+.incident-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  padding: 16px 18px 16px 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  white-space: normal;
+  text-align: left;
+}
+.incident-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--bad);
+}
+.incident-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+}
+.incident-meta {
+  color: var(--text-3);
+  font: 11.5px var(--mono);
+}
+.incident-card strong {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.incident-card small {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.incident-card em {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 500;
+}

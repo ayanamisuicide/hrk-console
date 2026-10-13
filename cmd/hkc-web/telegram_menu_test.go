@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // menuControl — бот, который слушает команды (иначе меню не обновляется).
@@ -26,8 +28,8 @@ func menuCallback(control *telegramControl, fake *fakeBotAPI, t *testing.T, act 
 	if !ok {
 		t.Fatal("меню не открыто")
 	}
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "cb-" + act, From: tgUser{ID: 1, Username: "anya"}, Data: "mn:" + act,
-		Message: &tgMessage{MessageID: entry.Message, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "cb-" + act, From: telegram.User{ID: 1, Username: "anya"}, Data: "mn:" + act,
+		Message: &telegram.Message{MessageID: entry.Message, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 }
 
 func lastEdit(t *testing.T, fake *fakeBotAPI) map[string]any {
@@ -97,7 +99,7 @@ func TestMenuOpensWithoutJournalRecords(t *testing.T) {
 func TestMenuOnlyInPrivateChat(t *testing.T) {
 	fake, _, control := menuControl(t)
 	control.mu.Lock()
-	control.bot = &tgUser{ID: 42, Username: "panel_bot", IsBot: true}
+	control.bot = &telegram.User{ID: 42, Username: "panel_bot", IsBot: true}
 	control.mu.Unlock()
 	control.handleUpdate(groupMessage(1, "@panel_bot меню"))
 	if !strings.Contains(lastSent(t, fake)["text"].(string), "только в личном чате") {
@@ -254,7 +256,7 @@ func TestMenuButtons(t *testing.T) {
 	}
 
 	menuCallback(control, fake, t, "mu1")
-	if _, ok := control.mute.active(); !ok {
+	if _, ok := control.mute.Active(); !ok {
 		t.Fatal("тишина не включилась из меню")
 	}
 	if !strings.Contains(lastEdit(t, fake)["text"].(string), "Уведомления выключены до") {
@@ -262,7 +264,7 @@ func TestMenuButtons(t *testing.T) {
 	}
 	callbackData(t, lastEdit(t, fake)["reply_markup"], "mn:mu0")
 	menuCallback(control, fake, t, "mu0")
-	if _, ok := control.mute.active(); ok {
+	if _, ok := control.mute.Active(); ok {
 		t.Fatal("тишина не снялась")
 	}
 	if events, _ := s.audit.recent(10); len(events) != 2 || events[1].Action != "telegram.mute" {
@@ -298,8 +300,8 @@ func TestMenuStaleButtons(t *testing.T) {
 	fake, _, control := menuControl(t)
 	control.handleUpdate(message(1, "меню", 0))
 	edits := len(fake.byMethod("editMessageText"))
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "old", From: tgUser{ID: 1}, Data: "mn:mod",
-		Message: &tgMessage{MessageID: 999999, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "old", From: telegram.User{ID: 1}, Data: "mn:mod",
+		Message: &telegram.Message{MessageID: 999999, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 	answers := fake.byMethod("answerCallbackQuery")
 	if len(answers) != 1 || !strings.Contains(answers[0]["text"].(string), "старое меню") {
 		t.Fatalf("ответ на кнопку старого меню: %v", answers)
@@ -309,9 +311,9 @@ func TestMenuStaleButtons(t *testing.T) {
 	}
 	// Чужой не может нажимать кнопки меню.
 	entry, _ := control.menu.get(1)
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "x", From: tgUser{ID: 99}, Data: "mn:mu1",
-		Message: &tgMessage{MessageID: entry.Message, Chat: tgChat{ID: 1, Type: "private"}}}})
-	if _, ok := control.mute.active(); ok {
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "x", From: telegram.User{ID: 99}, Data: "mn:mu1",
+		Message: &telegram.Message{MessageID: entry.Message, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
+	if _, ok := control.mute.Active(); ok {
 		t.Fatal("чужой включил тишину")
 	}
 }
@@ -383,10 +385,10 @@ func TestMenuContent(t *testing.T) {
 		t.Errorf("экран модулей:\n%s", modules)
 	}
 	// Тишина отражается в меню и меняет кнопку.
-	if err := control.mute.set(now.Add(time.Hour), false); err != nil {
+	control.mute = telegram.NewMuteStore("", func() time.Time { return now })
+	if err := control.mute.Set(now.Add(time.Hour), false); err != nil {
 		t.Fatal(err)
 	}
-	control.mute.now = func() time.Time { return now }
 	muted, keyboard := control.renderMenuMain(1, entry, control.menuSnapshot(now), now)
 	if !strings.Contains(muted, "Уведомления выключены до") || !strings.Contains(muted, "критичные приходят") {
 		t.Errorf("тишина в меню:\n%s", muted)

@@ -1,0 +1,82 @@
+/* Палитра команд и окно входа. */
+
+/* ---------- Палитра команд ---------- */
+.command-dialog {
+  width: min(560px, calc(100vw - 32px));
+  margin-top: 14vh;
+}
+.command-shell {
+  display: grid;
+}
+.command-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+}
+.command-input .icon {
+  position: absolute;
+  left: 18px;
+}
+.command-input input {
+  min-height: 54px;
+  padding-left: 46px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+}
+.command-input input:focus {
+  box-shadow: none;
+  background: transparent;
+}
+#command-results {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  padding: 8px;
+  overflow-y: auto;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.command-item {
+  justify-content: flex-start;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+.command-item:hover,
+.command-item.selected {
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.command-shell > p {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* Окно входа */
+#auth-dialog {
+  width: min(380px, calc(100vw - 32px));
+}
+#auth-form {
+  padding: 28px;
+}
+#auth-form .brand-mark {
+  margin-bottom: 4px;
+}
+#auth-switch {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}

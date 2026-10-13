@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // alertSettings — Какие события отправлять и пороги ресурсов. Секреты каналов доставки
@@ -243,7 +245,7 @@ type telegramSink struct {
 	// incidentMarkup даёт кнопки инцидента: действия, пока он открыт, и «Что случилось» после.
 	incidentMarkup func(key string, phase incidentPhase, from, to time.Time) map[string]any
 	// mute глушит уведомления на время; nil — не глушит.
-	mute *muteStore
+	mute *telegram.MuteStore
 	// Живые сообщения об инцидентах (см. telegram_incidents.go).
 	incidentsPath string
 	now           func() time.Time

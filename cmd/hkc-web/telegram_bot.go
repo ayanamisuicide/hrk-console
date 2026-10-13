@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // Управление ботом из Telegram. Панель сама опрашивает Bot API (getUpdates), поэтому открытый
@@ -64,112 +65,6 @@ const (
 	telegramUnknownLimit = 5
 )
 
-// telegramAPI — Вызовы Bot API. Токен входит в адрес, поэтому ошибки пересказываются без него.
-type telegramAPI struct {
-	token  string
-	base   string
-	client *http.Client
-}
-
-type telegramAPIError struct {
-	Code        int
-	Description string
-}
-
-func (e *telegramAPIError) Error() string {
-	if e.Description != "" {
-		return fmt.Sprintf("Telegram %d: %s", e.Code, e.Description)
-	}
-	return fmt.Sprintf("Telegram HTTP %d", e.Code)
-}
-
-func (api *telegramAPI) call(ctx context.Context, method string, payload, result any) error {
-	data, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, api.base+"/bot"+api.token+"/"+method, bytes.NewReader(data))
-	if err != nil {
-		return errors.New("некорректный запрос к Telegram")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := api.client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return redactURLError(err)
-	}
-	defer res.Body.Close()
-	var answer struct {
-		OK          bool            `json:"ok"`
-		Result      json.RawMessage `json:"result"`
-		Description string          `json:"description"`
-		ErrorCode   int             `json:"error_code"`
-	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&answer); err != nil {
-		return &telegramAPIError{Code: res.StatusCode}
-	}
-	if !answer.OK {
-		code := answer.ErrorCode
-		if code == 0 {
-			code = res.StatusCode
-		}
-		return &telegramAPIError{Code: code, Description: strings.ReplaceAll(answer.Description, api.token, "***")}
-	}
-	if result != nil {
-		return json.Unmarshal(answer.Result, result)
-	}
-	return nil
-}
-
-type tgUser struct {
-	ID        int64  `json:"id"`
-	IsBot     bool   `json:"is_bot"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Username  string `json:"username"`
-}
-
-func (u tgUser) displayName() string {
-	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
-	if name == "" {
-		name = strconv.FormatInt(u.ID, 10)
-	}
-	return name
-}
-
-// actor — подпись в журнале действий: @username, иначе имя.
-func (u tgUser) actor() string {
-	if u.Username != "" {
-		return "telegram:@" + u.Username
-	}
-	return "telegram:" + u.displayName()
-}
-
-type tgChat struct {
-	ID   int64  `json:"id"`
-	Type string `json:"type"`
-}
-
-type tgMessage struct {
-	MessageID int64   `json:"message_id"`
-	From      *tgUser `json:"from"`
-	Chat      tgChat  `json:"chat"`
-	Date      int64   `json:"date"`
-	Text      string  `json:"text"`
-}
-
-type tgCallback struct {
-	ID      string     `json:"id"`
-	From    tgUser     `json:"from"`
-	Message *tgMessage `json:"message"`
-	Data    string     `json:"data"`
-}
-
-type tgUpdate struct {
-	UpdateID int64       `json:"update_id"`
-	Message  *tgMessage  `json:"message"`
-	Callback *tgCallback `json:"callback_query"`
-}
-
 // telegramSender — Кто писал боту без доступа: помогает узнать свой ID при настройке. Текст не хранится.
 type telegramSender struct {
 	ID       string    `json:"id"`
@@ -188,7 +83,7 @@ type telegramPending struct {
 // telegramControl — Опрос Bot API и обработка команд. Состояние читает раздел админки.
 type telegramControl struct {
 	s      *server
-	api    *telegramAPI
+	api    *telegram.Client
 	config telegramConfig
 	admins map[int64]bool
 	now    func() time.Time
@@ -197,13 +92,13 @@ type telegramControl struct {
 	mu         sync.Mutex
 	state      string
 	err        string
-	bot        *tgUser
+	bot        *telegram.User
 	lastPoll   time.Time
 	unknown    []telegramSender
 	pending    map[string]telegramPending
 	offset     int64
 	cancelPoll context.CancelFunc
-	web        telegramWebSessions
+	web        telegram.WebSessions
 	// Обновление из Telegram: наблюдатель за установкой и подмены для тестов.
 	watching   bool
 	updatePoll time.Duration
@@ -215,7 +110,7 @@ type telegramControl struct {
 	// Просмотры журнала в чате, к которым привязаны кнопки «Старее», «Файлом» и т. п.
 	views map[string]*logView
 	// Тишина уведомлений.
-	mute *muteStore
+	mute *telegram.MuteStore
 	// Главное меню: сообщение-дашборд, которое бот сам обновляет.
 	menu *menuStore
 }
@@ -224,14 +119,14 @@ func newTelegramControl(s *server, config telegramConfig) *telegramControl {
 	c := &telegramControl{s: s, config: config, admins: map[int64]bool{}, now: time.Now,
 		wake: make(chan struct{}, 1), pending: map[string]telegramPending{}, state: "off",
 		streamGap: streamDefaultGap * time.Millisecond, views: map[string]*logView{}}
-	c.mute = newMuteStore(muteFilePath(s.dataDir), c.now)
+	c.mute = telegram.NewMuteStore(muteFilePath(s.dataDir), c.now)
 	c.menu = newMenuStore(menuFilePath(s.dataDir))
 	for _, id := range config.Admins {
 		c.admins[id] = true
 	}
 	if config.Token != "" {
 		// Длинный опрос держит соединение до telegramPollSeconds; запас покрывает сеть.
-		c.api = &telegramAPI{token: config.Token, base: config.APIBase, client: &http.Client{Timeout: (telegramPollSeconds + 15) * time.Second}}
+		c.api = &telegram.Client{Token: config.Token, Base: config.APIBase, HTTP: &http.Client{Timeout: (telegramPollSeconds + 15) * time.Second}}
 		c.state = "disabled"
 	}
 	return c
@@ -312,7 +207,7 @@ func (c *telegramControl) run(ctx context.Context) {
 		if errors.Is(err, context.Canceled) {
 			continue
 		}
-		var apiErr *telegramAPIError
+		var apiErr *telegram.APIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.Code {
 			case http.StatusConflict:
@@ -344,8 +239,8 @@ func (c *telegramControl) run(ctx context.Context) {
 
 // session — одно подключение: знакомимся с ботом, публикуем меню команд и слушаем обновления.
 func (c *telegramControl) session(ctx context.Context, connected func()) error {
-	var me tgUser
-	if err := c.api.call(ctx, "getMe", map[string]any{}, &me); err != nil {
+	var me telegram.User
+	if err := c.api.Call(ctx, "getMe", map[string]any{}, &me); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -358,8 +253,8 @@ func (c *telegramControl) session(ctx context.Context, connected func()) error {
 		c.mu.Lock()
 		offset := c.offset
 		c.mu.Unlock()
-		var updates []tgUpdate
-		err := c.api.call(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": telegramPollSeconds,
+		var updates []telegram.Update
+		err := c.api.Call(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": telegramPollSeconds,
 			"allowed_updates": []string{"message", "callback_query"}}, &updates)
 		if err != nil {
 			return err
@@ -388,7 +283,7 @@ func (c *telegramControl) publishMenu(ctx context.Context) {
 		}
 		commands = append(commands, map[string]string{"command": command.Name, "description": command.Description})
 	}
-	if err := c.api.call(ctx, "setMyCommands", map[string]any{"commands": commands}, nil); err != nil && ctx.Err() == nil {
+	if err := c.api.Call(ctx, "setMyCommands", map[string]any{"commands": commands}, nil); err != nil && ctx.Err() == nil {
 		log.Printf("telegram: меню команд не опубликовано: %v", err)
 	}
 	url := c.webAppURL()
@@ -398,7 +293,7 @@ func (c *telegramControl) publishMenu(ctx context.Context) {
 			button = map[string]any{"type": "web_app", "text": "Панель", "web_app": map[string]string{"url": url}}
 		}
 		// Личный чат администратора совпадает с его ID; если он ещё не писал боту, Telegram ответит ошибкой.
-		_ = c.api.call(ctx, "setChatMenuButton", map[string]any{"chat_id": id, "menu_button": button}, nil)
+		_ = c.api.Call(ctx, "setChatMenuButton", map[string]any{"chat_id": id, "menu_button": button}, nil)
 	}
 }
 
@@ -410,7 +305,7 @@ func (c *telegramControl) webAppURL() string {
 	return c.config.WebAppURL + "/tg/"
 }
 
-func (c *telegramControl) handleUpdate(update tgUpdate) {
+func (c *telegramControl) handleUpdate(update telegram.Update) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	switch {
@@ -421,11 +316,11 @@ func (c *telegramControl) handleUpdate(update tgUpdate) {
 	}
 }
 
-func (c *telegramControl) rememberUnknown(user tgUser, chat string) {
+func (c *telegramControl) rememberUnknown(user telegram.User, chat string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	id := strconv.FormatInt(user.ID, 10)
-	kept := []telegramSender{{ID: id, Name: user.displayName(), Username: user.Username, Chat: chat, At: c.now().UTC()}}
+	kept := []telegramSender{{ID: id, Name: user.DisplayName(), Username: user.Username, Chat: chat, At: c.now().UTC()}}
 	for _, sender := range c.unknown {
 		if sender.ID != id && len(kept) < telegramUnknownLimit {
 			kept = append(kept, sender)
@@ -434,7 +329,7 @@ func (c *telegramControl) rememberUnknown(user tgUser, chat string) {
 	c.unknown = kept
 }
 
-func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage) {
+func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.Message) {
 	if message.From == nil || message.From.IsBot {
 		return
 	}
@@ -462,11 +357,11 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 				username = bot.Username
 			}
 			var mentioned bool
-			if text, mentioned = stripMention(text, username); !mentioned {
+			if text, mentioned = telegram.StripMention(text, username); !mentioned {
 				return
 			}
 		}
-		if it, ok := parseIntent(text); ok {
+		if it, ok := telegram.ParseIntent(text); ok {
 			c.handleIntent(ctx, message, it)
 		}
 		return
@@ -484,30 +379,30 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *tgMessage)
 	name = strings.ToLower(name)
 	chat := message.Chat.ID
 	// Команды, у которых есть слова-синонимы, идут тем же путём, что и фразы.
-	slash := map[string]intentKind{"start": intentMenu, "menu": intentMenu, "help": intentHelp, "status": intentStatus, "update": intentUpdate, "app": intentApp,
-		"logs": intentLogs, "errors": intentErrors, "find": intentSearch, "mute": intentMute, "unmute": intentUnmute}
+	slash := map[string]telegram.IntentKind{"start": telegram.IntentMenu, "menu": telegram.IntentMenu, "help": telegram.IntentHelp, "status": telegram.IntentStatus, "update": telegram.IntentUpdate, "app": telegram.IntentApp,
+		"logs": telegram.IntentLogs, "errors": telegram.IntentErrors, "find": telegram.IntentSearch, "mute": telegram.IntentMute, "unmute": telegram.IntentUnmute}
 	if kind, ok := slash[name]; ok {
-		it, _ := parseIntent(args)
+		it, _ := telegram.ParseIntent(args)
 		if args == "" {
-			it = intent{}
+			it = telegram.Intent{}
 		}
 		// Слова после команды уточняют её («/logs 30 updates», «/mute 2h»), но вид задаёт сама команда.
-		words := tokenize(normalize(args))
-		it.words = words
-		it.kind = kind
-		fillView(&it, normalize(args))
+		words := telegram.Tokenize(telegram.Normalize(args))
+		it.Words = words
+		it.Kind = kind
+		telegram.FillView(&it, telegram.Normalize(args))
 		switch kind {
-		case intentErrors:
-			it.level = "ERROR"
-		case intentSearch:
-			it.text = strings.Trim(strings.TrimSpace(args), `"'«»`)
-			if it.text == "" {
+		case telegram.IntentErrors:
+			it.Level = "ERROR"
+		case telegram.IntentSearch:
+			it.Text = strings.Trim(strings.TrimSpace(args), `"'«»`)
+			if it.Text == "" {
 				c.reply(ctx, chat, "Что искать? Например: /find таймаут", nil)
 				return
 			}
-		case intentMute:
-			it.mute, it.muteSet = parseMuteDuration(normalize(args), c.now())
-			it.muteAll = hasStem(words, "совсем", "полностью", "вообще", "all")
+		case telegram.IntentMute:
+			it.Mute, it.MuteSet = telegram.ParseMuteDuration(telegram.Normalize(args), c.now())
+			it.MuteAll = telegram.HasStem(words, "совсем", "полностью", "вообще", "all")
 		}
 		c.handleIntent(ctx, message, it)
 		return
@@ -535,7 +430,7 @@ func (c *telegramControl) appKeyboard() map[string]any {
 	return map[string]any{"inline_keyboard": [][]map[string]any{{{"text": "Открыть панель", "web_app": map[string]string{"url": url}}}}}
 }
 
-func (c *telegramControl) askConfirm(ctx context.Context, chat int64, user tgUser, command telegramCommand) {
+func (c *telegramControl) askConfirm(ctx context.Context, chat int64, user telegram.User, command telegramCommand) {
 	nonce, err := randomToken(9)
 	if err != nil {
 		c.send(ctx, chat, "Не удалось подготовить подтверждение, попробуйте ещё раз.", nil)
@@ -565,9 +460,9 @@ func (c *telegramControl) askConfirm(ctx context.Context, chat int64, user tgUse
 	c.reply(ctx, chat, question, keyboard)
 }
 
-func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallback) {
+func (c *telegramControl) handleCallback(ctx context.Context, callback *telegram.Callback) {
 	answer := func(text string) {
-		_ = c.api.call(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": callback.ID, "text": text}, nil)
+		_ = c.api.Call(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": callback.ID, "text": text}, nil)
 	}
 	if !c.admins[callback.From.ID] {
 		c.rememberUnknown(callback.From, "callback")
@@ -606,7 +501,7 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallba
 		if callback.Message == nil {
 			return
 		}
-		_ = c.api.call(ctx, "editMessageText", map[string]any{"chat_id": callback.Message.Chat.ID, "message_id": callback.Message.MessageID,
+		_ = c.api.Call(ctx, "editMessageText", map[string]any{"chat_id": callback.Message.Chat.ID, "message_id": callback.Message.MessageID,
 			"text": text, "parse_mode": "HTML"}, nil)
 	}
 	if !ok || c.now().After(pending.expires) {
@@ -624,13 +519,13 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *tgCallba
 }
 
 // execute выполняет действие тем же путём, что и кнопки панели, и пишет его в журнал действий.
-func (c *telegramControl) execute(user tgUser, action string) string {
+func (c *telegramControl) execute(user telegram.User, action string) string {
 	result, status := c.s.performAction(action)
 	if status == http.StatusOK && c.s.notifier != nil {
 		c.s.notifier.observe(c.s.bot.PID() != 0)
 	}
 	if c.s.audit != nil {
-		event := auditEvent{Time: c.now().UTC(), Actor: user.actor(), Action: "bot." + action, Detail: result.Message, IP: "telegram"}
+		event := auditEvent{Time: c.now().UTC(), Actor: user.Actor(), Action: "bot." + action, Detail: result.Message, IP: "telegram"}
 		if err := c.s.audit.add(event); err != nil {
 			fmt.Fprintf(os.Stderr, "audit: %v\n", err)
 		}
@@ -685,7 +580,7 @@ func (c *telegramControl) send(ctx context.Context, chat int64, text string, key
 	if keyboard != nil {
 		payload["reply_markup"] = keyboard
 	}
-	if err := c.api.call(ctx, "sendMessage", payload, nil); err != nil {
+	if err := c.api.Call(ctx, "sendMessage", payload, nil); err != nil {
 		log.Printf("telegram: ответ не отправлен: %v", err)
 	}
 }
@@ -707,7 +602,7 @@ func (c *telegramControl) view() map[string]any {
 		"unknown": append([]telegramSender{}, c.unknown...),
 	}
 	if c.bot != nil {
-		view["bot"] = map[string]any{"id": strconv.FormatInt(c.bot.ID, 10), "username": c.bot.Username, "name": c.bot.displayName()}
+		view["bot"] = map[string]any{"id": strconv.FormatInt(c.bot.ID, 10), "username": c.bot.Username, "name": c.bot.DisplayName()}
 	}
 	if !c.lastPoll.IsZero() {
 		view["lastPollAt"] = c.lastPoll.UTC()

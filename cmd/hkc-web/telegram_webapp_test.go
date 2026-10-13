@@ -39,25 +39,6 @@ func signInitData(token string, userID int64, at time.Time) string {
 	return values.Encode()
 }
 
-// TestVerifyTelegramInitData принимает подпись Telegram и отвергает подделку и старые данные.
-func TestVerifyTelegramInitData(t *testing.T) {
-	now := time.Now()
-	user, err := verifyTelegramInitData(signInitData(testBotToken, 7, now), testBotToken, now)
-	if err != nil || user.ID != 7 || user.Username != "anya" {
-		t.Fatalf("valid data rejected: %v %+v", err, user)
-	}
-	if _, err := verifyTelegramInitData(signInitData("999:other", 7, now), testBotToken, now); err == nil {
-		t.Fatal("foreign signature accepted")
-	}
-	tampered := strings.Replace(signInitData(testBotToken, 7, now), "anya", "evil", 1)
-	if _, err := verifyTelegramInitData(tampered, testBotToken, now); err == nil {
-		t.Fatal("tampered data accepted")
-	}
-	if _, err := verifyTelegramInitData(signInitData(testBotToken, 7, now.Add(-48*time.Hour)), testBotToken, now); err == nil {
-		t.Fatal("stale data accepted")
-	}
-}
-
 func startWebSession(t *testing.T, handler http.Handler, initData string) *httptest.ResponseRecorder {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"initData": initData})

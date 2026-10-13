@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 const testBotToken = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef123"
@@ -138,9 +140,9 @@ func newTestTelegram(t *testing.T, apiURL string, admins ...int64) (*server, *te
 	return s, control
 }
 
-func message(from int64, text string, age time.Duration) tgUpdate {
-	return tgUpdate{Message: &tgMessage{MessageID: 7, From: &tgUser{ID: from, FirstName: "Аня", Username: "anya"},
-		Chat: tgChat{ID: from, Type: "private"}, Date: time.Now().Add(-age).Unix(), Text: text}}
+func message(from int64, text string, age time.Duration) telegram.Update {
+	return telegram.Update{Message: &telegram.Message{MessageID: 7, From: &telegram.User{ID: from, FirstName: "Аня", Username: "anya"},
+		Chat: telegram.Chat{ID: from, Type: "private"}, Date: time.Now().Add(-age).Unix(), Text: text}}
 }
 
 // TestTelegramIgnoresStrangers не отвечает чужим, но запоминает их ID для настройки.
@@ -189,9 +191,9 @@ func TestTelegramConfirmFlow(t *testing.T) {
 	}
 
 	// Чужой не может нажать чужую кнопку, и кнопка после этого остаётся рабочей.
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c0", From: tgUser{ID: 99}, Data: data}})
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c1", From: tgUser{ID: 1, Username: "anya"}, Data: data,
-		Message: &tgMessage{MessageID: 8, Chat: tgChat{ID: 1}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c0", From: telegram.User{ID: 99}, Data: data}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c1", From: telegram.User{ID: 1, Username: "anya"}, Data: data,
+		Message: &telegram.Message{MessageID: 8, Chat: telegram.Chat{ID: 1}}}})
 	edits := fake.byMethod("editMessageText")
 	if len(edits) != 1 || !strings.Contains(edits[0]["text"].(string), "уже остановлен") {
 		t.Fatalf("edit after confirm: %v", edits)
@@ -202,8 +204,8 @@ func TestTelegramConfirmFlow(t *testing.T) {
 	}
 
 	// Повторное нажатие той же кнопки ничего не выполняет.
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c2", From: tgUser{ID: 1}, Data: data,
-		Message: &tgMessage{MessageID: 8, Chat: tgChat{ID: 1}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c2", From: telegram.User{ID: 1}, Data: data,
+		Message: &telegram.Message{MessageID: 8, Chat: telegram.Chat{ID: 1}}}})
 	if edits := fake.byMethod("editMessageText"); !strings.Contains(edits[len(edits)-1]["text"].(string), "устарела") {
 		t.Fatalf("reused button: %v", edits)
 	}

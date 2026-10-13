@@ -222,14 +222,17 @@ test.describe("плавность шкалы", () => {
   test("столбик растёт по кадрам, а не прыгает", async ({ page }) => {
     // Сервер отдаёт «1 ошибку», пока тест не включит рост: число опросов при загрузке не фиксировано.
     let boost = false;
-    const now = Date.now();
     const bucket = 300000;
-    const current = Math.floor(now / bucket) * bucket;
+    // Часы страницы стоят в середине 5-минутного интервала. В его начале текущий столбик шкалы ещё
+    // в пару пикселей шириной, и замер у правого края попадал на соседний интервал.
+    const current = Math.floor(Date.now() / bucket) * bucket;
+    const now = current + bucket / 2;
+    await page.clock.setFixedTime(now);
     await openJournal(page, [line(0)], {
       stats: () => {
         return {
           bucketMs: bucket,
-          now: Date.now(),
+          now,
           modules: { Core: 1 },
           total: 0,
           buckets: [

@@ -1,0 +1,1461 @@
+/* Журнал: шапка с итогами и шкалой, строка запроса, лента записей, панель деталей, частые ошибки и правила. */
+
+/* ---------- Журнал ---------- */
+.logs-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding-bottom: 12px;
+}
+/* Шапка не сжимается: место отдаёт только лента. */
+.logs-view > :not(.jr-main) {
+  flex-shrink: 0;
+}
+.jr-top,
+.jr-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+#stream-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+#stream-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+#stream-state.online {
+  color: var(--text-2);
+}
+#stream-state[hidden],
+#module-filter[hidden] {
+  display: none;
+}
+#stream-state.online i {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.line-count {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.line-count b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.stream-control.active {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+/* Строка поиска; в свёрнутой шапке рядом с ней итоги окна и переходы между ошибками. */
+.jr-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jr-searchrow .jr-query {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.jr-mini {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.jr-mini-n {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-mini-n b {
+  font-variant-numeric: tabular-nums;
+}
+.jr-mini-n.err b {
+  color: var(--bad);
+}
+.jr-mini-n.warn b {
+  color: var(--warn);
+}
+.jr-mini .jr-link:not(.strong) {
+  min-width: 28px;
+  font-size: 16px;
+}
+.logs-view.compact {
+  gap: 8px;
+}
+.logs-view.compact .jr-mini {
+  display: flex;
+}
+.logs-view.compact .jr-top,
+.logs-view.compact .jr-stats,
+.logs-view.compact .jr-quick,
+.logs-view.compact .jr-tl-head {
+  display: none;
+}
+.logs-view.compact .jr-timeline {
+  padding: 4px 12px 2px;
+}
+.logs-view.compact .jr-bars {
+  height: 40px;
+}
+/* Строка запроса: чипы фильтров и поле ввода в одной рамке. */
+.jr-query {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-3);
+  transition: border-color var(--fast) ease, box-shadow var(--fast) ease;
+}
+.jr-query:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.jr-query > .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.jr-query #query-chips {
+  display: contents;
+}
+.jr-query input[type="search"] {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 2px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.jr-query kbd {
+  flex: none;
+}
+.jr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 12.5px var(--mono);
+}
+.jr-chip b {
+  font-weight: 500;
+  opacity: 0.65;
+}
+.jr-chip button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.jr-chip button:hover {
+  border: 0;
+  background: var(--accent-soft);
+  opacity: 1;
+}
+.jr-module-chips {
+  display: contents;
+}
+.jr-pill-btn {
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font: 12px var(--mono);
+}
+#module-filter {
+  width: auto;
+  max-width: 190px;
+  min-height: 30px;
+  font-size: 12.5px;
+}
+#module-filter.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jr-pill-btn::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
+}
+.filter-chip.warning.active {
+  color: var(--warn);
+}
+.filter-chip.error.active {
+  color: var(--bad);
+}
+.log-advanced {
+  position: relative;
+}
+.log-advanced summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.log-advanced summary::-webkit-details-marker {
+  display: none;
+}
+.log-advanced summary .icon {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--base) var(--ease);
+}
+.log-advanced[open]:not(.is-closing) summary .icon {
+  transform: rotate(180deg);
+}
+.log-advanced-grid {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: min(460px, calc(100vw - 40px));
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity var(--base) ease, transform var(--base) var(--ease);
+}
+.log-advanced.is-expanded .log-advanced-grid {
+  opacity: 1;
+  transform: none;
+}
+.log-advanced-grid > label:first-child,
+.preset-row {
+  grid-column: 1 / -1;
+}
+.preset-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.preset-row label {
+  flex: 1;
+}
+.preset-row button {
+  min-height: 36px;
+}
+
+/* Шкала событий: сама рисуется на canvas (log-timeline.js). */
+.jr-timeline {
+  padding: 10px 14px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.jr-tl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  min-height: 28px;
+  margin-bottom: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+/* Высота шапки постоянна: от текста итогов не должна меняться высота страницы, иначе шкала
+   пересчитывает размер и теряет плавность. На узком экране шапка переносится явно. */
+#tl-info {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-tl-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 760px) {
+  .jr-tl-head {
+    flex-wrap: wrap;
+  }
+  .jr-tl-tools {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .jr-nav {
+    margin-right: auto;
+    border-right: 0;
+  }
+  #tl-info {
+    white-space: normal;
+  }
+}
+.jr-link {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.jr-link:hover {
+  border: 0;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.jr-link.strong {
+  color: var(--accent);
+}
+.jr-link[hidden] {
+  display: none;
+}
+.jr-bars {
+  position: relative;
+  height: 92px;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: pan-y;
+}
+.jr-bars canvas {
+  display: block;
+}
+.tl-tip {
+  position: absolute;
+  top: -4px;
+  z-index: 3;
+  padding: 4px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+.tl-tip[hidden] {
+  display: none;
+}
+
+.jr-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 300px;
+  gap: 12px;
+}
+.jr-feed-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.log {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.jr-feed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 6px 16px 0;
+  overflow-anchor: none;
+  /* Края ленты затухают, а не обрезают карточку посередине. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+.jr-day {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 2px 2px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.jr-day::before,
+.jr-day::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  content: "";
+}
+.jr-card {
+  position: relative;
+  display: grid;
+  flex: none;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background var(--fast) ease, border-color var(--fast) ease, box-shadow var(--fast) ease;
+}
+.jr-card:hover {
+  background: var(--surface-hover);
+  box-shadow: 0 1px 0 var(--border), 0 4px 14px -8px rgb(0 0 0 / 0.35);
+}
+.jr-card.selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jr-card[data-level="WARNING"] {
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border));
+}
+.jr-card[data-level="ERROR"],
+.jr-card[data-level="CRITICAL"] {
+  border-color: color-mix(in srgb, var(--bad) 50%, var(--border));
+  background: linear-gradient(90deg, var(--bad-soft), transparent 55%), var(--surface);
+}
+.jr-card[data-level="DEBUG"] {
+  border-left-color: transparent;
+  opacity: 0.82;
+}
+.jr-card.selected[data-level] {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jr-card.focused {
+  outline: 2px solid var(--bad);
+  outline-offset: -2px;
+}
+.jr-card.fresh {
+  animation: jr-in 520ms var(--ease);
+}
+@keyframes jr-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.jr-time {
+  color: var(--text-3);
+  font: 12px var(--mono);
+}
+.no-time .jr-time {
+  display: none;
+}
+.jr-body {
+  min-width: 0;
+  padding-top: 5px;
+  font: 13.5px/1.5 var(--font);
+  overflow-wrap: anywhere;
+}
+.jr-card[data-level="ERROR"] .jr-message,
+.jr-card[data-level="CRITICAL"] .jr-message,
+.jr-card[data-level="WARNING"] .jr-message {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.jr-where {
+  margin-top: 2px;
+  color: var(--text-3);
+  font: 12px var(--mono);
+}
+/* Плитка уровня: форма и цвет читаются раньше текста. */
+.jr-ico {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+.jr-ico svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jr-ico.err {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.jr-ico.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-card[data-level="INFO"] .jr-ico,
+.jr-card[data-level="DEBUG"] .jr-ico {
+  width: 26px;
+  height: 26px;
+  margin: 4px 4px 0;
+  border-radius: 7px;
+}
+.jr-card[data-level="INFO"] .jr-ico svg,
+.jr-card[data-level="DEBUG"] .jr-ico svg {
+  width: 15px;
+  height: 15px;
+}
+/* Сводка над шкалой: четыре плитки, три из них — быстрые фильтры. */
+.jr-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.jr-tile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  align-content: center;
+  gap: 0 9px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+}
+button.jr-tile:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.jr-tile > span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.jr-tile b {
+  order: -1;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-tile small {
+  flex-basis: 100%;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.jr-tile small:empty {
+  display: none;
+}
+.jr-tile.err b {
+  color: var(--bad);
+}
+.jr-tile.warn b {
+  color: var(--warn);
+}
+.jr-tile.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jr-message mark {
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-level {
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font: 600 10.5px var(--font);
+  letter-spacing: 0.06em;
+}
+.jr-level:empty {
+  display: none;
+}
+.jr-level.WARNING {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-level.ERROR,
+.jr-level.CRITICAL {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.jr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jr-rep {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font: 11.5px var(--mono);
+  white-space: nowrap;
+}
+.jr-rep[hidden] {
+  display: none;
+}
+.jr-module {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  max-width: 180px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  color: var(--text-2);
+  font: 12px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-module::before {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
+}
+.jr-module:hover {
+  color: var(--accent);
+}
+.jr-mark {
+  min-height: 22px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-3);
+  opacity: 0;
+}
+.jr-card:hover .jr-mark,
+.jr-mark:focus-visible,
+.jr-mark[aria-pressed="true"] {
+  opacity: 1;
+}
+.jr-mark[aria-pressed="true"] {
+  color: var(--warn);
+}
+.jr-trace {
+  margin-top: 6px;
+}
+.jr-trace summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.jr-tr-label {
+  flex: none;
+}
+.jr-tr-reason {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bad);
+  font: 12px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-trace[open] .jr-tr-reason {
+  white-space: normal;
+}
+.jr-tr-count {
+  color: var(--text-3);
+}
+.jr-trace summary::-webkit-details-marker {
+  display: none;
+}
+.jr-trace summary::before {
+  content: "▸ ";
+}
+.jr-trace[open] summary::before {
+  content: "▾ ";
+}
+.jr-trace pre {
+  margin: 6px 0 0;
+  padding: 9px 11px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font: 12px/1.5 var(--mono);
+}
+.jr-tv {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  font: 12px/1.5 var(--mono);
+}
+.jr-tv-raw {
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text-2);
+}
+.jr-copy {
+  align-self: flex-end;
+  min-height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.jr-tv-note {
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-style: italic;
+}
+.jr-frames {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jr-fr {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+.jr-fr.lib {
+  border-left-color: var(--border-strong);
+  color: var(--text-3);
+}
+.jr-fr-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.jr-fr-func {
+  color: var(--text);
+  font-weight: 600;
+}
+.jr-fr.lib .jr-fr-func {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.jr-fr-loc {
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.jr-fr-loc b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.jr-fr-dir {
+  opacity: 0.7;
+}
+.jr-fr-line {
+  color: var(--accent);
+}
+.jr-fr-code {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jr-lib {
+  padding-left: 10px;
+  border-left: 2px dashed var(--border-strong);
+}
+.jr-lib summary {
+  color: var(--text-3);
+  font: 11.5px var(--font);
+  cursor: pointer;
+}
+.jr-lib[open] summary {
+  margin-bottom: 6px;
+}
+.jr-lib .jr-fr {
+  margin-bottom: 6px;
+}
+.jr-exc {
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.jr-exc b {
+  font-weight: 700;
+}
+.jr-card.nav {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.jr-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  color: var(--text-3);
+}
+.jr-nav .jr-link {
+  min-width: 26px;
+  padding: 0 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+.jr-tl-e {
+  color: var(--bad);
+  font-weight: 600;
+}
+.jr-tl-w {
+  color: var(--warn);
+  font-weight: 600;
+}
+.jr-pill {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  min-height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: var(--shadow-lg);
+  color: var(--accent-text);
+  font-weight: 600;
+  transform: translateX(-50%);
+}
+.jr-pill:hover {
+  border: 0;
+  background: var(--accent-strong);
+}
+.jr-pill[hidden] {
+  display: none;
+}
+
+/* Панель деталей: сбоку на широком экране, шторкой снизу на узком. */
+.jr-drawer {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  animation: jr-slide 280ms var(--ease);
+}
+.jr-drawer > * {
+  flex: none;
+}
+.jr-drawer[hidden] {
+  display: none;
+}
+@keyframes jr-slide {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+.jr-dh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.jr-dh strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-back {
+  flex: none;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+.jr-prob-tabs {
+  align-self: flex-start;
+}
+.jr-prob-note {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.jr-prob {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jr-prob-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bad);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.jr-prob-row.warn {
+  border-left-color: var(--warn);
+}
+.jr-prob-row:hover,
+.jr-prob-row:focus-visible {
+  background: var(--surface-hover);
+}
+.jr-prob-row.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jr-prob-n {
+  align-self: start;
+  min-width: 38px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font: 600 12px var(--mono);
+  text-align: center;
+}
+.jr-prob-row.warn .jr-prob-n {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-prob-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.jr-prob-body strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.jr-prob-reason {
+  overflow: hidden;
+  color: var(--bad);
+  font: 12px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-prob-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.jr-prob-mod {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  font: 12px var(--mono);
+}
+.jr-prob-mod::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--mh, 215) 62% 58%);
+  content: "";
+}
+.jr-rule .jr-prob-open {
+  margin-left: auto;
+}
+/* Записи журнала панели: вывод процесса — моноширинно, как в терминале; действия и события
+   панели — с акцентной плиткой, чтобы отличались от записей бота. */
+.jr-card[data-source="process"] .jr-message {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.jr-card[data-source="panel"] .jr-ico {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-card[data-source="panel"]:not([data-level="ERROR"]):not([data-level="WARNING"]) {
+  border-left-color: var(--accent);
+}
+/* «Скрытые» — переключатель показа записей, скрытых правилами. */
+.jr-toggle {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-toggle[hidden] {
+  display: none;
+}
+/* Строка уровней модулей, заданных из панели. */
+.jr-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.jr-levels[hidden],
+.logs-view.compact .jr-levels {
+  display: none;
+}
+.jr-levels-title {
+  color: var(--text-3);
+}
+.jr-levels-note {
+  color: var(--warn);
+}
+.jr-level-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-level-chip.pending {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.jr-level-chip b {
+  font: 500 12px var(--mono);
+}
+.jr-level-chip button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+/* Блок уровня модуля в деталях записи. */
+.jr-lvl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jr-lvl-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-lvl-note.warn {
+  color: var(--warn);
+}
+.jr-lvl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jr-lvl-row select {
+  width: auto;
+  min-height: 30px;
+  font-size: 12.5px;
+}
+/* Правила группы в «Частых ошибках». */
+.jr-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-left: -8px;
+}
+.jr-rule-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.jr-rule-badge.bell {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jr-rule-form {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0 8px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.jr-rule-form input[type="number"] {
+  flex: 0 0 72px;
+  width: 72px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+.jr-rules {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.jr-rules summary {
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.jr-rules-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.jr-rules-row:first-of-type {
+  margin-top: 8px;
+}
+.jr-rules-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+.jr-rules-text b {
+  font: 500 12px var(--mono);
+}
+.jr-rules-row small {
+  grid-column: 1;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.jr-rules-row .jr-x {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+/* Затемнение позади шторки: только на узком экране, клик закрывает панель. */
+.jr-backdrop {
+  display: none;
+}
+.jr-x {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-3);
+  font-size: 20px;
+  line-height: 1;
+}
+.jr-full {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  font: 12.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jr-kv {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 13px;
+}
+.jr-kv dt {
+  color: var(--text-3);
+}
+.jr-kv dd {
+  margin: 0;
+  font: 12.5px var(--mono);
+  overflow-wrap: anywhere;
+}
+.jr-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jr-ctx-title {
+  color: var(--text-3);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.jr-ctx {
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow-y: auto;
+  font: 12px/1.5 var(--mono);
+}
+.jr-ctx > * {
+  flex: none;
+}
+.jr-ctx-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-3);
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  justify-content: flex-start;
+}
+button.jr-ctx-row:hover {
+  border: 0;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.jr-ctx-row time {
+  flex: none;
+}
+.jr-ctx-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  /* Длинная строка видна целиком до трёх строк, дальше — в деталях этой записи. */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.jr-ctx-tb {
+  color: var(--text-3);
+  font-style: normal;
+  opacity: 0.8;
+}
+.jr-ctx-more {
+  flex: none;
+  min-height: 26px;
+  margin: 2px 0;
+  border-style: dashed;
+  color: var(--text-3);
+  font: 12px var(--font);
+}
+.jr-ctx-more:disabled {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.7;
+}
+.jr-ctx-row.cur {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.jr-ctx-row.bad {
+  color: var(--bad);
+}
+.jr-ctx-row.warn {
+  color: var(--warn);
+}
+.jr-ctx-note {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+@media (max-width: 900px) {
+  .jr-drawer {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    max-height: 70vh;
+    flex: none;
+    padding-top: 22px;
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-lg);
+    overscroll-behavior: contain;
+  }
+  .jr-drawer::before {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+    transform: translateX(-50%);
+    content: "";
+  }
+  .jr-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    display: block;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgb(0 0 0 / 0.32);
+    box-shadow: none;
+  }
+  .jr-backdrop:hover {
+    border: 0;
+    background: rgb(0 0 0 / 0.32);
+  }
+  .jr-backdrop[hidden] {
+    display: none;
+  }
+  .jr-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  .jr-card .jr-meta {
+    grid-column: 2;
+    grid-row: 2;
+    flex-wrap: wrap;
+  }
+}
+/* На телефоне снизу закреплена навигация (68px): шторка встаёт над ней, а не под неё. */
+@media (max-width: 760px) {
+  .jr-drawer {
+    bottom: 68px;
+    max-height: calc(100dvh - 68px - 120px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jr-card.fresh,
+  .jr-drawer {
+    animation: none;
+  }
+}
+.log-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  min-height: 100%;
+  padding: 40px 20px;
+  font-family: var(--font);
+  text-align: center;
+}
+.log-empty span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 18px;
+}
+.log-empty strong {
+  font-size: 14px;
+}
+.log-empty small {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+
+/* Поле поиска с иконкой: используется во вкладке «Модули». */
+.search-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  color: var(--text-3);
+}
+.search-wrap .icon {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
+}
+.search-wrap input[type="search"] {
+  padding-left: 34px;
+}
+.search-wrap input[type="search"] {
+  padding-right: 36px;
+}
+.search-wrap kbd {
+  position: absolute;
+  right: 8px;
+}

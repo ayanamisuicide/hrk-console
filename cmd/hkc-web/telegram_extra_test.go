@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // press нажимает кнопку под сообщением 55 в личном чате администратора 1.
 func press(control *telegramControl, data string) {
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "cb", From: tgUser{ID: 1, Username: "anya"}, Data: data,
-		Message: &tgMessage{MessageID: 55, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "cb", From: telegram.User{ID: 1, Username: "anya"}, Data: data,
+		Message: &telegram.Message{MessageID: 55, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 }
 
 func lastAnswer(fake *fakeBotAPI) string {
@@ -52,7 +54,7 @@ func TestStatusCallbacksJournalErrorsAndStale(t *testing.T) {
 		t.Fatalf("устаревшая кнопка: %q", got)
 	}
 
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "cb2", From: tgUser{ID: 1}, Data: "st:r"}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "cb2", From: telegram.User{ID: 1}, Data: "st:r"}})
 	if got := lastAnswer(fake); got != "Сообщение недоступно" {
 		t.Fatalf("кнопка без сообщения: %q", got)
 	}
@@ -67,7 +69,7 @@ func TestIncidentButtonsMuteAndStale(t *testing.T) {
 	if !strings.Contains(lastAnswer(fake), "Тишина на час") {
 		t.Fatalf("ответ: %q", lastAnswer(fake))
 	}
-	if _, active := control.mute.active(); !active {
+	if _, active := control.mute.Active(); !active {
 		t.Fatal("тишина не включилась")
 	}
 	press(control, "ic:zzz")

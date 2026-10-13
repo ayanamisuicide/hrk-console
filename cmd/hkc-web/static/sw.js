@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v46-journal-sources";
+const CACHE = "hkc-shell-v47-split-modules";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -7,14 +7,26 @@ const ASSETS = [
   "/theme.js",
   "/css/base.css",
   "/css/console.css",
+  "/css/journal.css",
+  "/css/incidents.css",
+  "/css/system.css",
+  "/css/modules.css",
+  "/css/palette.css",
+  "/css/responsive.css",
   "/motion.js",
   "/live-chart.js",
+  "/chart-core.js",
+  "/sparkline.js",
   "/app.js",
   "/icon.svg",
   "/manifest.webmanifest",
   "/modules/auth.js",
   "/modules/incidents.js",
   "/modules/journal.js",
+  "/modules/journal-drawer.js",
+  "/modules/journal-format.js",
+  "/modules/journal-rules.js",
+  "/modules/journal-url.js",
   "/modules/log-timeline.js",
   "/modules/log-trace.js",
   "/modules/navigation.js",

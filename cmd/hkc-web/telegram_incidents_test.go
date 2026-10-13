@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 func newTestSink(apiURL string) *telegramSink {
@@ -88,8 +90,8 @@ func TestIncidentButtons(t *testing.T) {
 
 	// Нажатие «Что случилось» показывает журнал вокруг инцидента.
 	journalFor(t, control.s)
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "c", From: tgUser{ID: 1}, Data: data,
-		Message: &tgMessage{MessageID: 5, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "c", From: telegram.User{ID: 1}, Data: data,
+		Message: &telegram.Message{MessageID: 5, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 	if len(fake.byMethod("answerCallbackQuery")) == 0 || len(fake.byMethod("sendMessage")) < 2 {
 		t.Fatalf("журнал за период не показан: %v", fake.byMethod("sendMessage"))
 	}
@@ -140,8 +142,8 @@ func TestIncidentMuted(t *testing.T) {
 	fake, api := newFakeBotAPI(t)
 	sink := newTestSink(api.URL)
 	now := time.Now()
-	sink.mute = newMuteStore("", func() time.Time { return now })
-	if err := sink.mute.set(now.Add(time.Hour), false); err != nil {
+	sink.mute = telegram.NewMuteStore("", func() time.Time { return now })
+	if err := sink.mute.Set(now.Add(time.Hour), false); err != nil {
 		t.Fatal(err)
 	}
 	_ = sink.send(t.Context(), alertEvent{Kind: "module.error", Severity: "warning", Title: "Модуль Weather упал", Time: now})
@@ -159,7 +161,7 @@ func TestIncidentMuted(t *testing.T) {
 		t.Fatal("сообщение об инциденте не обновилось")
 	}
 	// «Совсем» глушит и критичное; восстановление при этом ничего не присылает.
-	_ = sink.mute.set(now.Add(time.Hour), true)
+	_ = sink.mute.Set(now.Add(time.Hour), true)
 	_ = sink.send(t.Context(), stopped(now.Add(2*time.Minute)))
 	_ = sink.send(t.Context(), started(now.Add(3*time.Minute)))
 	if len(fake.byMethod("sendMessage")) != 1 || len(fake.byMethod("editMessageText")) != 1 {

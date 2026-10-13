@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // Уведомления в Telegram как инциденты. Падение бота и его запуск — одно сообщение: оно
@@ -85,9 +87,9 @@ func (sink *telegramSink) request(ctx context.Context, method string, payload ma
 		return answer.Result, nil
 	}
 	if answer.Description != "" {
-		return nil, &telegramAPIError{Code: res.StatusCode, Description: strings.ReplaceAll(answer.Description, sink.token, "***")}
+		return nil, &telegram.APIError{Code: res.StatusCode, Description: strings.ReplaceAll(answer.Description, sink.token, "***")}
 	}
-	return nil, &telegramAPIError{Code: res.StatusCode}
+	return nil, &telegram.APIError{Code: res.StatusCode}
 }
 
 func (sink *telegramSink) clockNow() time.Time {
@@ -163,7 +165,7 @@ func (sink *telegramSink) send(ctx context.Context, event alertEvent) error {
 // deliverNew отправляет новое сообщение и возвращает ошибку доставки. Приглушённые события
 // не отправляются вовсе.
 func (sink *telegramSink) deliverNew(ctx context.Context, event alertEvent, kept *openIncident) error {
-	if sink.mute != nil && sink.mute.silences(event) {
+	if sink.mute != nil && sink.mute.Silences(event.Severity) {
 		return nil
 	}
 	_, err := sink.post(ctx, event, kept)
@@ -213,7 +215,7 @@ func (sink *telegramSink) openIncident(ctx context.Context, key string, event al
 		// Событие повторилось, не дождавшись починки: не плодим сообщения.
 		return sink.bump(ctx, key, inc, event, now)
 	}
-	if sink.mute != nil && sink.mute.silences(event) {
+	if sink.mute != nil && sink.mute.Silences(event.Severity) {
 		sink.open[key] = &openIncident{Start: now, Last: now, Count: 1}
 		sink.save()
 		return nil
@@ -235,7 +237,7 @@ func (sink *telegramSink) repeatIncident(ctx context.Context, key string, event 
 	if inc := sink.open[key]; inc != nil && inc.Message != 0 && now.Sub(inc.Last) < repeatWindow {
 		return sink.bump(ctx, key, inc, event, now)
 	}
-	if sink.mute != nil && sink.mute.silences(event) {
+	if sink.mute != nil && sink.mute.Silences(event.Severity) {
 		return nil
 	}
 	id, err := sink.post(ctx, event, nil)

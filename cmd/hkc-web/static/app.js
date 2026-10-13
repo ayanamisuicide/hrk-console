@@ -1,5 +1,6 @@
 import { createServiceBindings } from "./modules/service.js";
-import { createLiveChart, createSparkline } from "./live-chart.js";
+import { createLiveChart } from "./live-chart.js";
+import { createSparkline } from "./sparkline.js";
 import { createJournal } from "./modules/journal.js";
 import { createSystem } from "./modules/system.js";
 import { createIncidents } from "./modules/incidents.js";

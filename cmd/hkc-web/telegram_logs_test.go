@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 const leakedSecret = "abcd1234efgh5678secretvalue"
@@ -28,9 +30,9 @@ func journalFor(t *testing.T, s *server) {
 	}
 }
 
-func callbackFrom(markup any, t *testing.T, suffix string) tgUpdate {
-	return tgUpdate{Callback: &tgCallback{ID: "cb", From: tgUser{ID: 1, Username: "anya"}, Data: callbackData(t, markup, suffix),
-		Message: &tgMessage{MessageID: 77, Chat: tgChat{ID: 1, Type: "private"}}}}
+func callbackFrom(markup any, t *testing.T, suffix string) telegram.Update {
+	return telegram.Update{Callback: &telegram.Callback{ID: "cb", From: telegram.User{ID: 1, Username: "anya"}, Data: callbackData(t, markup, suffix),
+		Message: &telegram.Message{MessageID: 77, Chat: telegram.Chat{ID: 1, Type: "private"}}}}
 }
 
 // TestMaskSecrets — очевидные секреты не уходят в чат.
@@ -204,15 +206,15 @@ func TestTelegramLogFile(t *testing.T) {
 func TestTelegramStaleLogButtons(t *testing.T) {
 	fake, api := newFakeBotAPI(t)
 	_, control := newTestTelegram(t, api.URL, 1)
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "cb", From: tgUser{ID: 1}, Data: "lg:нет:older",
-		Message: &tgMessage{MessageID: 1, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "cb", From: telegram.User{ID: 1}, Data: "lg:нет:older",
+		Message: &telegram.Message{MessageID: 1, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 	answers := fake.byMethod("answerCallbackQuery")
 	if len(answers) != 1 || !strings.Contains(answers[0]["text"].(string), "устарела") {
 		t.Fatalf("ответ на устаревшую кнопку: %v", answers)
 	}
 	// Чужой не получает ни журнала, ни файла.
-	control.handleUpdate(tgUpdate{Callback: &tgCallback{ID: "cb2", From: tgUser{ID: 99}, Data: "lg:x:file",
-		Message: &tgMessage{MessageID: 1, Chat: tgChat{ID: 1, Type: "private"}}}})
+	control.handleUpdate(telegram.Update{Callback: &telegram.Callback{ID: "cb2", From: telegram.User{ID: 99}, Data: "lg:x:file",
+		Message: &telegram.Message{MessageID: 1, Chat: telegram.Chat{ID: 1, Type: "private"}}}})
 	if len(fake.byMethod("sendDocument")) != 0 {
 		t.Fatal("чужой получил файл")
 	}

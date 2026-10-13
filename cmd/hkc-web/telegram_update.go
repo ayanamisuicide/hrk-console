@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"heroku-console/internal/telegram"
 )
 
 // Обновление панели из Telegram: под уведомлением о новой версии (и по команде /update) появляется
@@ -131,7 +133,7 @@ func (c *telegramControl) editMessage(ctx context.Context, chat, message int64, 
 		if keyboard != nil {
 			payload["reply_markup"] = keyboard
 		}
-		err := c.api.call(ctx, "editMessageText", payload, nil)
+		err := c.api.Call(ctx, "editMessageText", payload, nil)
 		if err == nil || isNotModified(err) {
 			return
 		}
@@ -142,12 +144,12 @@ func (c *telegramControl) editMessage(ctx context.Context, chat, message int64, 
 // isNotModified — Telegram отверг правку, потому что текст и кнопки те же. Это не сбой:
 // повторное нажатие «Обновить» без изменений не должно порождать новое сообщение.
 func isNotModified(err error) bool {
-	var apiErr *telegramAPIError
+	var apiErr *telegram.APIError
 	return errors.As(err, &apiErr) && apiErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(apiErr.Description), "not modified")
 }
 
 // handleUpdateCallback — нажатие «Обновить до vX».
-func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *tgCallback, version string, answer func(string)) {
+func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *telegram.Callback, version string, answer func(string)) {
 	if !releaseTag.MatchString(version) {
 		answer("Некорректная версия")
 		return
@@ -181,7 +183,7 @@ func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *tg
 		c.editMessage(ctx, chat, message, text, updateKeyboard(version))
 		return
 	}
-	pending := pendingUpdate{Chat: chat, Message: message, Version: version, Actor: callback.From.actor(), At: c.now().UTC()}
+	pending := pendingUpdate{Chat: chat, Message: message, Version: version, Actor: callback.From.Actor(), At: c.now().UTC()}
 	if err := c.savePending(pending); err != nil {
 		log.Printf("telegram: не удалось запомнить обновление: %v", err)
 	}
@@ -189,14 +191,14 @@ func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *tg
 	go c.watchUpdate(pending)
 }
 
-func (c *telegramControl) auditUpdate(user tgUser, version, detail string, status int) {
+func (c *telegramControl) auditUpdate(user telegram.User, version, detail string, status int) {
 	if c.s.audit == nil {
 		return
 	}
 	if status == http.StatusAccepted {
 		detail = version
 	}
-	event := auditEvent{Time: c.now().UTC(), Actor: user.actor(), Action: "update.install", Detail: detail, IP: "telegram"}
+	event := auditEvent{Time: c.now().UTC(), Actor: user.Actor(), Action: "update.install", Detail: detail, IP: "telegram"}
 	if err := c.s.audit.add(event); err != nil {
 		fmt.Fprintf(os.Stderr, "audit: %v\n", err)
 	}

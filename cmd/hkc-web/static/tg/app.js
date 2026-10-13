@@ -1,6 +1,6 @@
 // Мини-приложение Telegram: вход по подписанным данным запуска, три экрана, шторки и живые данные.
 // Данные бота и журнала выводятся только через textContent; разметка иконок — константы.
-import { createSparkline } from "/live-chart.js";
+import { createSparkline } from "/sparkline.js";
 
 const tg = window.Telegram?.WebApp;
 const $ = (selector) => document.querySelector(selector);
