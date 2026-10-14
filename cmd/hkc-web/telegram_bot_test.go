@@ -136,6 +136,9 @@ func newTestTelegram(t *testing.T, apiURL string, admins ...int64) (*server, *te
 	control := newTelegramControl(s, telegramConfig{Token: testBotToken, APIBase: apiURL, Admins: admins})
 	// В тестах текст набирается без пауз.
 	control.streamGap = 0
+	// Разовое сообщение с клавиатурой под полем ввода сбивало бы счёт ответов; его проверяет
+	// TestChatKeyboardSentOnce.
+	control.keyboard = nil
 	s.telegram = control
 	return s, control
 }
@@ -160,7 +163,8 @@ func TestTelegramIgnoresStrangers(t *testing.T) {
 	}
 }
 
-// TestTelegramStatusAndStaleCommands отвечает администратору и пропускает старые команды.
+// TestTelegramStatusAndStaleCommands отвечает администратору, а старые команды не выполняет: о них
+// бот говорит один раз на пачку и предлагает выбор.
 func TestTelegramStatusAndStaleCommands(t *testing.T) {
 	fake, api := newFakeBotAPI(t)
 	_, control := newTestTelegram(t, api.URL, 1)
@@ -169,9 +173,15 @@ func TestTelegramStatusAndStaleCommands(t *testing.T) {
 	if len(sent) != 1 || !strings.Contains(sent[0]["text"].(string), "Бот остановлен") {
 		t.Fatalf("status reply: %v", sent)
 	}
-	control.handleUpdate(message(1, "/status", 10*time.Minute))
-	if len(fake.byMethod("sendMessage")) != 1 {
-		t.Fatal("stale command was answered")
+	control.handleUpdate(message(1, "/stop", 10*time.Minute))
+	control.handleUpdate(message(1, "/status", 9*time.Minute))
+	sent = fake.byMethod("sendMessage")
+	if len(sent) != 2 || !strings.Contains(lastText(sent), "Пока я был недоступен") {
+		t.Fatalf("stale commands: %v", sent)
+	}
+	callbackData(t, sent[1]["reply_markup"], "nx:s")
+	if len(fake.byMethod("editMessageText")) != 0 || strings.Contains(lastText(sent), "остановлен") {
+		t.Fatal("stale command was executed")
 	}
 }
 

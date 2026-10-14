@@ -574,7 +574,7 @@ func (c *telegramControl) renderMenuMore(chat int64, e menuEntry, d menuData, no
 // под рукой, а не терялось выше по переписке.
 func (c *telegramControl) openMenu(ctx context.Context, chat int64) {
 	if chat <= 0 {
-		c.reply(ctx, chat, "Меню работает только в личном чате с ботом: в группе его правка мешала бы всем. Напишите мне в личные сообщения.", nil)
+		c.reply(ctx, chat, "Меню работает только в личном чате с ботом: в группе его правка мешала бы всем. Напишите мне в личные сообщения.", c.nextKeyboard(chat, nextShort))
 		return
 	}
 	now := c.now()

@@ -86,7 +86,7 @@ func firstNote(notes []releaseNotes) string {
 // cmdUpdate — команда /update: свежая проверка и кнопка установки, если есть что ставить.
 func (c *telegramControl) cmdUpdate(ctx context.Context, chat int64) {
 	if c.s.updates == nil {
-		c.send(ctx, chat, "Проверка обновлений на этом сервере не настроена.", nil)
+		c.send(ctx, chat, "Проверка обновлений на этом сервере не настроена.", c.nextKeyboard(chat, nextShort))
 		return
 	}
 	// «Думаю…» на время проверки: она может занять несколько секунд.
@@ -107,9 +107,9 @@ func (c *telegramControl) cmdUpdate(ctx context.Context, chat int64) {
 	case overview.Running:
 		send(ctx, chat, "⏳ <b>Обновление уже идёт</b>\nО результате сообщу здесь.", nil)
 	case overview.Latest.Error != "" && overview.Latest.Version == "":
-		send(ctx, chat, "⚠️ Не удалось проверить обновления: "+html.EscapeString(overview.Latest.Error), nil)
+		send(ctx, chat, "⚠️ Не удалось проверить обновления: "+html.EscapeString(overview.Latest.Error), c.nextKeyboard(chat, nextShort))
 	case !overview.UpdateAvailable:
-		send(ctx, chat, "✅ <b>Установлена последняя версия</b>\nhrk-console "+installed, nil)
+		send(ctx, chat, "✅ <b>Установлена последняя версия</b>\nhrk-console "+installed, c.nextKeyboard(chat, nextShort))
 	default:
 		var text strings.Builder
 		fmt.Fprintf(&text, "🔵 <b>Доступна hrk-console %s</b>\nУстановлена: %s", html.EscapeString(overview.Latest.Version), installed)
@@ -165,7 +165,7 @@ func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *te
 	installed := c.installedVersion()
 	if compareVersions(version, installed) <= 0 {
 		answer("Уже установлена")
-		c.editMessage(ctx, chat, message, "✅ <b>"+html.EscapeString(version)+" уже установлена</b>", nil)
+		c.editMessage(ctx, chat, message, "✅ <b>"+html.EscapeString(version)+" уже установлена</b>", c.nextKeyboard(chat, nextShort))
 		return
 	}
 	answer("Запускаю…")
@@ -177,7 +177,7 @@ func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *te
 		text := "⚠️ <b>Не удалось начать обновление</b>\n" + html.EscapeString(capitalize(result.Message))
 		// При конфликте с идущей установкой кнопка не нужна: ход виден в самом сообщении.
 		if strings.Contains(result.Message, "уже выполняется") {
-			c.editMessage(ctx, chat, message, text, nil)
+			c.editMessage(ctx, chat, message, text, c.nextKeyboard(chat, nextShort))
 			return
 		}
 		c.editMessage(ctx, chat, message, text, updateKeyboard(version))
@@ -187,6 +187,7 @@ func (c *telegramControl) handleUpdateCallback(ctx context.Context, callback *te
 	if err := c.savePending(pending); err != nil {
 		log.Printf("telegram: не удалось запомнить обновление: %v", err)
 	}
+	// Пока идёт установка, кнопок нет: панель перезапустится, и нажатие всё равно не дошло бы.
 	c.editMessage(ctx, chat, message, "⏳ <b>Обновляю до "+html.EscapeString(version)+"…</b>\nПанель перезапустится — это займёт около минуты. Итог напишу здесь.", nil)
 	go c.watchUpdate(pending)
 }
@@ -283,7 +284,7 @@ func (c *telegramControl) watchUpdate(p pendingUpdate) {
 		state, text := telegramUpdateOutcome(p, c.installedVersion(), readUpdateJob(), c.now())
 		if state != "waiting" {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			c.editMessage(ctx, p.Chat, p.Message, text, nil)
+			c.editMessage(ctx, p.Chat, p.Message, text, c.nextKeyboard(p.Chat, nextShort))
 			cancel()
 			_ = os.Remove(c.pendingPath())
 			return

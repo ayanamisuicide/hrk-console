@@ -118,9 +118,11 @@ func (c *telegramControl) answer(ctx context.Context, chat int64, work func() (s
 // sendMessageID отправляет сообщение и возвращает его номер (0, если Telegram его не вернул).
 func (c *telegramControl) sendMessageID(ctx context.Context, chat int64, text string, keyboard map[string]any) int64 {
 	payload := map[string]any{"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true}
-	if keyboard != nil {
-		payload["reply_markup"] = keyboard
+	// Ответ без кнопок оставил бы человека без выбора.
+	if keyboard == nil {
+		keyboard = c.nextKeyboard(chat, nextShort)
 	}
+	payload["reply_markup"] = keyboard
 	var sent struct {
 		MessageID int64 `json:"message_id"`
 	}

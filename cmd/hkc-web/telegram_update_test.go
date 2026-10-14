@@ -33,6 +33,7 @@ func updateTelegram(t *testing.T) (*fakeBotAPI, *server, *telegramControl, *atom
 	startUpdateService = func(context.Context) error { return nil }
 	t.Cleanup(func() { startUpdateService = previous })
 	control := newTelegramControl(s, telegramConfig{Token: testBotToken, APIBase: api.URL, Admins: []int64{1}})
+	control.keyboard = nil
 	s.telegram = control
 	installed := &atomic.Value{}
 	installed.Store("v1.0.0")
@@ -141,7 +142,8 @@ func TestTelegramUpdateBlockedKeepsButton(t *testing.T) {
 	}
 }
 
-// TestTelegramUpdateCommand предлагает кнопку, если вышла новая версия, и молчит о ней, если нет.
+// TestTelegramUpdateCommand предлагает кнопку установки, если вышла новая версия, а если нет — только
+// кнопки следующего шага.
 func TestTelegramUpdateCommand(t *testing.T) {
 	fake, s, control, installed := updateTelegram(t)
 	s.updates.fetch = func(context.Context) (remoteVersion, error) { return s.updates.remote, nil }
@@ -157,7 +159,8 @@ func TestTelegramUpdateCommand(t *testing.T) {
 	defer func() { buildVersion = previous }()
 	control.handleUpdate(message(1, "/update", 0))
 	sent = fake.byMethod("sendMessage")
-	if len(sent) != 2 || !strings.Contains(lastText(sent), "Установлена последняя версия") || sent[1]["reply_markup"] != nil {
+	markup, _ := json.Marshal(sent[len(sent)-1]["reply_markup"])
+	if len(sent) != 2 || !strings.Contains(lastText(sent), "Установлена последняя версия") || strings.Contains(string(markup), "upd:") || !strings.Contains(string(markup), "nx:m") {
 		t.Fatalf("up to date: %v", sent)
 	}
 }

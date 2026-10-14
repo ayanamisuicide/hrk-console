@@ -594,7 +594,7 @@ func (c *telegramControl) handleLogCallback(ctx context.Context, callback *teleg
 		name, content := c.logFile(v)
 		caption := fmt.Sprintf("Журнал · %s", describeSize(len(content)))
 		if err := c.api.Upload(ctx, "sendDocument", map[string]string{"chat_id": strconv.FormatInt(chat, 10), "caption": caption}, "document", name, content); err != nil {
-			c.send(ctx, chat, "⚠️ Не удалось отправить файл: "+html.EscapeString(err.Error()), nil)
+			c.send(ctx, chat, "⚠️ Не удалось отправить файл: "+html.EscapeString(err.Error()), c.nextKeyboard(chat, nextShort))
 		}
 	case strings.HasPrefix(act, "tb"):
 		index, _ := strconv.Atoi(strings.TrimPrefix(act, "tb"))
@@ -608,7 +608,7 @@ func (c *telegramControl) handleLogCallback(ctx context.Context, callback *teleg
 		if utf8.RuneCountInString(raw) > 3500 {
 			raw = string([]rune(raw)[:3500]) + "\n…"
 		}
-		c.reply(ctx, chat, "🧵 <b>"+html.EscapeString(shortModule(g.module))+"</b>"+countNote(g.count)+"\n<pre>"+html.EscapeString(raw)+"</pre>", nil)
+		c.reply(ctx, chat, "🧵 <b>"+html.EscapeString(shortModule(g.module))+"</b>"+countNote(g.count)+"\n<pre>"+html.EscapeString(raw)+"</pre>", c.nextKeyboard(chat, nextShort))
 	default:
 		answer("Кнопка устарела")
 	}

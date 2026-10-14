@@ -29,7 +29,9 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *telegram.Me
 	case telegram.IntentStatus:
 		c.cmdStatus(ctx, chat)
 	case telegram.IntentRun:
-		c.answer(ctx, chat, func() (string, map[string]any) { return c.execute(user, "start"), nil })
+		c.answer(ctx, chat, func() (string, map[string]any) {
+			return c.execute(user, "start"), c.nextKeyboard(chat, nextAfterAction)
+		})
 	case telegram.IntentRestart:
 		c.askConfirm(ctx, chat, user, telegramCommand{Name: "restart", Description: "Перезапустить бота", Action: "restart", Confirm: true})
 	case telegram.IntentStop:
@@ -45,17 +47,17 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *telegram.Me
 	case telegram.IntentMenu:
 		c.openMenu(ctx, chat)
 	case telegram.IntentHelp:
-		c.reply(ctx, chat, c.helpText(), nil)
+		c.reply(ctx, chat, c.helpText(), c.nextKeyboard(chat, nextShort))
 	case telegram.IntentApp:
 		if keyboard := c.appKeyboard(); keyboard != nil {
 			c.reply(ctx, chat, "Мини-приложение панели:", keyboard)
 		} else {
-			c.reply(ctx, chat, "Мини-приложение не настроено: нужен публичный HTTPS-адрес панели в HKC_TELEGRAM_WEBAPP_URL. Всё остальное работает и без него — напишите «помощь».", nil)
+			c.reply(ctx, chat, "Мини-приложение не настроено: нужен публичный HTTPS-адрес панели в HKC_TELEGRAM_WEBAPP_URL. Всё остальное работает и без него.", c.nextKeyboard(chat, nextGeneral))
 		}
 	case telegram.IntentHello:
-		c.reply(ctx, chat, "Привет! Я на связи 👋 Напишите «меню» — открою главное меню с живым статусом. Все возможности — «помощь».", nil)
+		c.reply(ctx, chat, "Привет! Я на связи 👋 Что сделать?", c.nextKeyboard(chat, nextGeneral))
 	case telegram.IntentThanks:
-		c.reply(ctx, chat, "Пожалуйста! 🙂", nil)
+		c.reply(ctx, chat, "Пожалуйста! 🙂", c.nextKeyboard(chat, nextShort))
 	default:
 		c.fallbackSearch(ctx, chat, it)
 	}
@@ -65,7 +67,7 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *telegram.Me
 func (c *telegramControl) fallbackSearch(ctx context.Context, chat int64, it telegram.Intent) {
 	query := strings.TrimSpace(it.Text)
 	if query == "" || len(query) > 120 {
-		c.reply(ctx, chat, "Не понял 🤔 Напишите «помощь», чтобы увидеть, что я умею.", nil)
+		c.reply(ctx, chat, "Не понял 🤔 Вот что я могу:", c.nextKeyboard(chat, nextGeneral))
 		return
 	}
 	c.answer(ctx, chat, func() (string, map[string]any) {
@@ -73,7 +75,7 @@ func (c *telegramControl) fallbackSearch(ctx context.Context, chat int64, it tel
 		nonce := c.registerView(v)
 		text, keyboard := c.renderLogView(nonce, v)
 		if v.before == 0 && keyboard != nil && strings.Contains(text, "Ничего не нашёл") {
-			return "Не понял, что вы хотите, и в журнале «" + html.EscapeString(clip(query, 40)) + "» не встречается. Напишите «помощь» — покажу, что умею.", nil
+			return "Не понял, что вы хотите, и в журнале «" + html.EscapeString(clip(query, 40)) + "» не встречается. Вот что я могу:", c.nextKeyboard(chat, nextGeneral)
 		}
 		return "<i>Не похоже на команду — поискал в журнале.</i>\n" + text, keyboard
 	})
@@ -99,13 +101,15 @@ func (c *telegramControl) resolveByWord(ctx context.Context, chat int64, user te
 	c.mu.Unlock()
 	switch {
 	case key == "" && kind == telegram.IntentYes:
-		c.reply(ctx, chat, "Подтверждать нечего: вопросов в ожидании нет.", nil)
+		c.reply(ctx, chat, "Подтверждать нечего: вопросов в ожидании нет.", c.nextKeyboard(chat, nextGeneral))
 	case key == "":
-		c.reply(ctx, chat, "Хорошо, ничего не делаю.", nil)
+		c.reply(ctx, chat, "Хорошо, ничего не делаю.", c.nextKeyboard(chat, nextShort))
 	case kind == telegram.IntentYes:
-		c.answer(ctx, chat, func() (string, map[string]any) { return c.execute(user, latest.action), nil })
+		c.answer(ctx, chat, func() (string, map[string]any) {
+			return c.execute(user, latest.action), c.nextKeyboard(chat, nextAfterAction)
+		})
 	default:
-		c.reply(ctx, chat, "Хорошо, отменил.", nil)
+		c.reply(ctx, chat, "Хорошо, отменил.", c.nextKeyboard(chat, nextShort))
 	}
 }
 
@@ -270,7 +274,7 @@ func (c *telegramControl) cmdMute(ctx context.Context, chat int64, user telegram
 	}
 	until := c.now().Add(d)
 	if err := c.mute.Set(until, it.MuteAll); err != nil {
-		c.reply(ctx, chat, "⚠️ Не удалось сохранить тишину: "+html.EscapeString(err.Error()), nil)
+		c.reply(ctx, chat, "⚠️ Не удалось сохранить тишину: "+html.EscapeString(err.Error()), c.nextKeyboard(chat, nextShort))
 		return
 	}
 	c.auditChat(user, "telegram.mute", fmt.Sprintf("до %s all=%t", until.UTC().Format(time.RFC3339), it.MuteAll))
@@ -280,21 +284,21 @@ func (c *telegramControl) cmdMute(ctx context.Context, chat int64, user telegram
 	} else {
 		text += "\nКритичные события (бот упал) всё равно придут."
 	}
-	c.reply(ctx, chat, text, keyboardRows([]map[string]string{btn("🔔 Включить", "mu:off")}))
+	c.reply(ctx, chat, text, c.withNext(chat, keyboardRows([]map[string]string{btn("🔔 Включить", "mu:off")}), nextShort))
 }
 
 func (c *telegramControl) cmdUnmute(ctx context.Context, chat int64, user telegram.User) {
 	_, was := c.mute.Active()
 	if err := c.mute.Clear(); err != nil {
-		c.reply(ctx, chat, "⚠️ Не удалось снять тишину: "+html.EscapeString(err.Error()), nil)
+		c.reply(ctx, chat, "⚠️ Не удалось снять тишину: "+html.EscapeString(err.Error()), c.nextKeyboard(chat, nextShort))
 		return
 	}
 	if was {
 		c.auditChat(user, "telegram.unmute", "")
-		c.reply(ctx, chat, "🔔 <b>Уведомления снова включены</b>", nil)
+		c.reply(ctx, chat, "🔔 <b>Уведомления снова включены</b>", c.nextKeyboard(chat, nextShort))
 		return
 	}
-	c.reply(ctx, chat, "Уведомления и так включены 🔔", nil)
+	c.reply(ctx, chat, "Уведомления и так включены 🔔", c.nextKeyboard(chat, nextShort))
 }
 
 func (c *telegramControl) handleMuteCallback(ctx context.Context, callback *telegram.Callback, act string, answer func(string)) {
@@ -309,7 +313,8 @@ func (c *telegramControl) handleMuteCallback(ctx context.Context, callback *tele
 	c.auditChat(callback.From, "telegram.unmute", "")
 	answer("Включено")
 	if callback.Message != nil {
-		c.editMessage(ctx, callback.Message.Chat.ID, callback.Message.MessageID, "🔔 <b>Уведомления снова включены</b>", nil)
+		chat := callback.Message.Chat.ID
+		c.editMessage(ctx, chat, callback.Message.MessageID, "🔔 <b>Уведомления снова включены</b>", c.nextKeyboard(chat, nextShort))
 	}
 }
 
@@ -383,6 +388,6 @@ func (c *telegramControl) handleIncidentAction(ctx context.Context, callback *te
 // answerAfter сообщает итог действия отдельным сообщением в том же чате.
 func (c *telegramControl) answerAfter(ctx context.Context, callback *telegram.Callback, text string) {
 	if callback.Message != nil {
-		c.send(ctx, callback.Message.Chat.ID, text, nil)
+		c.send(ctx, callback.Message.Chat.ID, text, c.nextKeyboard(callback.Message.Chat.ID, nextAfterAction))
 	}
 }

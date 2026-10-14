@@ -113,6 +113,10 @@ type telegramControl struct {
 	mute *telegram.MuteStore
 	// Главное меню: сообщение-дашборд, которое бот сам обновляет.
 	menu *menuStore
+	// Клавиатура под полем ввода: в какие чаты она уже отправлена (nil — не отправлять).
+	keyboard *chatKeyboardStore
+	// Когда последний раз отвечали на сообщения, пришедшие, пока панель была недоступна.
+	staleNotice map[int64]time.Time
 }
 
 func newTelegramControl(s *server, config telegramConfig) *telegramControl {
@@ -121,6 +125,8 @@ func newTelegramControl(s *server, config telegramConfig) *telegramControl {
 		streamGap: streamDefaultGap * time.Millisecond, views: map[string]*logView{}}
 	c.mute = telegram.NewMuteStore(muteFilePath(s.dataDir), c.now)
 	c.menu = newMenuStore(menuFilePath(s.dataDir))
+	c.keyboard = newChatKeyboardStore(chatKeyboardFilePath(s.dataDir))
+	c.staleNotice = map[int64]time.Time{}
 	for _, id := range config.Admins {
 		c.admins[id] = true
 	}
@@ -338,13 +344,25 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.M
 		c.rememberUnknown(*message.From, message.Chat.Type)
 		return
 	}
-	// Команды, пришедшие пока управление было выключено или панель лежала, не исполняются.
+	private := message.Chat.Type == "private"
+	// Команды, пришедшие пока управление было выключено или панель лежала, не исполняются, но в
+	// личном чате бот говорит об этом, а не молчит.
 	if c.now().Sub(time.Unix(message.Date, 0)) > telegramStaleCommand {
+		if private {
+			c.noticeStale(ctx, message.Chat.ID)
+		}
 		return
 	}
 	c.menu.touch(message.Chat.ID, c.now())
 	text := strings.TrimSpace(message.Text)
-	private := message.Chat.Type == "private"
+	if private {
+		c.ensureChatKeyboard(ctx, message.Chat.ID)
+		if text == "" {
+			// Картинка, стикер, голосовое: разбирать нечего, но ответить нужно.
+			c.replyUnsupported(ctx, message.Chat.ID)
+			return
+		}
+	}
 	c.mu.Lock()
 	bot := c.bot
 	c.mu.Unlock()
@@ -363,6 +381,9 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.M
 		}
 		if it, ok := telegram.ParseIntent(text); ok {
 			c.handleIntent(ctx, message, it)
+		} else {
+			// Одно обращение по имени без слов: бот слышит и предлагает выбор.
+			c.reply(ctx, message.Chat.ID, "Слушаю 👂 Что сделать?", c.nextKeyboard(message.Chat.ID, nextGeneral))
 		}
 		return
 	}
@@ -397,7 +418,7 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.M
 		case telegram.IntentSearch:
 			it.Text = strings.Trim(strings.TrimSpace(args), `"'«»`)
 			if it.Text == "" {
-				c.reply(ctx, chat, "Что искать? Например: /find таймаут", nil)
+				c.reply(ctx, chat, "Что искать? Например: /find таймаут", c.nextKeyboard(chat, nextGeneral))
 				return
 			}
 		case telegram.IntentMute:
@@ -414,11 +435,11 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.M
 		if command.Confirm && c.settings().Confirm {
 			c.askConfirm(ctx, chat, *message.From, command)
 		} else {
-			c.reply(ctx, chat, c.execute(*message.From, command.Action), nil)
+			c.reply(ctx, chat, c.execute(*message.From, command.Action), c.nextKeyboard(chat, nextAfterAction))
 		}
 		return
 	}
-	c.send(ctx, chat, "Не знаю команду /"+html.EscapeString(name)+". Список — /help.", nil)
+	c.send(ctx, chat, "Не знаю команду /"+html.EscapeString(name)+". Вот что можно сделать:", c.nextKeyboard(chat, nextGeneral))
 }
 
 // appKeyboard — кнопка открытия мини-приложения под сообщением, если оно настроено.
@@ -433,7 +454,7 @@ func (c *telegramControl) appKeyboard() map[string]any {
 func (c *telegramControl) askConfirm(ctx context.Context, chat int64, user telegram.User, command telegramCommand) {
 	nonce, err := randomToken(9)
 	if err != nil {
-		c.send(ctx, chat, "Не удалось подготовить подтверждение, попробуйте ещё раз.", nil)
+		c.send(ctx, chat, "Не удалось подготовить подтверждение, попробуйте ещё раз.", c.nextKeyboard(chat, nextShort))
 		return
 	}
 	now := c.now()
@@ -492,30 +513,35 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *telegram
 	case "mn":
 		c.handleMenuCallback(ctx, callback, nonce, answer)
 		return
+	case "nx":
+		c.handleNextCallback(ctx, callback, nonce, answer)
+		return
 	}
 	c.mu.Lock()
 	pending, ok := c.pending[nonce]
 	delete(c.pending, nonce)
 	c.mu.Unlock()
-	edit := func(text string) {
+	// Вопрос заменяется итогом, и под ним сразу следующий шаг.
+	edit := func(text string, set nextSet) {
 		if callback.Message == nil {
 			return
 		}
-		_ = c.api.Call(ctx, "editMessageText", map[string]any{"chat_id": callback.Message.Chat.ID, "message_id": callback.Message.MessageID,
-			"text": text, "parse_mode": "HTML"}, nil)
+		chat := callback.Message.Chat.ID
+		_ = c.api.Call(ctx, "editMessageText", map[string]any{"chat_id": chat, "message_id": callback.Message.MessageID,
+			"text": text, "parse_mode": "HTML", "reply_markup": c.nextKeyboard(chat, set)}, nil)
 	}
 	if !ok || c.now().After(pending.expires) {
 		answer("Кнопка устарела")
-		edit("Кнопка устарела — отправьте команду ещё раз.")
+		edit("Кнопка устарела — отправьте команду ещё раз.", nextGeneral)
 		return
 	}
 	if kind != "ok" {
 		answer("Отменено")
-		edit("Отменено.")
+		edit("Отменено.", nextShort)
 		return
 	}
 	answer("Выполняю…")
-	edit(c.execute(callback.From, pending.action))
+	edit(c.execute(callback.From, pending.action), nextAfterAction)
 }
 
 // execute выполняет действие тем же путём, что и кнопки панели, и пишет его в журнал действий.
@@ -562,6 +588,7 @@ func (c *telegramControl) helpText() string {
 	}
 	text.WriteString("\n• «обнови» — проверить новую версию панели")
 	text.WriteString("\n• «тишина на час», «до утра», «включи уведомления»")
+	text.WriteString("\n\nВнизу чата — быстрые кнопки, а под каждым ответом — что можно сделать дальше.")
 	text.WriteString("\n\nИ обычные команды: ")
 	var names []string
 	for _, command := range telegramCommands {
@@ -577,9 +604,11 @@ func (c *telegramControl) helpText() string {
 
 func (c *telegramControl) send(ctx context.Context, chat int64, text string, keyboard map[string]any) {
 	payload := map[string]any{"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true}
-	if keyboard != nil {
-		payload["reply_markup"] = keyboard
+	// Ответ без кнопок оставил бы человека без выбора.
+	if keyboard == nil {
+		keyboard = c.nextKeyboard(chat, nextShort)
 	}
+	payload["reply_markup"] = keyboard
 	if err := c.api.Call(ctx, "sendMessage", payload, nil); err != nil {
 		log.Printf("telegram: ответ не отправлен: %v", err)
 	}
