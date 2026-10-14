@@ -131,10 +131,10 @@ func (s *server) telegramBotAction(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := r.Context().Value(telegramUserKey{}).(telegram.User)
 	result, status := s.performAction(action)
+	s.record(r, user.Actor(), "bot."+action, result.Message)
 	if status == http.StatusOK && s.notifier != nil {
 		s.notifier.observe(s.bot.PID() != 0)
 	}
-	s.record(r, user.Actor(), "bot."+action, result.Message)
 	writeJSON(w, status, result)
 }
 

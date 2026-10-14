@@ -358,7 +358,12 @@ func (c *telegramControl) incidentMarkup(key string, phase incidentPhase, from, 
 	}
 	switch {
 	case key == "bot":
-		return keyboardRows([]map[string]string{btn("▶ Запустить", "ic:run"), btn("📜 Логи", "st:l")})
+		row := []map[string]string{btn("▶ Запустить", "ic:run"), btn("📜 Логи", "st:l")}
+		// Traceback — только если падение его оставило.
+		if report := c.s.lastStopReport(); len(report.Trace) > 0 && c.now().Sub(report.At) < incidentMaxAge {
+			row = append(row, btn("🧵 Traceback", "ic:tb"))
+		}
+		return keyboardRows(row)
 	case strings.HasPrefix(key, "module:"):
 		return keyboardRows([]map[string]string{btn("🔴 Ошибки", "st:e"), btn("🔕 Тишина на час", "ic:mute")})
 	default:
@@ -380,6 +385,8 @@ func (c *telegramControl) handleIncidentAction(ctx context.Context, callback *te
 		}
 		c.auditChat(callback.From, "telegram.mute", "кнопка под уведомлением, 1 ч")
 		answer("Тишина на час. Критичное всё равно придёт.")
+	case "tb":
+		c.sendStopTrace(ctx, callback, answer)
 	default:
 		answer("Кнопка устарела")
 	}

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"heroku-console/internal/telegram"
 )
@@ -220,4 +223,23 @@ func (c *telegramControl) noticeStale(ctx context.Context, chat int64) {
 	c.mu.Unlock()
 	c.send(ctx, chat, "Пока я был недоступен, сюда пришли сообщения. Я их не выполняю, чтобы не сделать лишнего — например, не перезапустить бота второй раз. Что сделать сейчас?",
 		c.nextKeyboard(chat, nextGeneral))
+}
+
+// sendStopTrace — кнопка «Traceback» под уведомлением о падении: traceback из вывода процесса.
+func (c *telegramControl) sendStopTrace(ctx context.Context, callback *telegram.Callback, answer func(string)) {
+	report := c.s.lastStopReport()
+	if callback.Message == nil || len(report.Trace) == 0 {
+		answer("Traceback уже недоступен — он есть в журнале, модуль «вывод процесса»")
+		return
+	}
+	answer("Traceback")
+	raw := strings.Join(report.Trace, "\n")
+	if utf8.RuneCountInString(raw) > 3500 {
+		// Конец важнее начала: строка исключения и место падения — внизу.
+		runes := []rune(raw)
+		raw = "…\n" + string(runes[len(runes)-3500:])
+	}
+	at := report.At.In(c.now().Location()).Format("15:04")
+	c.send(ctx, callback.Message.Chat.ID, "🧵 <b>Падение в "+at+"</b>\n<pre>"+html.EscapeString(raw)+"</pre>",
+		c.nextKeyboard(callback.Message.Chat.ID, nextAfterAction))
 }

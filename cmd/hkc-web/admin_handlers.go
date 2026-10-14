@@ -116,10 +116,8 @@ func (s *server) adminBotAction(w http.ResponseWriter, r *http.Request) {
 	}
 	result, status := s.performAction(r.PathValue("action"))
 	if status == http.StatusOK {
-		s.notifier.observe(s.bot.PID() != 0)
-	}
-	if status == http.StatusOK {
 		s.record(r, "admin", "bot."+r.PathValue("action"), result.Message)
+		s.notifier.observe(s.bot.PID() != 0)
 	}
 	writeJSON(w, status, result)
 }

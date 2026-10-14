@@ -26,9 +26,6 @@ func (s *server) status(w http.ResponseWriter, _ *http.Request) {
 func (s *server) action(w http.ResponseWriter, r *http.Request) {
 	result, status := s.performAction(r.PathValue("action"))
 	if status == http.StatusOK {
-		s.notifier.observe(s.bot.PID() != 0)
-	}
-	if status == http.StatusOK {
 		actor := "user"
 		if apiActor, ok := r.Context().Value(apiActorKey{}).(string); ok {
 			actor = apiActor
@@ -39,6 +36,8 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.record(r, actor, "bot."+r.PathValue("action"), result.Message)
+		// Аудит пишется до проверки процесса: по нему уведомление объясняет, кто остановил бота.
+		s.notifier.observe(s.bot.PID() != 0)
 	}
 	writeJSON(w, status, result)
 }

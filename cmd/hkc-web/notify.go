@@ -15,6 +15,8 @@ type stateNotifier struct {
 	mu          sync.Mutex
 	last        bool
 	initialized bool
+	// explain объясняет остановку: кто остановил бота или почему он упал (nil — без объяснения).
+	explain func(now time.Time) stopReport
 }
 
 // observe запоминает состояние под мьютексом и отправляет уведомление только при изменении после первого
@@ -33,7 +35,12 @@ func (n *stateNotifier) observe(running bool) {
 	if running {
 		n.alerts.notify(alertEvent{Kind: "bot.started", Severity: "ok", Title: "Бот запущен", Message: "Процесс Heroku работает."})
 	} else {
-		n.alerts.notify(alertEvent{Kind: "bot.stopped", Severity: "critical", Title: "Бот остановлен", Message: "Процесс Heroku не найден."})
+		event := alertEvent{Kind: "bot.stopped", Severity: "critical", Title: "Бот остановлен", Message: "Процесс Heroku не найден."}
+		if n.explain != nil {
+			report := n.explain(time.Now())
+			event.Title, event.Severity, event.Message = report.Title, report.Severity, report.Message
+		}
+		n.alerts.notify(event)
 	}
 }
 

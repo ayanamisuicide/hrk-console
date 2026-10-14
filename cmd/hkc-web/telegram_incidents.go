@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -35,6 +36,8 @@ type openIncident struct {
 	Last    time.Time `json:"last"`
 	Count   int       `json:"count"`
 	Text    string    `json:"text"`
+	// Cause — первая строка причины: остаётся в сообщении, когда его правят на «починилось».
+	Cause string `json:"cause,omitempty"`
 }
 
 // incidentPhase — роль события в жизни инцидента.
@@ -224,7 +227,11 @@ func (sink *telegramSink) openIncident(ctx context.Context, key string, event al
 	if err != nil {
 		return err
 	}
-	sink.open[key] = &openIncident{Message: id, Start: now, Last: now, Count: 1, Text: telegramText(event)}
+	cause := ""
+	if key == "bot" {
+		cause, _, _ = strings.Cut(strings.TrimSpace(event.Message), "\n")
+	}
+	sink.open[key] = &openIncident{Message: id, Start: now, Last: now, Count: 1, Text: telegramText(event), Cause: cause}
 	sink.save()
 	return nil
 }
@@ -286,6 +293,9 @@ func (sink *telegramSink) resolveIncident(ctx context.Context, key string, event
 		label = "Простоял"
 	}
 	text := telegramText(event) + "\n⏱ " + label + " " + humanDuration(end.Sub(inc.Start))
+	if inc.Cause != "" {
+		text += "\nПричина остановки: " + html.EscapeString(inc.Cause)
+	}
 	payload := map[string]any{"chat_id": sink.chatID, "message_id": inc.Message, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true}
 	if sink.incidentMarkup != nil {
 		if keyboard := sink.incidentMarkup(key, phaseResolve, inc.Start, end); keyboard != nil {

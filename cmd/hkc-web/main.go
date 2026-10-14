@@ -35,17 +35,20 @@ type server struct {
 	hostAlerts   hostAlertMonitor
 	moduleAlerts moduleAlertMonitor
 	// Подробности вкладки «Система»: сканер процессов и счётчик сети принадлежат сборщику истории.
-	procs        procScanner
-	netCounter   netCounter
-	latestLive   liveSample
-	prober       networkProber
-	diskScanner  diskScanner
-	timeline     *eventTimeline
-	wsl          wslInfo
-	dataDir      string
-	statsCache   historyStatsCache
-	configMu     sync.Mutex
-	systemMu     sync.RWMutex
+	procs       procScanner
+	netCounter  netCounter
+	latestLive  liveSample
+	prober      networkProber
+	diskScanner diskScanner
+	timeline    *eventTimeline
+	wsl         wslInfo
+	dataDir     string
+	statsCache  historyStatsCache
+	configMu    sync.Mutex
+	systemMu    sync.RWMutex
+	// stopMu защищает lastStop — причину последней остановки бота для кнопки «Traceback».
+	stopMu       sync.Mutex
+	lastStop     stopReport
 	latestSystem systemStatus
 	updates      *updateChecker
 	authLimiter  *authRateLimiter
@@ -151,6 +154,9 @@ func main() {
 		s.recordPanelEvent(event)
 	}
 	s.notifier = newStateNotifier(s.alerts)
+	if s.notifier != nil {
+		s.notifier.explain = s.explainStop
+	}
 	s.notifier.observe(s.bot.PID() != 0)
 	if channels := s.alerts.channels(); s.alerts.active() {
 		log.Printf("уведомления: telegram=%t webhook=%t", channels["telegram"], channels["webhook"])

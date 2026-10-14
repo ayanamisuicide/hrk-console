@@ -547,14 +547,15 @@ func (c *telegramControl) handleCallback(ctx context.Context, callback *telegram
 // execute выполняет действие тем же путём, что и кнопки панели, и пишет его в журнал действий.
 func (c *telegramControl) execute(user telegram.User, action string) string {
 	result, status := c.s.performAction(action)
-	if status == http.StatusOK && c.s.notifier != nil {
-		c.s.notifier.observe(c.s.bot.PID() != 0)
-	}
 	if c.s.audit != nil {
 		event := auditEvent{Time: c.now().UTC(), Actor: user.Actor(), Action: "bot." + action, Detail: result.Message, IP: "telegram"}
 		if err := c.s.audit.add(event); err != nil {
 			fmt.Fprintf(os.Stderr, "audit: %v\n", err)
 		}
+	}
+	// Аудит пишется до проверки процесса: по нему уведомление объясняет, кто остановил бота.
+	if status == http.StatusOK && c.s.notifier != nil {
+		c.s.notifier.observe(c.s.bot.PID() != 0)
 	}
 	mark := "✅"
 	if !result.OK {
