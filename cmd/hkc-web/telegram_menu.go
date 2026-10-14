@@ -450,7 +450,7 @@ func (c *telegramControl) renderMenuMain(chat int64, e menuEntry, d menuData, no
 		{button("🧩 Модули", "mn:mod"), button("📜 Логи", "st:l"), button("🔴 Ошибки", "st:e")},
 		control,
 		{mute, button("🔄", "mn:r"), button("⏱ "+intervalLabel(e.Interval), "mn:cy")},
-		{button("⚙️ Ещё", "mn:more")},
+		{button("📰 Сводка", "mn:dg"), button("⚙️ Ещё", "mn:more")},
 	}
 	if url := c.webAppURL(); url != "" {
 		rows[3] = append(rows[3], map[string]any{"text": "Открыть панель", "web_app": map[string]string{"url": url}})
@@ -725,6 +725,12 @@ func (c *telegramControl) handleMenuCallback(ctx context.Context, callback *tele
 		return
 	}
 	c.menu.touch(chat, c.now())
+	if act == "dg" {
+		// Сводка — отдельным сообщением: меню остаётся на месте.
+		answer("Сводка за сутки")
+		c.sendDigest(ctx, chat, digestDefaultSpan)
+		return
+	}
 	reply := ""
 	switch {
 	case act == "m", act == "mod", act == "more":

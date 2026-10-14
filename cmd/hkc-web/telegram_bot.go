@@ -29,6 +29,11 @@ import (
 type telegramSettings struct {
 	ControlEnabled bool `json:"controlEnabled"`
 	Confirm        bool `json:"confirm"`
+	// DigestOff выключает утреннюю сводку. Поле отрицательное: у файлов настроек, сохранённых до
+	// появления сводки, она тоже включена.
+	DigestOff bool `json:"digestOff"`
+	// DigestAt — время утренней сводки «ЧЧ:ММ» по часам сервера; пусто — 08:00.
+	DigestAt string `json:"digestAt,omitempty"`
 }
 
 func defaultTelegramSettings() telegramSettings { return telegramSettings{Confirm: true} }
@@ -47,6 +52,7 @@ var telegramCommands = []telegramCommand{
 	{Name: "status", Description: "Состояние бота и сервера"},
 	{Name: "logs", Description: "Последние записи журнала"},
 	{Name: "errors", Description: "Что упало: ошибки, сгруппированные"},
+	{Name: "digest", Description: "Сводка: что было за сутки"},
 	{Name: "find", Description: "Найти в журнале"},
 	{Name: "mute", Description: "Выключить уведомления на время"},
 	{Name: "unmute", Description: "Включить уведомления"},
@@ -190,6 +196,7 @@ func (c *telegramControl) run(ctx context.Context) {
 	// После перезапуска панели дописываем итог начатого из Telegram обновления; управление для этого не нужно.
 	go c.resumePendingUpdate()
 	go c.runMenus(ctx)
+	go c.runDigest(ctx)
 	backoff := 5 * time.Second
 	for ctx.Err() == nil {
 		if !c.settings().ControlEnabled {
@@ -401,7 +408,7 @@ func (c *telegramControl) handleMessage(ctx context.Context, message *telegram.M
 	chat := message.Chat.ID
 	// Команды, у которых есть слова-синонимы, идут тем же путём, что и фразы.
 	slash := map[string]telegram.IntentKind{"start": telegram.IntentMenu, "menu": telegram.IntentMenu, "help": telegram.IntentHelp, "status": telegram.IntentStatus, "update": telegram.IntentUpdate, "app": telegram.IntentApp,
-		"logs": telegram.IntentLogs, "errors": telegram.IntentErrors, "find": telegram.IntentSearch, "mute": telegram.IntentMute, "unmute": telegram.IntentUnmute}
+		"logs": telegram.IntentLogs, "errors": telegram.IntentErrors, "digest": telegram.IntentDigest, "find": telegram.IntentSearch, "mute": telegram.IntentMute, "unmute": telegram.IntentUnmute}
 	if kind, ok := slash[name]; ok {
 		it, _ := telegram.ParseIntent(args)
 		if args == "" {
@@ -583,6 +590,7 @@ func (c *telegramControl) helpText() string {
 	text.WriteString("\n• «покажи логи», «логи 30», «логи updates» — записи журнала")
 	text.WriteString("\n• «ошибки», «что упало» — ошибки, сгруппированные по причинам")
 	text.WriteString("\n• «найди таймаут» — поиск по всему журналу")
+	text.WriteString("\n• «сводка», «что было за ночь», «сводка за неделю» — что случилось за период; каждое утро она приходит сама («присылай сводку в 8:30», «не присылай сводку»)")
 	text.WriteString("\n• «запусти», «перезапусти», «останови»")
 	if c.settings().Confirm {
 		text.WriteString(" (перезапуск и остановка — с подтверждением: кнопкой или словом «да»)")
@@ -674,6 +682,7 @@ func (s *server) getTelegram(w http.ResponseWriter, r *http.Request) {
 	settings := control.settings()
 	view["settings"] = settings
 	view["activity"] = s.telegramActivity(15)
+	view["digest"] = control.digestView()
 	view["notifications"] = s.alerts.channels()["telegram"]
 	writeJSON(w, http.StatusOK, view)
 }
@@ -689,6 +698,10 @@ func (s *server) setTelegram(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректные настройки Telegram"})
 		return
 	}
+	if settings.DigestAt != "" && !digestTimeRe.MatchString(settings.DigestAt) {
+		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "время сводки — в виде ЧЧ:ММ"})
+		return
+	}
 	if err := s.operations.setTelegram(settings); err != nil {
 		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
 		return
@@ -696,6 +709,6 @@ func (s *server) setTelegram(w http.ResponseWriter, r *http.Request) {
 	if s.telegram != nil {
 		s.telegram.reload()
 	}
-	s.record(r, "admin", "telegram.settings", fmt.Sprintf("control=%t confirm=%t", settings.ControlEnabled, settings.Confirm))
+	s.record(r, "admin", "telegram.settings", fmt.Sprintf("control=%t confirm=%t digest=%t at=%s", settings.ControlEnabled, settings.Confirm, !settings.DigestOff, settings.DigestAt))
 	s.getTelegram(w, r)
 }

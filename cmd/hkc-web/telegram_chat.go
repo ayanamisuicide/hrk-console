@@ -46,6 +46,8 @@ func (c *telegramControl) handleIntent(ctx context.Context, message *telegram.Me
 		c.cmdUnmute(ctx, chat, user)
 	case telegram.IntentMenu:
 		c.openMenu(ctx, chat)
+	case telegram.IntentDigest:
+		c.cmdDigest(ctx, chat, user, it)
 	case telegram.IntentHelp:
 		c.reply(ctx, chat, c.helpText(), c.nextKeyboard(chat, nextShort))
 	case telegram.IntentApp:

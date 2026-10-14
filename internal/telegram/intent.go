@@ -36,6 +36,7 @@ const (
 	IntentThanks   IntentKind = "thanks"
 	IntentCancel   IntentKind = "cancel"
 	IntentFallback IntentKind = "fallback"
+	IntentDigest   IntentKind = "digest"
 )
 
 // Intent — разобранная фраза: вид запроса и его параметры.
@@ -109,7 +110,7 @@ var fillers = map[string]bool{
 
 var (
 	numberRe = regexp.MustCompile(`\b(\d{1,3})\b`)
-	sinceRe  = regexp.MustCompile(`за\s+(?:последн\p{L}*\s+)?(?:(\d+)\s*)?(час\p{L}*|мин\p{L}*|сут\p{L}*|день|дн\p{L}*|ч|м|d|h|m)`)
+	sinceRe  = regexp.MustCompile(`за\s+(?:последн\p{L}*\s+)?(?:(\d+)\s*)?(час\p{L}*|мин\p{L}*|сут\p{L}*|день|дн\p{L}*|нед\p{L}*|ч|м|d|h|m|w)`)
 	moduleRe = regexp.MustCompile(`(?:module|модул\p{L}*)[:\s]+([\p{L}\p{N}_.-]+)`)
 	// \b в Go понимает только латиницу, поэтому границу слова задаём явно.
 	searchVerb = regexp.MustCompile(`^(найд\p{L}*|найти|поищ\p{L}*|ищи|искать|поиск|grep|search|find)(?:\s+|[:,-]+\s*|$)`)
@@ -144,6 +145,14 @@ func ParseIntent(raw string) (Intent, bool) {
 			it.Kind = IntentNo
 			return it, true
 		}
+	}
+
+	// Сводка — раньше тишины и остановки: «не присылай сводку» и «выключи сводку» относятся к ней.
+	if HasStem(words, "сводк", "дайджест", "digest", "summary") || strings.Contains(trimmed, "что было за") ||
+		strings.Contains(trimmed, "что было ночью") || strings.Contains(trimmed, "что было вчера") || strings.Contains(trimmed, "что нового") {
+		it.Kind = IntentDigest
+		FillView(&it, text)
+		return it, true
 	}
 
 	// Тишина и уведомления идут первыми: «выключи уведомления» не должно останавливать бота.
@@ -261,6 +270,8 @@ func FillView(it *Intent, text string) {
 			it.Since = time.Duration(n) * time.Hour
 		case strings.HasPrefix(unit, "сут"), strings.HasPrefix(unit, "дн"), unit == "день", unit == "d":
 			it.Since = time.Duration(n) * 24 * time.Hour
+		case strings.HasPrefix(unit, "нед"), unit == "w":
+			it.Since = time.Duration(n) * 7 * 24 * time.Hour
 		default:
 			it.Since = time.Duration(n) * time.Minute
 		}

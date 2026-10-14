@@ -224,7 +224,10 @@ export function createTelegram(ctx) {
     if (!saving) {
       control.checked = Boolean(data.settings?.controlEnabled);
       ctx.$("#tg-confirm").checked = Boolean(data.settings?.confirm);
+      ctx.$("#tg-digest").checked = Boolean(data.digest?.enabled);
+      ctx.$("#tg-digest-at").value = data.digest?.at || "08:00";
     }
+    renderDigestNote(data);
     control.disabled = !data.token;
 
     const name = data.bot?.name || "Бот панели";
@@ -237,6 +240,18 @@ export function createTelegram(ctx) {
     renderStrangers(data.unknown || []);
     renderCommands(data);
     renderActivity(data.activity || []);
+  }
+
+  // Подпись под сводкой: когда пришла последняя и почему может не прийти.
+  function renderDigestNote(data) {
+    const note = ctx.$("#tg-digest-note");
+    const base = "Что было с прошлой сводки: остановки и падения бота с причинами, ошибки и самые частые из них, нагрузка сервера, модули и новое. По запросу — фраза «сводка», «что было за ночь» или /digest.";
+    let state;
+    if (!data.digest?.enabled) state = "Утренняя сводка выключена.";
+    else if (!data.settings?.controlEnabled) state = "Не придёт, пока выключено управление из Telegram.";
+    else if (data.digest.lastSent) state = `Последняя пришла ${new Date(data.digest.lastSent).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}.`;
+    else state = `Первая придёт в ${data.digest.at}.`;
+    note.textContent = `${base} ${state}`;
   }
 
   async function saveTelegram(patch, message) {
@@ -277,6 +292,12 @@ export function createTelegram(ctx) {
         return;
       }
       await saveTelegram({ controlEnabled: enabled }, enabled ? "Управление из Telegram включено" : "Управление из Telegram выключено");
+    });
+    ctx.$("#tg-digest-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const enabled = ctx.$("#tg-digest").checked;
+      const at = ctx.$("#tg-digest-at").value || "08:00";
+      saveTelegram({ digestOff: !enabled, digestAt: at }, enabled ? `Сводка будет приходить в ${at}` : "Утренняя сводка выключена");
     });
     ctx.$("#tg-confirm").addEventListener("change", (event) =>
       saveTelegram({ confirm: event.target.checked }, event.target.checked ? "Опасные команды подтверждаются кнопкой" : "Команды выполняются сразу"),

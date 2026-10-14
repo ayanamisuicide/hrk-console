@@ -330,8 +330,33 @@
               <div class="tg-commands" id="tg-commands"></div>
               <p class="watchdog-note">
                 Бот отвечает только ID из HKC_TELEGRAM_ADMIN_IDS, остальным молчит. Команды старше
-                двух минут не выполняются: всё, что пришло, пока панель была выключена, пропадает.
+                двух минут не выполняются: о том, что пришло, пока панель была выключена, бот сообщит
+                и предложит выбор.
                 Если мини-приложение недоступно, команды продолжают работать.
+              </p>
+            </section>
+
+            <section class="card admin-section">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">Каждое утро</span>
+                  <h2>Сводка</h2>
+                </div>
+              </div>
+              <form id="tg-digest-form" class="watchdog-form">
+                <label class="watchdog-switch"
+                  ><input id="tg-digest" type="checkbox" /><span
+                    ><strong>Утренняя сводка</strong
+                    ><small>В личный чат с ботом</small></span
+                  ></label
+                ><label
+                  >Время сервера<input id="tg-digest-at" type="time" step="60" value="08:00" required /></label
+                ><button class="primary" type="submit">Сохранить</button>
+              </form>
+              <p class="watchdog-note" id="tg-digest-note">
+                Что было с прошлой сводки: остановки и падения бота с причинами, ошибки и самые частые из них,
+                нагрузка сервера, модули и новое. По запросу — фраза «сводка», «что было за ночь» или /digest.
+                Приходит, только когда включено управление из Telegram.
               </p>
             </section>
 

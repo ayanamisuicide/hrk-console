@@ -52,6 +52,7 @@ async function mockAdmin(page, telegram) {
         const body = request.postDataJSON();
         saved.push(body);
         current = { ...current, settings: body, state: body.controlEnabled ? "running" : "disabled" };
+        if ("digestOff" in body) current.digest = { ...current.digest, enabled: !body.digestOff, at: body.digestAt || current.digest?.at };
       }
       return json(route, current);
     }
@@ -101,6 +102,24 @@ test("telegram в админке: состояние, шаги, команды �
   await page.screenshot({ path: testInfo.outputPath("telegram-admin-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
   expect(errors).toEqual([]);
+});
+
+test("telegram в админке: утренняя сводка включается, время меняется", async ({ page }) => {
+  const saved = await mockAdmin(page, telegramState({ digest: { enabled: true, at: "08:00", lastSent: "2026-10-14T05:00:00Z" } }));
+  await page.goto("/admin/");
+  await expect(page.locator("#tg-digest")).toBeChecked();
+  await expect(page.locator("#tg-digest-at")).toHaveValue("08:00");
+  await expect(page.locator("#tg-digest-note")).toContainText("Последняя пришла");
+
+  await page.locator("#tg-digest-at").fill("08:30");
+  await page.locator("#tg-digest-form button[type=submit]").click();
+  await expect.poll(() => saved.at(-1)).toMatchObject({ digestOff: false, digestAt: "08:30", controlEnabled: true });
+  await expect(page.locator("#tg-digest-at")).toHaveValue("08:30");
+
+  await page.locator("#tg-digest").uncheck();
+  await page.locator("#tg-digest-form button[type=submit]").click();
+  await expect.poll(() => saved.at(-1)?.digestOff).toBe(true);
+  await expect(page.locator("#tg-digest-note")).toContainText("Утренняя сводка выключена");
 });
 
 test("telegram в админке: бот занят другой программой", async ({ page }) => {

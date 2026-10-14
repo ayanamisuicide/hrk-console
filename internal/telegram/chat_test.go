@@ -207,3 +207,26 @@ func TestMuteStore(t *testing.T) {
 		t.Errorf("файл состояния: %v", err)
 	}
 }
+
+// TestParseDigestPhrases: сводка распознаётся раньше тишины и остановки, «за неделю» задаёт период.
+func TestParseDigestPhrases(t *testing.T) {
+	for _, phrase := range []string{"сводка", "дайджест", "что было за ночь", "что было ночью", "что нового", "выключи сводку",
+		"не присылай сводку", "присылай сводку в 8:30", "/digest"} {
+		if it, ok := ParseIntent(phrase); !ok || it.Kind != IntentDigest {
+			t.Errorf("%q разобрано как %q", phrase, it.Kind)
+		}
+	}
+	if it, _ := ParseIntent("сводка за неделю"); it.Since != 7*24*time.Hour {
+		t.Errorf("сводка за неделю: %v", it.Since)
+	}
+	if it, _ := ParseIntent("логи за 2 недели"); it.Kind != IntentLogs || it.Since != 14*24*time.Hour {
+		t.Errorf("логи за 2 недели: %q %v", it.Kind, it.Since)
+	}
+	// Остальное не задето: тишина и остановка по-прежнему свои.
+	if it, _ := ParseIntent("не присылай уведомления"); it.Kind != IntentMute {
+		t.Errorf("не присылай уведомления: %q", it.Kind)
+	}
+	if it, _ := ParseIntent("выключи бота"); it.Kind != IntentStop {
+		t.Errorf("выключи бота: %q", it.Kind)
+	}
+}
