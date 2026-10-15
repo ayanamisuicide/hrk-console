@@ -10,7 +10,7 @@ import (
 func (s *server) status(w http.ResponseWriter, _ *http.Request) {
 	pid := s.bot.PID()
 	_, logErr := os.Stat(s.bot.LogFile)
-	writeJSON(w, http.StatusOK, statusResponse{
+	status := statusResponse{
 		Running:    pid != 0,
 		PID:        pid,
 		Uptime:     botproc.Uptime(pid),
@@ -18,7 +18,11 @@ func (s *server) status(w http.ResponseWriter, _ *http.Request) {
 		HerokuDir:  s.bot.HerokuDir,
 		LogReady:   logErr == nil,
 		StartupLog: tailText(s.bot.StartupLog, 12),
-	})
+	}
+	if pid == 0 {
+		status.LastStop = s.currentStop()
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 // action выполняет действие пользователя или API-клиента, уведомляет о состоянии и записывает автора в
@@ -30,10 +34,8 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 		if apiActor, ok := r.Context().Value(apiActorKey{}).(string); ok {
 			actor = apiActor
 		}
-		if cookie, err := r.Cookie(sessionCookie); err == nil {
-			if username, ok := s.sessions.get(cookie.Value); ok {
-				actor = username
-			}
+		if p, ok := requestPrincipal(r); ok {
+			actor = p.name
 		}
 		s.record(r, actor, "bot."+r.PathValue("action"), result.Message)
 		// Аудит пишется до проверки процесса: по нему уведомление объясняет, кто остановил бота.

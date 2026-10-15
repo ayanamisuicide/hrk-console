@@ -1,16 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"heroku-console/botproc"
 	"heroku-console/internal/telegram"
 )
 
@@ -70,80 +67,29 @@ func (s *server) telegramSessionStart(w http.ResponseWriter, r *http.Request) {
 		"expiresIn": int(telegram.WebSessionTTL.Seconds())})
 }
 
-type telegramUserKey struct{}
-
-// telegramAuthorize пропускает запрос с действующей сессией мини-приложения. Доступ перепроверяется
+// telegramSession проверяет сессию мини-приложения из заголовка Authorization. Доступ перепроверяется
 // каждый раз: выключенное управление или убранный из списка ID закрывают его сразу.
-func (s *server) telegramAuthorize(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if reason, ok := s.webAppReady(); !ok {
-			writeJSON(w, http.StatusServiceUnavailable, actionResponse{Message: reason})
-			return
-		}
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		user, ok := s.telegram.web.Get(token, time.Now())
-		if !ok || !s.telegram.admins[user.ID] {
-			writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "сессия истекла — откройте приложение заново"})
-			return
-		}
-		next(w, r.WithContext(context.WithValue(r.Context(), telegramUserKey{}, user)))
+func (s *server) telegramSession(r *http.Request) (telegram.User, int, string) {
+	if reason, ok := s.webAppReady(); !ok {
+		return telegram.User{}, http.StatusServiceUnavailable, reason
 	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	user, ok := s.telegram.web.Get(token, time.Now())
+	if !ok || !s.telegram.admins[user.ID] {
+		return telegram.User{}, http.StatusUnauthorized, "сессия истекла — откройте приложение заново"
+	}
+	return user, 0, ""
 }
 
-// telegramOverview — всё для главного экрана одним запросом: процесс, сервер, автовосстановление.
-func (s *server) telegramOverview(w http.ResponseWriter, r *http.Request) {
-	pid := s.bot.PID()
-	s.systemMu.RLock()
-	system := s.latestSystem
-	live := s.latestLive
-	s.systemMu.RUnlock()
-	watchdog := map[string]any{"enabled": false}
-	if s.operations != nil {
-		snapshot := s.watchdog.snapshot()
-		watchdog = map[string]any{"enabled": s.operations.watchdogSettings().Enabled, "state": snapshot.State,
-			"message": snapshot.Message, "attempts": snapshot.Attempts}
-	}
-	user, _ := r.Context().Value(telegramUserKey{}).(telegram.User)
-	host, _ := os.Hostname()
-	bot := map[string]any{"running": pid != 0, "pid": pid, "uptime": "—", "version": s.bot.Version()}
-	if pid != 0 {
-		bot["uptime"] = botproc.Uptime(pid)
-		bot["rssBytes"] = live.bot.RSS
-		bot["cpuPercent"] = live.bot.CPUPercent
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"bot": bot, "watchdog": watchdog, "host": host, "panel": currentVersion(),
-		"system": map[string]any{"supported": system.Supported, "cpuPercent": system.CPUPercent,
-			"memoryPercent": hostPercent(system.MemoryUsed, system.MemoryTotal), "diskPercent": hostPercent(system.DiskUsed, system.DiskTotal),
-			"memoryUsedBytes": system.MemoryUsed, "memoryTotalBytes": system.MemoryTotal, "diskUsedBytes": system.DiskUsed,
-			"diskTotalBytes": system.DiskTotal, "load1": system.Load1, "cores": system.CPUCores, "uptimeSeconds": system.UptimeSeconds},
-		"user":    map[string]any{"name": user.DisplayName(), "username": user.Username},
-		"confirm": s.telegram.settings().Confirm,
-	})
-}
-
-// telegramBotAction выполняет действие из мини-приложения и пишет его в журнал от имени пользователя Telegram.
-func (s *server) telegramBotAction(w http.ResponseWriter, r *http.Request) {
-	action := r.PathValue("action")
-	if action != "start" && action != "stop" && action != "restart" {
-		writeJSON(w, http.StatusNotFound, actionResponse{Message: "неизвестное действие"})
+// miniApp отдаёт мини-приложению страницу панели: это та же панель, только вход — через Telegram.
+// Заголовки /tg/ разрешают встраивание в веб-клиент Telegram и скрипт его моста.
+func (s *server) miniApp(w http.ResponseWriter, _ *http.Request) {
+	page, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		http.Error(w, "страница панели недоступна", http.StatusInternalServerError)
 		return
 	}
-	user, _ := r.Context().Value(telegramUserKey{}).(telegram.User)
-	result, status := s.performAction(action)
-	s.record(r, user.Actor(), "bot."+action, result.Message)
-	if status == http.StatusOK && s.notifier != nil {
-		s.notifier.observe(s.bot.PID() != 0)
-	}
-	writeJSON(w, status, result)
-}
-
-// telegramLogs — хвост журнала бота; во внешний мир строки уходят только владельцу по HTTPS.
-func (s *server) telegramLogs(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	if limit, err := strconv.Atoi(query.Get("limit")); err != nil || limit <= 0 || limit > 400 {
-		query.Set("limit", "200")
-		r.URL.RawQuery = query.Encode()
-	}
-	s.logs(w, r)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(page)
 }

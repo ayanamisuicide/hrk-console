@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"heroku-console/logfeed"
 )
 
 // Уведомление «бот остановлен» объясняет, почему. Сначала — не остановил ли его кто-то сам:
@@ -67,6 +69,53 @@ func (s *server) lastStopReport() stopReport {
 	report := s.lastStop
 	report.Trace = append([]string(nil), report.Trace...)
 	return report
+}
+
+// stopView — почему бот сейчас не работает: карточка на странице «Система» панели и мини-приложения.
+type stopView struct {
+	At       time.Time `json:"at"`
+	Title    string    `json:"title"`
+	Severity string    `json:"severity"`
+	Message  string    `json:"message"`
+	Trace    []string  `json:"trace,omitempty"`
+}
+
+// currentStop — последняя остановка бота. Причина в памяти теряется при перезапуске панели; тогда
+// её берём из журнала панели (там первая строка причины, без traceback). nil — остановок не видно.
+func (s *server) currentStop() *stopView {
+	if report := s.lastStopReport(); report.Title != "" {
+		return &stopView{At: report.At.UTC(), Title: report.Title, Severity: report.Severity, Message: report.Message, Trace: report.Trace}
+	}
+	if s.panelLog == nil {
+		return nil
+	}
+	// Состояние спрашивают раз в секунду, а поиск идёт по архиву журнала — ответ помним полминуты.
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+	if now := time.Now(); now.Sub(s.stopFromJournalAt) > 30*time.Second {
+		s.stopFromJournal, s.stopFromJournalAt = s.stopFromPanelJournal(), now
+	}
+	return s.stopFromJournal
+}
+
+// stopFromPanelJournal — последняя остановка бота по журналу панели, если после неё он не запускался.
+func (s *server) stopFromPanelJournal() *stopView {
+	journal := logfeed.Journal{Sources: []logfeed.Source{{Path: s.panelLog.path, Archive: s.logArchiveDir()}}}
+	entries, _ := logfeed.Search(journal, logfeed.Query{Module: modulePanel, Text: "Бот ", Limit: 200})
+	for i := len(entries) - 1; i >= 0; i-- {
+		title, reason, _ := strings.Cut(entries[i].Message, " — ")
+		switch title {
+		case "Бот запущен":
+			return nil
+		case "Бот упал", "Бот остановлен":
+			view := &stopView{At: time.UnixMilli(entries[i].TS).UTC(), Title: title, Severity: "warning", Message: maskSecrets(reason)}
+			if title == "Бот упал" {
+				view.Severity = "critical"
+			}
+			return view
+		}
+	}
+	return nil
 }
 
 // manualStop ищет в аудите недавнюю остановку или перезапуск бота.

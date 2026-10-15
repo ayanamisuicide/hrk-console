@@ -47,15 +47,18 @@ type server struct {
 	configMu    sync.Mutex
 	systemMu    sync.RWMutex
 	// stopMu защищает lastStop — причину последней остановки бота для кнопки «Traceback».
-	stopMu       sync.Mutex
-	lastStop     stopReport
-	latestSystem systemStatus
-	updates      *updateChecker
-	authLimiter  *authRateLimiter
-	operations   *operationStore
-	botActionMu  sync.Mutex
-	watchdog     watchdogMonitor
-	telegram     *telegramControl
+	stopMu   sync.Mutex
+	lastStop stopReport
+	// stopFromJournal — последняя остановка по журналу панели, когда причины в памяти нет.
+	stopFromJournal   *stopView
+	stopFromJournalAt time.Time
+	latestSystem      systemStatus
+	updates           *updateChecker
+	authLimiter       *authRateLimiter
+	operations        *operationStore
+	botActionMu       sync.Mutex
+	watchdog          watchdogMonitor
+	telegram          *telegramControl
 	// panelLog — журнал панели (вывод процесса, действия, события); logRules — правила
 	// журнала: скрыть шумные записи, уведомить о повторяющейся ошибке.
 	panelLog *panelJournal
@@ -71,6 +74,8 @@ type statusResponse struct {
 	HerokuDir  string `json:"herokuDir"`
 	LogReady   bool   `json:"logReady"`
 	StartupLog string `json:"startupLog,omitempty"`
+	// LastStop — почему бот не работает; только пока он остановлен.
+	LastStop *stopView `json:"lastStop,omitempty"`
 }
 
 // actionResponse — Единый результат управляющего действия, включая пояснение ошибки и возможный PID.

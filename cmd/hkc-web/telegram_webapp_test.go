@@ -73,8 +73,9 @@ func TestTelegramWebAppSession(t *testing.T) {
 	}
 	_ = json.Unmarshal(response.Body.Bytes(), &session)
 
+	// Мини-приложение ходит в обычный API панели с сессией Telegram в заголовке.
 	overview := func() int {
-		request := httptest.NewRequest(http.MethodGet, "/api/tg/overview", nil)
+		request := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		request.Header.Set("Authorization", "Bearer "+session.Token)
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, request)
@@ -86,7 +87,7 @@ func TestTelegramWebAppSession(t *testing.T) {
 	if err := s.operations.setTelegram(telegramSettings{ControlEnabled: false, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
-	if code := overview(); code != http.StatusServiceUnavailable {
+	if code := overview(); code != http.StatusUnauthorized {
 		t.Fatalf("overview after disabling: %d", code)
 	}
 }

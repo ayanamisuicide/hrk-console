@@ -576,9 +576,10 @@ export function createJournal(ctx) {
   }
 
   // Закрывает прежний EventSource и подключает новый; переподключение выполняет браузер.
+  // Мини-приложение входит сессией в заголовке и подставляет свой поток (ctx.openStream).
   function connectStream() {
     if (ctx.stream) ctx.stream.close();
-    const stream = new EventSource("/api/logs/stream");
+    const stream = ctx.openStream ? ctx.openStream("/api/logs/stream") : new EventSource("/api/logs/stream");
     ctx.stream = stream;
     let errored = false;
     stream.onopen = () => {

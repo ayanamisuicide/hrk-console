@@ -40,6 +40,20 @@ export function createJournalDrawer(J) {
     return head;
   }
 
+  // Отправляет запись в Telegram: из мини-приложения — себе в чат с ботом, из панели — в чат уведомлений.
+  async function shareEntry(e) {
+    try {
+      const result = await ctx.request("/api/logs/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ts: e.ts, id: e.id }),
+      });
+      ctx.showNotice(result.message[0].toUpperCase() + result.message.slice(1));
+    } catch (error) {
+      ctx.showNotice(error.message, "error");
+    }
+  }
+
   function openDrawer(e, { fromProblems = false } = {}) {
     S.selected = entryKey(e);
     S.selectedEntry = e;
@@ -60,6 +74,7 @@ export function createJournalDrawer(J) {
     };
     act("Копировать", () => J.copyText(rawText(e), "Запись скопирована"));
     act("Ссылка", () => J.copyText(J.entryLink(e), "Ссылка на запись скопирована"));
+    if (ctx.canShare && e.ts) act("В Telegram", () => shareEntry(e));
     if (e.module) act(`Только ${e.module}`, () => J.setQuery({ module: e.module }));
     act(J.isMarked(e) ? "Убрать закладку" : "В закладки", () => {
       J.toggleBookmark(e);

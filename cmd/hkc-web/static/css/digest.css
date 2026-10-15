@@ -1,0 +1,189 @@
+/* Раздел «Сводка»: те же поверхности, что у страницы «Система» — сводка, плитки и карточки. */
+
+.digest-view .view-intro {
+  margin-bottom: 4px;
+}
+.digest-view .view-intro .segmented {
+  flex-shrink: 0;
+}
+.digest-body {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+.digest-summary .summary-text p {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* Плитки: число и пояснение, как карточки ресурсов */
+.digest-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.digest-kpi {
+  --series: var(--accent);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 18px;
+}
+.digest-kpi.bad {
+  --series: var(--bad);
+}
+.digest-kpi.warn {
+  --series: var(--warn);
+}
+.digest-kpi span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.digest-kpi span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--series);
+}
+.digest-kpi strong {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.digest-kpi.bad strong {
+  color: var(--bad);
+}
+.digest-kpi small {
+  overflow: hidden;
+  min-height: 1.3em;
+  color: var(--text-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Карточки разделов */
+.digest-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.digest-list {
+  display: grid;
+  gap: 2px;
+}
+.digest-row {
+  --tone: var(--text-3);
+  display: grid;
+  grid-template-columns: 8px 86px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  min-height: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+button.digest-row:hover {
+  background: var(--surface-hover);
+}
+.digest-row.bad {
+  --tone: var(--bad);
+}
+.digest-row.warn {
+  --tone: var(--warn);
+}
+.digest-row.restart {
+  --tone: var(--accent);
+}
+.digest-row > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+  transform: translateY(-1px);
+}
+.digest-row time {
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.digest-row.no-time .digest-row-text {
+  grid-column: 2 / -1;
+}
+.digest-row-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.digest-row-text strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.digest-row-text small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.digest-empty {
+  color: var(--text-3);
+  font-size: 13px;
+}
+.digest-news {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.digest-note {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+@media (max-width: 1200px) {
+  .digest-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 960px) {
+  .digest-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .digest-view .view-intro {
+    flex-direction: column;
+  }
+  .digest-kpis {
+    gap: 10px;
+  }
+  .digest-kpi {
+    padding: 12px;
+  }
+  .digest-kpi strong {
+    font-size: 21px;
+  }
+  .digest-row {
+    grid-template-columns: 8px 64px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 6px;
+  }
+}

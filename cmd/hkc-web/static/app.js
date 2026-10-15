@@ -7,6 +7,8 @@ import { createIncidents } from "./modules/incidents.js";
 import { createNavigation } from "./modules/navigation.js";
 import { createAuth } from "./modules/auth.js";
 import { createModules } from "./modules/modules.js";
+import { createDigest } from "./modules/digest.js";
+import { createTelegramShell, telegramMode } from "./modules/telegram-shell.js";
 
 // Состояние принадлежит этой странице; модули получают его явно через ctx.
 // Фабрики лишь создают замыкания. Сначала собираем функции, затем задаём
@@ -20,6 +22,8 @@ Object.assign(
   createNavigation(ctx),
   createAuth(ctx),
   createModules(ctx),
+  createDigest(ctx),
+  createTelegramShell(ctx),
 );
 Object.assign(ctx, createServiceBindings(ctx));
 
@@ -41,9 +45,13 @@ ctx.authMode = ctx.initialInvite ? "register" : "login";
 
 ctx.authenticated = false;
 
+// Мини-приложение Telegram — та же страница по адресу /tg/ со входом через Telegram.
+ctx.telegramMode = telegramMode;
+
 ctx.stream = undefined;
 
-ctx.currentView = "logs";
+// Мини-приложение открывается на «Системе»: журнал не должен успеть записать в адрес свой раздел.
+ctx.currentView = telegramMode ? "system" : "logs";
 
 ctx.lastStatus = null;
 
@@ -89,7 +97,7 @@ ctx.setJournalNavOpen(localStorage.getItem("hkc-journal-nav-open") === "true");
 
 ctx.bindJournalNavToggle();
 
-ctx.setView(ctx.initialView() || localStorage.getItem("hkc-view") || "logs");
+ctx.setView(ctx.initialView() || (telegramMode ? "system" : localStorage.getItem("hkc-view")) || "logs");
 
 
 ctx.bindSearch();
@@ -100,6 +108,7 @@ ctx.bindSystemRefresh();
 
 ctx.bindIncidentsRefresh();
 ctx.bindModules();
+ctx.bindDigest();
 
 ctx.historyBusy = false;
 
@@ -116,6 +125,7 @@ ctx.bindHistoryChart();
 ctx.commands = [
   { name: "Открыть журнал", run: () => ctx.setView("logs") },
   { name: "Открыть происшествия", run: () => ctx.setView("incidents") },
+  { name: "Открыть сводку", run: () => ctx.setView("digest") },
   { name: "Открыть состояние системы", run: () => ctx.setView("system") },
   { name: "Открыть модули бота", run: () => ctx.setView("modules") },
   {
@@ -153,7 +163,9 @@ ctx.bindLogout();
 ctx.bindCopyConsoleLink();
 
 // Подписки готовы: проверяем сессию и только после входа загружаем данные.
-ctx.bootstrap();
+// В мини-приложении сначала вход через Telegram, затем та же загрузка.
+if (telegramMode) ctx.startTelegram();
+else ctx.bootstrap();
 
 // Частые обновления запускаются лишь при нужном состоянии страницы.
 setInterval(() => {
@@ -187,5 +199,18 @@ setInterval(() => {
     ctx.refreshModules();
 }, 1000);
 
-if ("serviceWorker" in navigator)
+// Сводка собирается по архиву журнала: раз в полминуты хватает.
+setInterval(() => {
+  if (ctx.authenticated && ctx.currentView === "digest" && !document.hidden)
+    ctx.refreshDigest();
+}, 30000);
+
+// «Управление» в мини-приложении: состояние Telegram, тишины и автовосстановления.
+setInterval(() => {
+  if (ctx.authenticated && ctx.currentView === "control" && !document.hidden)
+    ctx.refreshControl?.();
+}, 3000);
+
+// Мини-приложению работа без сети не нужна: оно открывается только из Telegram.
+if ("serviceWorker" in navigator && !telegramMode)
   navigator.serviceWorker.register("/sw.js").catch(() => {});

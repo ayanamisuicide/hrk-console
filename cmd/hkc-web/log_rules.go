@@ -288,10 +288,8 @@ func (s *server) deleteLogRule(w http.ResponseWriter, r *http.Request) {
 
 // requestActor — имя вошедшего пользователя для аудита.
 func (s *server) requestActor(r *http.Request) string {
-	if cookie, err := r.Cookie(sessionCookie); err == nil {
-		if username, ok := s.sessions.get(cookie.Value); ok {
-			return username
-		}
+	if p, ok := requestPrincipal(r); ok {
+		return p.name
 	}
 	return "user"
 }

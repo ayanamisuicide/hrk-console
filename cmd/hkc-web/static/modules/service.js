@@ -7,6 +7,8 @@ export function createServiceBindings(ctx) {
     document.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", async () => {
         const action = button.dataset.action;
+        // Мини-приложение спрашивает подтверждение, если так настроено для Telegram.
+        if (ctx.confirmBotAction && !(await ctx.confirmBotAction(action))) return;
         button.disabled = true;
         button.classList.add("loading");
         try {

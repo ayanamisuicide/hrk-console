@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="/css/system.css">
   <link rel="stylesheet" href="/css/modules.css">
   <link rel="stylesheet" href="/css/palette.css">
+  <link rel="stylesheet" href="/css/digest.css">
+  <link rel="stylesheet" href="/css/telegram.css">
   <link rel="stylesheet" href="/css/responsive.css">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0a0b0e">
@@ -46,11 +48,13 @@
           </div>
           <div class="nav-submenu">
             <button class="nav-subitem" data-view="incidents"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg><span><b>Происшествия</b><small>Ошибки и предупреждения</small></span></button>
+            <button class="nav-subitem" data-view="digest"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h8M8 18h5"/></svg><span><b>Сводка</b><small>Что было за ночь и неделю</small></span></button>
           </div>
         </div>
         <button class="nav-item" data-view="system"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg><span>Система</span></button>
         <button class="nav-item" data-view="modules"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Модули</span></button>
-        <a class="nav-item" href="/admin/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Администрирование</span></a>
+        <button class="nav-item" data-view="control" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 4 2.8 11.3c-.8.3-.8 1.4 0 1.7l4.6 1.6 1.8 5.6c.2.7 1.1.9 1.6.4l2.7-2.6 4.6 3.4c.6.4 1.4.1 1.6-.6L22.8 5.3c.2-.9-.6-1.6-1.3-1.3z"/><path d="m7.4 14.6 10.1-7.1-7.7 8.4"/></svg><span>Управление</span></button>
+        <a class="nav-item" id="admin-link" href="/admin/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Администрирование</span></a>
       </nav>
 
       <div class="sidebar-bottom">
@@ -171,6 +175,12 @@
             <div><h3>Состояние системы</h3><p>Бот, ресурсы, сеть и диск WSL/Linux-среды, в которой работает Heroku.</p></div>
             <button id="system-refresh" class="compact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Обновить</button>
           </div>
+          <section id="stop-reason" class="system-summary stop-reason" data-level="bad" aria-live="polite" hidden>
+            <span class="summary-orb" aria-hidden="true"><i></i></span>
+            <div class="summary-text"><strong id="stop-title">Бот остановлен</strong><p id="stop-message"></p></div>
+            <div class="stop-side"><span id="stop-when" class="muted"></span><button id="stop-trace-toggle" class="compact" type="button" aria-expanded="false" hidden>Traceback</button></div>
+            <pre id="stop-trace" class="stop-trace" hidden></pre>
+          </section>
           <section id="system-summary" class="system-summary" data-level="loading" aria-live="polite">
             <span class="summary-orb" aria-hidden="true"><i></i></span>
             <div class="summary-text"><strong id="system-summary-title">Собираем сведения…</strong><ul id="system-summary-items"></ul></div>
@@ -236,9 +246,23 @@
             <article class="surface-card detail-card" id="processes-card">
               <div class="card-heading"><h3>Процессы хоста</h3><span class="muted">топ по CPU</span></div>
               <table class="process-table"><thead><tr><th>Процесс</th><th>PID</th><th>CPU</th><th>Память</th></tr></thead><tbody id="process-rows"></tbody></table>
-              <p id="processes-hidden" class="detail-note" hidden>Список процессов хоста доступен только операторам.</p>
+              <p id="processes-hidden" class="detail-note" hidden>Список процессов хоста виден только операторам, вошедшим в панель по паролю.</p>
             </article>
           </div>
+        </section>
+
+        <!-- Сводка -->
+        <section id="digest-view" class="workspace-view digest-view" hidden>
+          <div class="view-intro">
+            <div><h3>Сводка</h3><p>Что было за период: остановки и падения бота с причинами, ошибки, нагрузка сервера, модули и новое. То же приходит в Telegram каждое утро.</p></div>
+            <div class="segmented" role="group" aria-label="Период сводки"><button class="compact" type="button" data-digest-span="12h" aria-pressed="false">Ночь</button><button class="compact active" type="button" data-digest-span="24h" aria-pressed="true">Сутки</button><button class="compact" type="button" data-digest-span="168h" aria-pressed="false">Неделя</button></div>
+          </div>
+          <div id="digest-body" class="digest-body"><p class="empty-state">Собираем сводку…</p></div>
+        </section>
+
+        <!-- Управление: страница «Telegram» из админки, только в мини-приложении -->
+        <section id="control-view" class="workspace-view control-view" hidden>
+          <div id="control-page" class="tg-page"></div>
         </section>
 
         <!-- Происшествия -->
@@ -347,6 +371,26 @@
       <p id="auth-error" class="auth-error"></p>
       <button class="primary" type="submit">Продолжить</button>
       <button id="auth-switch" type="button">У меня есть инвайт</button>
+    </form>
+  </dialog>
+
+  <!-- Вход мини-приложения: то же окно, что вход панели, только вместо пароля — данные Telegram -->
+  <dialog id="tg-gate">
+    <form method="dialog">
+      <div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2.5 20.5 7.5v9L12 21.5 3.5 16.5v-9z"/><path d="M9 8v8M15 8v8M9 12h6"/></svg></div>
+      <h2 id="tg-gate-title">Подключаемся…</h2>
+      <p id="tg-gate-text">Проверяем доступ через Telegram.</p>
+      <button id="tg-gate-copy" class="compact" type="button" hidden></button>
+      <button id="tg-gate-retry" class="primary" type="button" hidden>Повторить</button>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="confirm-dialog">
+    <form method="dialog">
+      <span class="eyebrow">Подтверждение</span>
+      <h2 id="confirm-title">Подтвердите действие</h2>
+      <p id="confirm-message"></p>
+      <div class="confirm-actions"><button value="cancel">Отмена</button><button id="confirm-accept" value="confirm" class="danger">Подтвердить</button></div>
     </form>
   </dialog>
 

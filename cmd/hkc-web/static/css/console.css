@@ -146,7 +146,8 @@ body {
 }
 .nav-submenu {
   display: grid;
-  grid-template-rows: 0fr;
+  /* По ряду на пункт: свёрнутая группа прячет все пункты, раскрытие анимирует высоту. */
+  grid-template-rows: repeat(2, 0fr);
   margin-left: 17px;
   padding-left: 9px;
   border-left: 1px solid var(--border);
@@ -159,7 +160,7 @@ body {
 }
 .nav-group.open .nav-submenu,
 .nav-group:has(.nav-subitem.active) .nav-submenu {
-  grid-template-rows: 1fr;
+  grid-template-rows: repeat(2, 1fr);
   margin-top: 2px;
   opacity: 1;
 }

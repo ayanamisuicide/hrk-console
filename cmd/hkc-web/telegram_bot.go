@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -667,48 +665,4 @@ func (s *server) telegramActivity(limit int) []auditEvent {
 		}
 	}
 	return result
-}
-
-func (s *server) getTelegram(w http.ResponseWriter, r *http.Request) {
-	if !s.adminAuthorized(r) {
-		writeJSON(w, http.StatusUnauthorized, actionResponse{Message: "неверный административный токен"})
-		return
-	}
-	control := s.telegram
-	if control == nil {
-		control = newTelegramControl(s, telegramConfig{})
-	}
-	view := control.view()
-	settings := control.settings()
-	view["settings"] = settings
-	view["activity"] = s.telegramActivity(15)
-	view["digest"] = control.digestView()
-	view["notifications"] = s.alerts.channels()["telegram"]
-	writeJSON(w, http.StatusOK, view)
-}
-
-func (s *server) setTelegram(w http.ResponseWriter, r *http.Request) {
-	if !s.requireOperations(w, r) {
-		return
-	}
-	settings := s.operations.telegramSettings()
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&settings); err != nil {
-		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "некорректные настройки Telegram"})
-		return
-	}
-	if settings.DigestAt != "" && !digestTimeRe.MatchString(settings.DigestAt) {
-		writeJSON(w, http.StatusBadRequest, actionResponse{Message: "время сводки — в виде ЧЧ:ММ"})
-		return
-	}
-	if err := s.operations.setTelegram(settings); err != nil {
-		writeJSON(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
-		return
-	}
-	if s.telegram != nil {
-		s.telegram.reload()
-	}
-	s.record(r, "admin", "telegram.settings", fmt.Sprintf("control=%t confirm=%t digest=%t at=%s", settings.ControlEnabled, settings.Confirm, !settings.DigestOff, settings.DigestAt))
-	s.getTelegram(w, r)
 }

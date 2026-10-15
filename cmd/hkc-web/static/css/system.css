@@ -692,3 +692,38 @@
     animation: none;
   }
 }
+
+/* Почему бот не работает: та же поверхность, что у сводки, с причиной и traceback */
+.stop-reason .summary-text p {
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: pre-line;
+}
+.stop-side {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+.stop-trace {
+  grid-column: 1 / -1;
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+@media (max-width: 560px) {
+  .stop-side {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    justify-items: start;
+  }
+}

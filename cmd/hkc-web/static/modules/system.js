@@ -78,11 +78,44 @@ export function createSystem(ctx) {
         !status.running;
       if (!status.running && status.startupLog)
         ctx.$("#status-meta").title = status.startupLog;
+      renderStopReason(status.running ? null : status.lastStop);
     } catch (error) {
       ctx.$("#status-label").textContent = "сервер недоступен";
       ctx.$("#status-meta").textContent = error.message;
     } finally {
       ctx.statusBusy = false;
+    }
+  }
+
+  // Карточка «почему бот не работает» на странице «Система»: причина остановки и traceback.
+  function renderStopReason(stop) {
+    const card = ctx.$("#stop-reason");
+    if (!card) return;
+    card.hidden = !stop;
+    if (!stop) return;
+    const signature = `${stop.at}|${stop.title}|${stop.message}|${(stop.trace || []).length}`;
+    if (card.dataset.signature === signature) return;
+    card.dataset.signature = signature;
+    card.dataset.level = stop.severity === "critical" ? "bad" : "warn";
+    ctx.$("#stop-title").textContent = stop.title || "Бот остановлен";
+    ctx.$("#stop-message").textContent = stop.message || "";
+    const at = new Date(stop.at);
+    ctx.$("#stop-when").textContent = Number.isNaN(at.getTime())
+      ? ""
+      : at.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const trace = stop.trace || [];
+    const toggle = ctx.$("#stop-trace-toggle");
+    const pre = ctx.$("#stop-trace");
+    toggle.hidden = !trace.length;
+    pre.textContent = trace.join("\n");
+    pre.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    if (!toggle.dataset.bound) {
+      toggle.dataset.bound = "1";
+      toggle.addEventListener("click", () => {
+        pre.hidden = !pre.hidden;
+        toggle.setAttribute("aria-expanded", String(!pre.hidden));
+      });
     }
   }
 

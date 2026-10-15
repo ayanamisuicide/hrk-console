@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -232,46 +234,136 @@ type digestStop struct {
 	down   time.Duration // 0 — бот ещё не запущен или запуск не найден
 }
 
-// buildDigest собирает текст и кнопки сводки за [from, to]. morning — утренняя: заголовок
-// «Доброе утро» и сравнение с прошлой сводкой; next — состояние для следующей утренней.
-func (c *telegramControl) buildDigest(from, to time.Time, morning bool, state digestState) (string, map[string]any, digestState) {
-	loc := to.Location()
-	d := c.menuSnapshot(to)
-	var t strings.Builder
-	if morning {
-		day := "сегодня"
-		if from.In(loc).YearDay() != to.In(loc).YearDay() {
-			day = "вчера"
-		}
-		fmt.Fprintf(&t, "☀️ <b>Доброе утро! Сводка с %s %s</b>", from.In(loc).Format("15:04"), day)
-	} else {
-		fmt.Fprintf(&t, "📰 <b>Сводка за %s</b>", spanLabel(to.Sub(from)))
-	}
+// digestAction — ручной перезапуск: кто и когда.
+type digestAction struct {
+	at  time.Time
+	who string
+}
 
-	stops := c.digestStops(from, to)
-	restarts, recovers := c.digestActions(from, to)
+// digestLoad — нагрузка сервера за период по истории (она хранится сутки).
+type digestLoad struct {
+	peakCPU   float64
+	peakAt    time.Time
+	maxMemory float64
+	disk      float64
+	// partial — период длиннее истории: нагрузка только за последние сутки.
+	partial bool
+}
+
+// digestReport — что было за [from, to]. Из него собираются и сообщение в Telegram, и страница
+// «Сводка» в панели и мини-приложении, поэтому они говорят одно и то же.
+type digestReport struct {
+	from, to      time.Time
+	morning       bool
+	running       bool
+	uptime        string
+	stops         []digestStop
+	restarts      []digestAction
+	recovers      int
+	errs, warns   int
+	prevErrs      int
+	problems      []logfeed.Problem
+	load          *digestLoad
+	modulesLive   bool
+	modulesReady  int
+	modulesFailed []string
+	news          []string
+	muteUntil     time.Time
+	updateTo      string
+	// next — состояние для следующей утренней сводки: от него считается «новое».
+	next digestState
+}
+
+// calm — за период ничего не случилось.
+func (rep digestReport) calm() bool {
+	return len(rep.stops) == 0 && len(rep.restarts) == 0 && rep.recovers == 0 && rep.errs == 0 && rep.running
+}
+
+func (rep digestReport) crashes() int {
+	n := 0
+	for _, stop := range rep.stops {
+		if stop.crash {
+			n++
+		}
+	}
+	return n
+}
+
+// collectDigest собирает сводку за [from, to]. morning — утренняя: «новое» считается от прошлой.
+func (c *telegramControl) collectDigest(from, to time.Time, morning bool, state digestState) digestReport {
+	d := c.menuSnapshot(to)
+	rep := digestReport{from: from, to: to, morning: morning, running: d.running, uptime: d.uptime,
+		muteUntil: d.muteUntil, updateTo: d.updateTo, modulesLive: d.modulesLive, modulesReady: d.modulesReady}
+	rep.stops = c.digestStops(from, to)
+	rep.restarts, rep.recovers = c.digestActions(from, to)
 	bot := c.s.botJournal()
 	hide := c.s.logRules.hider()
 	fromMs, toMs := from.UnixMilli(), to.UnixMilli()+1
-	errs, warns := countProblems(bot, fromMs, toMs, hide)
+	rep.errs, rep.warns = countProblems(bot, fromMs, toMs, hide)
 	span := toMs - fromMs
-	prevErrs, _ := countProblems(bot, fromMs-span, fromMs, hide)
+	rep.prevErrs, _ = countProblems(bot, fromMs-span, fromMs, hide)
+	if rep.errs+rep.warns > 0 {
+		rep.problems = logfeed.Problems(bot, fromMs, toMs, logfeed.Query{Hide: hide, Mask: maskSecrets}, digestListLimit)
+		for i := range rep.problems {
+			rep.problems[i].Query = logfeed.SearchHint(rep.problems[i].Last.Message)
+		}
+	}
+	rep.load = c.digestServer(from, to)
+	rep.next = digestState{BotVersion: d.heavy.botVersion, PanelVersion: d.panelVer, Modules: state.Modules}
+	if d.modulesLive {
+		names := make([]string, 0, len(d.moduleList))
+		for _, module := range d.moduleList {
+			names = append(names, module.Name)
+		}
+		slices.Sort(names)
+		rep.next.Modules = names
+		for _, module := range d.modulesFailed {
+			rep.modulesFailed = append(rep.modulesFailed, module.Name)
+		}
+	}
+	rep.news = c.digestNews(d, state, rep.next)
+	return rep
+}
 
-	calm := len(stops) == 0 && len(restarts) == 0 && recovers == 0 && errs == 0 && d.running
-	if calm {
+// buildDigest собирает текст и кнопки сводки за [from, to]. morning — утренняя: заголовок
+// «Доброе утро» и сравнение с прошлой сводкой; next — состояние для следующей утренней.
+func (c *telegramControl) buildDigest(from, to time.Time, morning bool, state digestState) (string, map[string]any, digestState) {
+	rep := c.collectDigest(from, to, morning, state)
+	var rows [][]map[string]string
+	if rep.updateTo != "" && c.s.updates != nil {
+		rows = append(rows, []map[string]string{btn("⬆️ Обновить до "+rep.updateTo, "upd:"+rep.updateTo)})
+	}
+	rows = append(rows, []map[string]string{btn("🔴 Ошибки", "nx:e"), btn("📜 Логи", "nx:l"), btn("📋 Меню", "nx:m")})
+	return rep.text(), keyboardRows(rows...), rep.next
+}
+
+// text — сводка сообщением Telegram.
+func (rep digestReport) text() string {
+	loc := rep.to.Location()
+	var t strings.Builder
+	if rep.morning {
+		day := "сегодня"
+		if rep.from.In(loc).YearDay() != rep.to.In(loc).YearDay() {
+			day = "вчера"
+		}
+		fmt.Fprintf(&t, "☀️ <b>Доброе утро! Сводка с %s %s</b>", rep.from.In(loc).Format("15:04"), day)
+	} else {
+		fmt.Fprintf(&t, "📰 <b>Сводка за %s</b>", spanLabel(rep.to.Sub(rep.from)))
+	}
+	if rep.calm() {
 		period := "Ночь прошла"
-		if !morning {
+		if !rep.morning {
 			period = "За это время всё прошло"
 		}
 		t.WriteString("\n🌙 " + period + " спокойно: бот работал без перерывов, ошибок нет.")
-		if warns > 0 {
-			fmt.Fprintf(&t, " Предупреждений %d.", warns)
+		if rep.warns > 0 {
+			fmt.Fprintf(&t, " Предупреждений %d.", rep.warns)
 		}
 	} else {
-		c.writeDigestBot(&t, d, stops, restarts, recovers, loc)
-		if errs+warns > 0 {
-			fmt.Fprintf(&t, "\n\nОшибок <b>%d</b>%s · предупреждений %d", errs, compareNote(errs, prevErrs), warns)
-			for _, p := range logfeed.Problems(bot, fromMs, toMs, logfeed.Query{Hide: hide, Mask: maskSecrets}, 3) {
+		rep.writeBot(&t, loc)
+		if rep.errs+rep.warns > 0 {
+			fmt.Fprintf(&t, "\n\nОшибок <b>%d</b>%s · предупреждений %d", rep.errs, compareNote(rep.errs, rep.prevErrs), rep.warns)
+			for _, p := range rep.problems[:min(3, len(rep.problems))] {
 				fmt.Fprintf(&t, "\n  ×%d %s", p.Count, html.EscapeString(clip(p.Last.Message, 70)))
 				if p.Last.Module != "" {
 					t.WriteString(" · " + html.EscapeString(shortModule(p.Last.Module)))
@@ -281,70 +373,53 @@ func (c *telegramControl) buildDigest(from, to time.Time, morning bool, state di
 			t.WriteString("\n\nОшибок нет ✅")
 		}
 	}
-
-	if line := c.digestServer(from, to, loc); line != "" {
-		t.WriteString("\n" + line)
-	}
-	next := digestState{BotVersion: d.heavy.botVersion, PanelVersion: d.panelVer, Modules: state.Modules}
-	if d.modulesLive {
-		names := make([]string, 0, len(d.moduleList))
-		for _, module := range d.moduleList {
-			names = append(names, module.Name)
+	if load := rep.load; load != nil {
+		fmt.Fprintf(&t, "\nСервер: пик CPU %.0f%% в %s · память до %.0f%% · диск %.0f%%",
+			load.peakCPU, load.peakAt.In(loc).Format("15:04"), load.maxMemory, load.disk)
+		if load.partial {
+			t.WriteString(" <i>(нагрузка — за последние сутки)</i>")
 		}
-		slices.Sort(names)
-		next.Modules = names
-		line := fmt.Sprintf("Модули: %d работают", d.modulesReady)
-		if len(d.modulesFailed) > 0 {
-			failed := make([]string, 0, len(d.modulesFailed))
-			for _, module := range d.modulesFailed {
-				failed = append(failed, module.Name)
-			}
-			line += fmt.Sprintf(", %d с ошибкой — %s", len(failed), strings.Join(failed, ", "))
+	}
+	if rep.modulesLive {
+		line := fmt.Sprintf("Модули: %d работают", rep.modulesReady)
+		if len(rep.modulesFailed) > 0 {
+			line += fmt.Sprintf(", %d с ошибкой — %s", len(rep.modulesFailed), strings.Join(rep.modulesFailed, ", "))
 		}
 		t.WriteString("\n" + html.EscapeString(line))
 	}
-
-	news := c.digestNews(d, state, next)
-	if len(news) > 0 {
-		t.WriteString("\n\n🆕 " + strings.Join(news, "\n🆕 "))
+	if len(rep.news) > 0 {
+		escaped := make([]string, len(rep.news))
+		for i, item := range rep.news {
+			escaped[i] = html.EscapeString(item)
+		}
+		t.WriteString("\n\n🆕 " + strings.Join(escaped, "\n🆕 "))
 	}
-	if d.muteUntil.After(to) {
-		t.WriteString("\n🔕 Уведомления выключены до " + d.muteUntil.In(loc).Format("15:04"))
+	if rep.muteUntil.After(rep.to) {
+		t.WriteString("\n🔕 Уведомления выключены до " + rep.muteUntil.In(loc).Format("15:04"))
 	}
-
-	var rows [][]map[string]string
-	if d.updateTo != "" && c.s.updates != nil {
-		rows = append(rows, []map[string]string{btn("⬆️ Обновить до "+d.updateTo, "upd:"+d.updateTo)})
-	}
-	rows = append(rows, []map[string]string{btn("🔴 Ошибки", "nx:e"), btn("📜 Логи", "nx:l"), btn("📋 Меню", "nx:m")})
-	return t.String(), keyboardRows(rows...), next
+	return t.String()
 }
 
-// writeDigestBot — строки о боте: остановки с причинами, ручные перезапуски, автовосстановление.
-func (c *telegramControl) writeDigestBot(t *strings.Builder, d menuData, stops []digestStop, restarts []string, recovers int, loc *time.Location) {
-	crashes := 0
-	for _, stop := range stops {
-		if stop.crash {
-			crashes++
-		}
-	}
+// writeBot — строки о боте: остановки с причинами, ручные перезапуски, автовосстановление.
+func (rep digestReport) writeBot(t *strings.Builder, loc *time.Location) {
+	crashes := rep.crashes()
 	switch {
-	case len(stops) == 0 && d.running:
+	case len(rep.stops) == 0 && rep.running:
 		t.WriteString("\n🟢 Бот работал без перерывов")
-		if d.uptime != "" {
-			t.WriteString(" · сейчас " + html.EscapeString(d.uptime))
+		if rep.uptime != "" {
+			t.WriteString(" · сейчас " + html.EscapeString(rep.uptime))
 		}
 	case crashes > 0:
 		fmt.Fprintf(t, "\n🔴 Бот падал %d %s", crashes, plural(crashes, "раз", "раза", "раз"))
-		if manual := len(stops) - crashes; manual > 0 {
+		if manual := len(rep.stops) - crashes; manual > 0 {
 			fmt.Fprintf(t, ", остановок вручную %d", manual)
 		}
-	case len(stops) > 0:
-		fmt.Fprintf(t, "\n⏹ Остановок вручную: %d", len(stops))
+	case len(rep.stops) > 0:
+		fmt.Fprintf(t, "\n⏹ Остановок вручную: %d", len(rep.stops))
 	}
-	for i, stop := range stops {
+	for i, stop := range rep.stops {
 		if i == digestListLimit {
-			fmt.Fprintf(t, "\n  … и ещё %d", len(stops)-i)
+			fmt.Fprintf(t, "\n  … и ещё %d", len(rep.stops)-i)
 			break
 		}
 		fmt.Fprintf(t, "\n  %s %s", stop.at.In(loc).Format("15:04"), html.EscapeString(clip(stop.reason, 80)))
@@ -352,14 +427,22 @@ func (c *telegramControl) writeDigestBot(t *strings.Builder, d menuData, stops [
 			t.WriteString(" · простоял " + humanDuration(stop.down))
 		}
 	}
-	if !d.running {
+	if !rep.running {
 		t.WriteString("\n⚠️ Сейчас бот не работает")
 	}
-	if len(restarts) > 0 {
-		t.WriteString("\n🔁 Перезапуски вручную: " + html.EscapeString(strings.Join(restarts, ", ")))
+	if len(rep.restarts) > 0 {
+		names := make([]string, 0, digestListLimit+1)
+		for i, action := range rep.restarts {
+			if i == digestListLimit {
+				names = append(names, fmt.Sprintf("и ещё %d", len(rep.restarts)-i))
+				break
+			}
+			names = append(names, action.who+" в "+action.at.In(loc).Format("15:04"))
+		}
+		t.WriteString("\n🔁 Перезапуски вручную: " + html.EscapeString(strings.Join(names, ", ")))
 	}
-	if recovers > 0 {
-		fmt.Fprintf(t, "\n🛟 Автовосстановление перезапускало бота: %d %s", recovers, plural(recovers, "раз", "раза", "раз"))
+	if rep.recovers > 0 {
+		fmt.Fprintf(t, "\n🛟 Автовосстановление перезапускало бота: %d %s", rep.recovers, plural(rep.recovers, "раз", "раза", "раз"))
 	}
 }
 
@@ -392,9 +475,9 @@ func (c *telegramControl) digestStops(from, to time.Time) []digestStop {
 	return stops
 }
 
-// digestActions — ручные перезапуски и запуски бота («@anya в 23:10») и число перезапусков
+// digestActions — ручные перезапуски бота («@anya из Telegram» и время) и число перезапусков
 // автовосстановлением по журналу действий. Остановки видны в digestStops.
-func (c *telegramControl) digestActions(from, to time.Time) (restarts []string, recovers int) {
+func (c *telegramControl) digestActions(from, to time.Time) (restarts []digestAction, recovers int) {
 	if c.s.audit == nil {
 		return nil, 0
 	}
@@ -409,66 +492,58 @@ func (c *telegramControl) digestActions(from, to time.Time) (restarts []string, 
 		}
 		switch event.Action {
 		case "bot.restart":
-			restarts = append(restarts, strings.TrimSuffix(describeActor(event), " из панели")+" в "+event.Time.In(to.Location()).Format("15:04"))
+			restarts = append(restarts, digestAction{at: event.Time, who: strings.TrimSuffix(describeActor(event), " из панели")})
 		case "bot.recover":
 			recovers++
 		}
-	}
-	if len(restarts) > digestListLimit {
-		restarts = append(restarts[:digestListLimit], fmt.Sprintf("и ещё %d", len(restarts)-digestListLimit))
 	}
 	return restarts, recovers
 }
 
 // digestServer — пик CPU, наибольшая занятость памяти и диск по истории нагрузки (она хранится сутки).
-func (c *telegramControl) digestServer(from, to time.Time, loc *time.Location) string {
+func (c *telegramControl) digestServer(from, to time.Time) *digestLoad {
 	if c.s.hostHistory == nil {
-		return ""
+		return nil
 	}
 	points := c.s.hostHistory.since(from)
+	if len(points) == 0 {
+		return nil
+	}
 	var peak hostPoint
-	maxMemory, disk := 0.0, 0.0
+	load := &digestLoad{partial: to.Sub(from) > 25*time.Hour}
 	for _, p := range points {
 		if p.At.After(to) {
 			break
 		}
-		cpu := max(p.CPU, p.CPUMax)
-		if cpu > max(peak.CPU, peak.CPUMax) {
+		if cpu := max(p.CPU, p.CPUMax); cpu > max(peak.CPU, peak.CPUMax) {
 			peak = p
 		}
-		maxMemory = max(maxMemory, p.Memory)
-		disk = p.Disk
+		load.maxMemory = max(load.maxMemory, p.Memory)
+		load.disk = p.Disk
 	}
-	if len(points) == 0 {
-		return ""
-	}
-	line := fmt.Sprintf("Сервер: пик CPU %.0f%% в %s · память до %.0f%% · диск %.0f%%",
-		max(peak.CPU, peak.CPUMax), peak.At.In(loc).Format("15:04"), maxMemory, disk)
-	if to.Sub(from) > 25*time.Hour {
-		line += " <i>(нагрузка — за последние сутки)</i>"
-	}
-	return line
+	load.peakCPU, load.peakAt = max(peak.CPU, peak.CPUMax), peak.At
+	return load
 }
 
-// digestNews — что изменилось с прошлой утренней сводки.
+// digestNews — что изменилось с прошлой утренней сводки. Текст без разметки.
 func (c *telegramControl) digestNews(d menuData, state, next digestState) []string {
 	var news []string
 	if d.updateTo != "" {
-		news = append(news, "Вышла hrk-console "+html.EscapeString(d.updateTo))
+		news = append(news, "Вышла hrk-console "+d.updateTo)
 	}
 	if state.PanelVersion != "" && next.PanelVersion != "" && state.PanelVersion != next.PanelVersion {
-		news = append(news, "Панель обновлена: "+html.EscapeString(state.PanelVersion+" → "+next.PanelVersion))
+		news = append(news, "Панель обновлена: "+state.PanelVersion+" → "+next.PanelVersion)
 	}
 	if state.BotVersion != "" && next.BotVersion != "" && state.BotVersion != next.BotVersion {
-		news = append(news, "Heroku обновился: "+html.EscapeString(state.BotVersion+" → "+next.BotVersion))
+		news = append(news, "Heroku обновился: "+state.BotVersion+" → "+next.BotVersion)
 	}
 	if len(state.Modules) > 0 && d.modulesLive {
 		added, removed := diffNames(state.Modules, next.Modules)
 		if len(added) > 0 {
-			news = append(news, "Новые модули: "+html.EscapeString(strings.Join(clipList(added, 6), ", ")))
+			news = append(news, "Новые модули: "+strings.Join(clipList(added, 6), ", "))
 		}
 		if len(removed) > 0 {
-			news = append(news, "Пропали модули: "+html.EscapeString(strings.Join(clipList(removed, 6), ", ")))
+			news = append(news, "Пропали модули: "+strings.Join(clipList(removed, 6), ", "))
 		}
 	}
 	return news
@@ -557,4 +632,79 @@ func (c *telegramControl) digestView() map[string]any {
 		view["lastSent"] = state.LastSent.UTC()
 	}
 	return view
+}
+
+/* ---------- Страница «Сводка» ---------- */
+
+// digest — сводка за период для страницы «Сводка» в панели и мини-приложении: span=12h, 24h, 168h.
+// Те же данные, что в сводке Telegram; без настроенного бота она тоже работает.
+func (s *server) digest(w http.ResponseWriter, r *http.Request) {
+	span, err := time.ParseDuration(r.URL.Query().Get("span"))
+	if err != nil || span <= 0 {
+		span = digestDefaultSpan
+	}
+	span = min(max(span, time.Hour), digestMaxSpan)
+	c := s.telegram
+	if c == nil {
+		c = newTelegramControl(s, telegramConfig{})
+	}
+	now := c.now()
+	rep := c.collectDigest(now.Add(-span), now, false, c.loadDigestState())
+	view := rep.view()
+	view["schedule"] = c.digestView()
+	view["telegram"] = s.telegram != nil && s.telegram.api != nil
+	writeJSON(w, http.StatusOK, view)
+}
+
+// view — сводка для страницы. Время событий уже подписано по часам сервера («вчера 23:10»):
+// так страница и сообщение в Telegram показывают одно и то же.
+func (rep digestReport) view() map[string]any {
+	when := func(at time.Time) string { return digestWhen(at, rep.to) }
+	stops := make([]map[string]any, 0, len(rep.stops))
+	for _, stop := range rep.stops {
+		stops = append(stops, map[string]any{"at": stop.at.UTC(), "when": when(stop.at), "crash": stop.crash,
+			"reason": stop.reason, "downSeconds": int(stop.down.Seconds())})
+	}
+	restarts := make([]map[string]any, 0, len(rep.restarts))
+	for _, action := range rep.restarts {
+		restarts = append(restarts, map[string]any{"at": action.at.UTC(), "when": when(action.at), "who": action.who})
+	}
+	problems := make([]map[string]any, 0, len(rep.problems))
+	for _, p := range rep.problems {
+		problems = append(problems, map[string]any{"count": p.Count, "message": p.Last.Message, "module": p.Last.Module,
+			"level": p.Last.Level, "query": p.Query, "ts": p.Last.TS, "id": p.Last.ID, "when": when(time.UnixMilli(p.Last.TS))})
+	}
+	view := map[string]any{
+		"from": rep.from.UTC(), "to": rep.to.UTC(), "label": spanLabel(rep.to.Sub(rep.from)), "calm": rep.calm(),
+		"running": rep.running, "uptime": rep.uptime, "crashes": rep.crashes(), "stops": stops, "restarts": restarts,
+		"recovers": rep.recovers, "errors": rep.errs, "warnings": rep.warns, "prevErrors": rep.prevErrs, "problems": problems,
+		"modules": map[string]any{"live": rep.modulesLive, "ready": rep.modulesReady, "failed": append([]string{}, rep.modulesFailed...)},
+		"news":    append([]string{}, rep.news...), "updateTo": rep.updateTo,
+	}
+	if load := rep.load; load != nil {
+		view["load"] = map[string]any{"peakCpu": load.peakCPU, "peakAt": load.peakAt.UTC(), "peakWhen": when(load.peakAt),
+			"maxMemory": load.maxMemory, "disk": load.disk, "partial": load.partial}
+	}
+	if rep.muteUntil.After(rep.to) {
+		view["muteUntil"] = when(rep.muteUntil)
+	}
+	return view
+}
+
+// digestWhen — время события по часам сервера: «15:04», «вчера 15:04», «12 окт 15:04».
+func digestWhen(at, now time.Time) string {
+	loc := now.Location()
+	at, now = at.In(loc), now.In(loc)
+	clock := at.Format("15:04")
+	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc) }
+	switch int(math.Round(day(now).Sub(day(at)).Hours() / 24)) {
+	case 0:
+		return clock
+	case 1:
+		return "вчера " + clock
+	case -1:
+		return "завтра " + clock
+	}
+	months := []string{"янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"}
+	return fmt.Sprintf("%d %s %s", at.Day(), months[at.Month()-1], clock)
 }

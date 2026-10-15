@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"heroku-console/internal/telegram"
 )
@@ -134,42 +132,5 @@ func TestTelegramSettingsOverHTTP(t *testing.T) {
 	want(t, "запись", write, http.StatusOK)
 	if !f.operations.telegramSettings().ControlEnabled {
 		t.Fatal("настройка не сохранилась")
-	}
-}
-
-// Мини-приложение: действие над ботом и журнал доступны только по сессии администратора.
-func TestTelegramWebAppLogsAndActions(t *testing.T) {
-	_, api := newFakeBotAPI(t)
-	s, control := newTestTelegram(t, api.URL, 7)
-	control.config.WebAppURL = "https://panel.example.com"
-	if err := s.operations.setTelegram(telegramSettings{ControlEnabled: true, Confirm: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(s.bot.LogFile, []byte("2026-10-11 10:00:00 [INFO] m: привет\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	handler := s.routes()
-	session := startWebSession(t, handler, signInitData(testBotToken, 7, time.Now()))
-	if session.Code != http.StatusOK {
-		t.Fatalf("сессия: %d %s", session.Code, session.Body.String())
-	}
-	var issued struct {
-		Token string `json:"token"`
-	}
-	_ = json.Unmarshal(session.Body.Bytes(), &issued)
-	call := func(method, path string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(method, path, nil)
-		request.Header.Set("Authorization", "Bearer "+issued.Token)
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		return response
-	}
-	logs := call("GET", "/api/tg/logs?limit=99999")
-	if logs.Code != http.StatusOK || !strings.Contains(logs.Body.String(), "привет") {
-		t.Fatalf("журнал: %d %s", logs.Code, logs.Body.String())
-	}
-	// Неизвестное действие отвергается до обращения к процессу бота.
-	if response := call("POST", "/api/tg/bot/explode"); response.Code != http.StatusNotFound {
-		t.Fatalf("неизвестное действие: %d", response.Code)
 	}
 }

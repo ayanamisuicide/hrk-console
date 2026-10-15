@@ -460,8 +460,9 @@ test("группа журнала раскрывается, сохраняетс
     "aria-expanded",
     "true",
   );
-  await expect(page.locator(".nav-subitem")).toBeVisible();
-  await page.locator(".nav-subitem").click();
+  await expect(page.locator('.nav-subitem[data-view="incidents"]')).toBeVisible();
+  await expect(page.locator('.nav-subitem[data-view="digest"]')).toBeVisible();
+  await page.locator('.nav-subitem[data-view="incidents"]').click();
   await expect(page.locator("#incidents-view")).toBeVisible();
   await expect(page.locator("#journal-nav")).toHaveClass(/section-active/);
   await page.reload();

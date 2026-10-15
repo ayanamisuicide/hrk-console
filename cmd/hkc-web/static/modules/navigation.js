@@ -4,7 +4,10 @@
 export function createNavigation(ctx) {
   // Выбирает допустимый раздел, обновляет навигацию и сохраняет выбор; данные загружаются после авторизации.
   function setView(view) {
-    if (!["logs", "system", "incidents", "modules"].includes(view)) view = "logs";
+    const views = ["logs", "system", "incidents", "digest", "modules"];
+    // «Управление» — страница Telegram из админки; в панели она живёт в админке, а здесь только в мини-приложении.
+    if (ctx.telegramMode) views.push("control");
+    if (!views.includes(view)) view = ctx.telegramMode ? "system" : "logs";
     ctx.currentView = view;
     document.querySelectorAll(".workspace-view").forEach((panel) => {
       panel.hidden = panel.id !== `${view}-view`;
@@ -18,9 +21,9 @@ export function createNavigation(ctx) {
       .$("#journal-nav")
       .classList.toggle(
         "section-active",
-        view === "logs" || view === "incidents",
+        view === "logs" || view === "incidents" || view === "digest",
       );
-    if (view === "incidents" && typeof ctx.setJournalNavOpen === "function")
+    if ((view === "incidents" || view === "digest") && typeof ctx.setJournalNavOpen === "function")
       ctx.setJournalNavOpen(true);
     ctx.animateValue(
       ctx.$("#view-title"),
@@ -28,7 +31,9 @@ export function createNavigation(ctx) {
         logs: "Журнал событий",
         system: "Состояние системы",
         incidents: "Происшествия",
+        digest: "Сводка",
         modules: "Модули бота",
+        control: "Управление",
       }[view],
     );
     // Запрос журнала хранится в адресе (#logs?…); в других разделах он не нужен.
@@ -41,7 +46,10 @@ export function createNavigation(ctx) {
       ctx.refreshDetails();
     }
     if (view === "modules" && ctx.authenticated) ctx.refreshModules();
-    localStorage.setItem("hkc-view", view);
+    if (view === "digest" && ctx.authenticated) ctx.refreshDigest();
+    if (view === "control" && ctx.authenticated) ctx.refreshControl?.();
+    // Мини-приложение всегда открывается на «Системе» и раздел не запоминает.
+    if (!ctx.telegramMode) localStorage.setItem("hkc-view", view);
   }
 
   // Сохраняет раскрытие группы журнала и синхронизирует визуальное и доступное состояние.

@@ -7,6 +7,7 @@
     <title>Heroku · Администрирование</title>
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/css/base.css" />
+    <link rel="stylesheet" href="/css/telegram.css" />
     <link rel="stylesheet" href="/css/admin.css" />
   </head>
   <body class="admin-body">
@@ -244,132 +245,6 @@
             aria-labelledby="admin-page-title"
             hidden
           >
-            <section class="card tg-hero" id="tg-hero" data-state="loading">
-              <div class="tg-emblem" aria-hidden="true">
-                <span class="tg-orbit"></span><span class="tg-orbit"></span>
-                <span class="tg-emblem-core"><svg viewBox="0 0 24 24"><path d="M21.5 4 2.8 11.3c-.8.3-.8 1.4 0 1.7l4.6 1.6 1.8 5.6c.2.7 1.1.9 1.6.4l2.7-2.6 4.6 3.4c.6.4 1.4.1 1.6-.6L22.8 5.3c.2-.9-.6-1.6-1.3-1.3z"/><path d="m7.4 14.6 10.1-7.1-7.7 8.4"/></svg></span>
-              </div>
-              <div class="tg-hero-text">
-                <span class="eyebrow" id="tg-eyebrow">Telegram-бот</span>
-                <h2 id="tg-title">Получаем состояние…</h2>
-                <p id="tg-subtitle">Смотрим, что настроено на сервере.</p>
-                <div class="tg-chips">
-                  <span class="tg-chip" data-chip="notify">Уведомления</span
-                  ><span class="tg-chip" data-chip="control">Команды</span
-                  ><span class="tg-chip" data-chip="app">Мини-приложение</span>
-                </div>
-              </div>
-              <label class="watchdog-switch tg-master"
-                ><input id="tg-control" type="checkbox" /><span
-                  ><strong>Управление из Telegram</strong
-                  ><small>Команды бота и мини-приложение</small></span
-                ></label
-              >
-            </section>
-
-            <div class="tg-grid">
-              <section class="card admin-section tg-setup">
-                <div class="section-heading">
-                  <div>
-                    <span class="eyebrow">Настройка на сервере</span>
-                    <h2>Что нужно сделать</h2>
-                  </div>
-                  <span class="muted" id="tg-progress">—</span>
-                </div>
-                <ol class="tg-steps" id="tg-steps"></ol>
-                <div class="tg-strangers" id="tg-strangers" hidden>
-                  <strong>Писали боту, но доступа нет</strong>
-                  <small>Если это вы — скопируйте строку в /etc/hkc/hkc.env и перезапустите панель.</small>
-                  <div id="tg-strangers-list"></div>
-                </div>
-              </section>
-
-              <section class="card admin-section tg-preview-card">
-                <div class="section-heading">
-                  <div>
-                    <span class="eyebrow">Так это выглядит</span>
-                    <h2>Чат с ботом</h2>
-                  </div>
-                </div>
-                <div class="tg-phone" id="tg-phone" aria-label="Пример переписки с ботом">
-                  <div class="tg-phone-bar">
-                    <span class="tg-avatar" id="tg-avatar">H</span>
-                    <span><strong id="tg-bot-name">Бот панели</strong><small id="tg-bot-status">бот</small></span>
-                  </div>
-                  <div class="tg-chat">
-                    <p class="tg-msg out"><span>/status</span></p>
-                    <p class="tg-msg in"><span><b>🟢 Бот работает</b><br />PID 4821 · 3ч 12м<br /><br />CPU 7% · память 41% · диск 63%<br />Автовосстановление: включено</span></p>
-                    <p class="tg-msg out"><span>/restart</span></p>
-                    <p class="tg-msg in"><span>Перезапустить бота?</span></p>
-                    <p class="tg-buttons"><span>🔄 Перезапустить</span><span>Отмена</span></p>
-                    <p class="tg-msg in"><span>✅ Бот перезапущен<br />PID 4907</span></p>
-                    <p class="tg-msg in"><span><b>🔵 Доступна hrk-console v2.12.0</b><br />Новая версия вышла</span></p>
-                    <p class="tg-buttons single"><span>⬆️ Обновить до v2.12.0</span></p>
-                    <p class="tg-typing" aria-hidden="true"><i></i><i></i><i></i></p>
-                  </div>
-                  <div class="tg-phone-input">
-                    <span class="tg-menu" id="tg-menu-button">Панель</span><span>Сообщение</span>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            <section class="card admin-section">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">Что умеет бот</span>
-                  <h2>Команды</h2>
-                </div>
-                <label class="watchdog-switch"
-                  ><input id="tg-confirm" type="checkbox" /><span
-                    ><strong>Подтверждать опасные</strong
-                    ><small>Остановка и перезапуск — по кнопке</small></span
-                  ></label
-                >
-              </div>
-              <div class="tg-commands" id="tg-commands"></div>
-              <p class="watchdog-note">
-                Бот отвечает только ID из HKC_TELEGRAM_ADMIN_IDS, остальным молчит. Команды старше
-                двух минут не выполняются: о том, что пришло, пока панель была выключена, бот сообщит
-                и предложит выбор.
-                Если мини-приложение недоступно, команды продолжают работать.
-              </p>
-            </section>
-
-            <section class="card admin-section">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">Каждое утро</span>
-                  <h2>Сводка</h2>
-                </div>
-              </div>
-              <form id="tg-digest-form" class="watchdog-form">
-                <label class="watchdog-switch"
-                  ><input id="tg-digest" type="checkbox" /><span
-                    ><strong>Утренняя сводка</strong
-                    ><small>В личный чат с ботом</small></span
-                  ></label
-                ><label
-                  >Время сервера<input id="tg-digest-at" type="time" step="60" value="08:00" required /></label
-                ><button class="primary" type="submit">Сохранить</button>
-              </form>
-              <p class="watchdog-note" id="tg-digest-note">
-                Что было с прошлой сводки: остановки и падения бота с причинами, ошибки и самые частые из них,
-                нагрузка сервера, модули и новое. По запросу — фраза «сводка», «что было за ночь» или /digest.
-                Приходит, только когда включено управление из Telegram.
-              </p>
-            </section>
-
-            <section class="card admin-section">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">Журнал</span>
-                  <h2>Действия из Telegram</h2>
-                </div>
-              </div>
-              <div class="tg-activity" id="tg-activity"></div>
-              <p class="backup-note" id="tg-activity-empty">Из Telegram пока ничего не делали.</p>
-            </section>
           </section>
 
           <section

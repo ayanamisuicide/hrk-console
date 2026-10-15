@@ -64,6 +64,8 @@ var openRoutes = map[string][]int{
 	"POST /api/auth/register": {http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests},
 	"GET /api/public/status":  {http.StatusNotFound}, // публичная страница выключена по умолчанию
 	"POST /api/tg/session":    {http.StatusBadRequest, http.StatusUnauthorized, http.StatusServiceUnavailable},
+	// Мини-приложение — страница панели без данных: данные идут только после входа через Telegram.
+	"GET /tg/{$}": {http.StatusOK},
 }
 
 func TestEveryRouteRejectsAnonymousRequests(t *testing.T) {
@@ -80,7 +82,7 @@ func TestEveryRouteRejectsAnonymousRequests(t *testing.T) {
 	for _, route := range declared {
 		method, pattern := route[1], route[2]
 		key := method + " " + pattern
-		path := placeholder.ReplaceAllString(pattern, "x")
+		path := placeholder.ReplaceAllString(strings.ReplaceAll(pattern, "{$}", ""), "x")
 		for _, credentials := range []string{"", "Bearer wrong-token", "Bearer "} {
 			request := httptest.NewRequest(method, path, strings.NewReader("{}"))
 			if credentials != "" {
@@ -94,9 +96,7 @@ func TestEveryRouteRejectsAnonymousRequests(t *testing.T) {
 				}
 				continue
 			}
-			// Маршруты мини-приложения без настроенного бота отвечают 503: данных за ними нет.
-			miniApp503 := strings.HasPrefix(pattern, "/api/tg/") && response.Code == http.StatusServiceUnavailable
-			if response.Code != http.StatusUnauthorized && response.Code != http.StatusForbidden && !miniApp503 {
+			if response.Code != http.StatusUnauthorized && response.Code != http.StatusForbidden {
 				t.Errorf("%s (%q): без входа получили %d, ждали 401/403", key, credentials, response.Code)
 			}
 		}

@@ -1,5 +1,5 @@
 // Версию меняют вместе с ресурсами оболочки, чтобы старые зависимости не пережили обновление.
-const CACHE = "hkc-shell-v47-split-modules";
+const CACHE = "hkc-shell-v48-digest-telegram";
 // Явный список включает всю цепочку ES-модулей и CSS-импортов пользовательской панели.
 // Административные страницы и ответы API здесь не сохраняются.
 const ASSETS = [
@@ -12,6 +12,8 @@ const ASSETS = [
   "/css/system.css",
   "/css/modules.css",
   "/css/palette.css",
+  "/css/digest.css",
+  "/css/telegram.css",
   "/css/responsive.css",
   "/motion.js",
   "/live-chart.js",
@@ -33,6 +35,10 @@ const ASSETS = [
   "/modules/service.js",
   "/modules/system.js",
   "/modules/modules.js",
+  "/modules/digest.js",
+  "/modules/event-stream.js",
+  "/modules/telegram-page.js",
+  "/modules/telegram-shell.js",
 ];
 // Установка кеширует весь набор целиком: неполная цепочка модулей не считается готовой.
 self.addEventListener("install", (event) => {

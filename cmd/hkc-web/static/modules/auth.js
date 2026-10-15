@@ -49,6 +49,8 @@ export function createAuth(ctx) {
       ctx.authenticated = true;
       ctx.$("#username").textContent = me.username;
       ctx.role = me.role;
+      // Запись журнала можно отправить в Telegram: из мини-приложения — себе, из панели — в чат уведомлений.
+      ctx.canShare = Boolean(me.share);
       const viewer = me.role === "viewer";
       document.querySelectorAll("[data-action]").forEach((button) => {
         if (viewer) {
@@ -67,6 +69,8 @@ export function createAuth(ctx) {
         ctx.refreshDetails();
       }
       if (ctx.currentView === "modules") ctx.refreshModules();
+      if (ctx.currentView === "digest") ctx.refreshDigest();
+      if (ctx.currentView === "control") ctx.refreshControl?.();
       ctx.connectStream();
     } catch (error) {
       if (!ctx.authDialog.open) ctx.showNotice(error.message, "error");
